@@ -3,9 +3,7 @@ import type { Hono } from "hono";
 import type {
   Activity,
   DshStatus,
-  EndpointKind,
   EngineRates,
-  EngineSample,
   FleetSnapshot,
   GatewayModel,
   Gpu,
@@ -35,12 +33,14 @@ import type { exec, fetchWithTimeout } from "./core/exec";
 import type { Identity } from "./core/identity";
 import type { KeyStore } from "./core/keys";
 import type { Log } from "./core/log";
+import type { Obs } from "./core/obs";
 
 export interface Ctx {
   config: Config;
   db: Database;
   bus: Bus;
   log: Log;
+  obs: Obs;
   keys: KeyStore;
   identity: Identity;
   exec: typeof exec;
@@ -81,8 +81,6 @@ export interface RuntimeService {
   model(id: string): RunningModel | undefined;
   resolveServed(name: string): RunningModel | undefined;
   rescan(): Promise<RuntimeView>;
-  onChange(fn: (v: RuntimeView) => void): () => void;
-  classifyEndpoint?(port: number): EndpointKind | null;
 }
 
 export interface LifecycleService {
@@ -91,7 +89,6 @@ export interface LifecycleService {
   progress(): LaunchProgress[];
   cancel(launchId: string): boolean;
   stop(modelId: string, opts: { confirm: string; force?: boolean }): Promise<{ ok: boolean; detail: string }>;
-  logs(modelId: string, tail: number): Promise<string>;
   inspect(modelId: string): Promise<DockerInspect | null>;
   hostArgv(modelId: string): Promise<string[] | null>;
   imageEnv(image: string): Promise<string[]>;
@@ -111,8 +108,6 @@ export interface MetricsService {
   begin(modelId: string | null, tsStart: number): Promise<RequestHandle>;
   preview(h: RequestHandle, draft: FinishDraft): RequestRecord;
   finish(h: RequestHandle, draft: FinishDraft): Promise<RequestRecord>;
-  latest(modelId: string): EngineSample | null;
-  scrape(modelId: string): Promise<EngineSample | null>;
   summary(window: Window, filter?: { model?: string; client?: string; machineId?: string }): MetricsSummary;
   recent(limit: number, before?: number): RequestRecord[];
   engineRates(): EngineRates[];

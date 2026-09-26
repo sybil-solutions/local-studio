@@ -1,7 +1,7 @@
 import type { HarnessInfo, Workspace } from "./agent";
 import type { Gpu, GpuGroup } from "./gpu";
 import type { Machine, Peer } from "./machine";
-import type { Activity, EngineRates, ModelCardStats, RequestRecord } from "./metrics";
+import type { Activity, EngineRates, ModelCardStats, Percentiles, RequestRecord } from "./metrics";
 import type { Endpoint, RunningModel } from "./model";
 import type { LaunchProgress } from "./recipe";
 
@@ -37,5 +37,17 @@ export type ControllerEvent =
   | { type: "launch"; data: LaunchProgress }
   | { type: "peer"; data: Peer }
   | { type: "log"; data: { level: "info" | "warn" | "error"; msg: string; at: number } };
+
+export interface ControllerHealth {
+  at: number;
+  uptimeS: number;
+  pid: number;
+  memory: { rssMiB: number; heapUsedMiB: number; heapTotalMiB: number; externalMiB: number };
+  eventLoopLagMaxMs: number;
+  gauges: Record<string, number>;
+  counters: Record<string, number>;
+  timings: Record<string, Percentiles & { n: number; last: number | null }>;
+  lastErrors: { at: number; where: string; message: string }[];
+}
 
 export type ControllerEventType = ControllerEvent["type"];

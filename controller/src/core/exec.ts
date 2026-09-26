@@ -28,26 +28,28 @@ export const exec = async (cmd: string[], opts: ExecOptions): Promise<ExecResult
   } catch (e) {
     return { code: null, stdout: "", stderr: String(e), timedOut: false, ms: 0 };
   }
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    proc.kill("SIGKILL");
-  }, opts.timeoutMs);
   const max = opts.maxBytes ?? 16 * 1024 * 1024;
-  const read = async (s: ReadableStream<Uint8Array> | number | undefined | null): Promise<string> => {
-    if (!s || typeof s === "number") return "";
-    const text = await new Response(s).text();
+  const read = async (s: unknown): Promise<string> => {
+    if (!(s instanceof ReadableStream)) return "";
+    const text = await new Response(s).text().catch(() => "");
     return text.length > max ? text.slice(0, max) : text;
   };
-  const [stdout, stderr] = await Promise.all([read(proc.stdout as ReadableStream<Uint8Array>), read(proc.stderr as ReadableStream<Uint8Array>)]);
-  const code = await proc.exited;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<null>((res) => {
+    timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {}
+      setTimeout(() => res(null), 1000).unref?.();
+    }, opts.timeoutMs);
+  });
+  const done = Promise.all([read(proc.stdout), read(proc.stderr), proc.exited]);
+  const r = await Promise.race([done, expired]);
   clearTimeout(timer);
-  return { code: timedOut ? null : code, stdout, stderr, timedOut, ms: performance.now() - t0 };
-};
-
-export const which = async (bin: string, extraDirs: string[] = []): Promise<string | null> => {
-  const found = Bun.which(bin, { PATH: [process.env.PATH ?? "", ...extraDirs].join(":") });
-  return found ?? null;
+  const ms = performance.now() - t0;
+  if (!r) return { code: null, stdout: "", stderr: `${cmd[0]} did not exit within ${opts.timeoutMs} ms`, timedOut: true, ms };
+  const timedOut = proc.signalCode === "SIGKILL" && ms >= opts.timeoutMs;
+  return { code: timedOut ? null : r[2], stdout: r[0], stderr: r[1], timedOut, ms };
 };
 
 export const fetchWithTimeout = async (url: string, init: RequestInit & { timeoutMs: number }): Promise<Response> => {
@@ -55,3 +57,5 @@ export const fetchWithTimeout = async (url: string, init: RequestInit & { timeou
   const signal = rest.signal ? AbortSignal.any([rest.signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs);
   return fetch(url, { ...rest, signal, redirect: "manual" });
 };
+
+export const which = async (bin: string, extraDirs: string[] = []): Promise<string | null> => Bun.which(bin, { PATH: [process.env.PATH ?? "", ...extraDirs].join(":") }) ?? null;

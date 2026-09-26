@@ -11,13 +11,18 @@ import { pool } from "./util";
 
 const FAST_MS = 3000;
 const FULL_MS = 15000;
+const SCAN_DEADLINE_MS = 60_000;
+
+const deadline = <T>(p: Promise<T>, ms: number, what: string): Promise<T> => {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([p, new Promise<never>((_, rej) => (t = setTimeout(() => rej(new Error(`${what} exceeded ${ms} ms`)), ms)))]).finally(() => clearTimeout(t));
+};
 
 export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: RuntimeService; lifecycle: LifecycleService }> => {
   let view: RuntimeView = { gpus: [], groups: [], models: [], endpoints: [], discovery: { lastScanAt: null, scanMs: null, docker: "absent", errors: [] } };
   let watchdogs: Watchdog[] = [];
   let pidOwner = new Map<number, string>();
   const st: ScanState = { tracks: new Map(), cacheInfo: new Map(), stopping: new Set(), probes: createProbeCache() };
-  const listeners = new Set<(v: RuntimeView) => void>();
   let scanning: Promise<RuntimeView> | null = null;
   let fastBusy = false;
   let timers: ReturnType<typeof setInterval>[] = [];
@@ -63,27 +68,24 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
 
   const publish = (v: RuntimeView) => {
     view = v;
-    for (const fn of listeners) {
-      try {
-        fn(v);
-      } catch {}
-    }
   };
 
   const rescan = (): Promise<RuntimeView> => {
     if (scanning) return scanning;
     scanning = (async () => {
+      const t = performance.now();
       try {
-        const r = await fullScan(ctx, st, hardware(), excluded());
+        const r = await deadline(fullScan(ctx, st, hardware(), excluded()), SCAN_DEADLINE_MS, "full scan");
         watchdogs = r.watchdogs;
         pidOwner = r.pidOwner;
         publish(r.view);
         return r.view;
       } catch (e) {
-        ctx.log.warn(`discovery scan failed: ${String(e)}`);
-        publish({ ...view, discovery: { ...view.discovery, errors: [String(e)] } });
+        ctx.log.warn(`discovery scan failed: ${String(e)}`, "scan.full");
+        publish({ ...view, discovery: { ...view.discovery, lastScanAt: Date.now(), errors: [String(e)] } });
         return view;
       } finally {
+        ctx.obs.observe("scan.full_ms", performance.now() - t);
         scanning = null;
       }
     })();
@@ -93,13 +95,14 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
   const fast = async () => {
     if (fastBusy || scanning) return;
     fastBusy = true;
+    const started = performance.now();
     try {
       const gs = await scanGpus(ctx, hardware());
       const known = new Set(pidOwner.keys());
       const newPid = gs.apps.some((a) => !known.has(a.pid) && !view.gpus.some((g) => g.processes.some((p) => p.pid === a.pid)));
       const gonePid = [...known].some((pid) => !gs.apps.some((a) => a.pid === pid));
       attachOwners(gs.gpus, pidOwner);
-      const models: RunningModel[] = await pool(view.models, 8, async (m) => {
+      const models: RunningModel[] = await deadline(pool(view.models, 8, async (m) => {
         const h = await healthCheck(ctx, m.baseUrl, m.state === "ready");
         const prev = st.tracks.get(m.id);
         const t = nextTrack(prev, prev?.lifeKey ?? m.id, h.ok, m.startedAt, st.stopping.has(m.id), h.note);
@@ -113,13 +116,14 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
           vramUsedMiB: owned.length ? owned.reduce((s, a) => s + a.usedMiB, 0) : m.vramUsedMiB,
           error: t.state === "unhealthy" ? t.note || "unhealthy" : null,
         };
-      });
+      }), 20_000, "health checks");
       const stateChanged = models.some((m, i) => m.state !== view.models[i]?.state);
       publish({ ...view, gpus: gs.gpus.length ? gs.gpus : view.gpus, models, groups: computeGroups(gs.gpus.length ? gs.gpus : view.gpus, models) });
       if (newPid || gonePid || (stateChanged && models.some((m) => m.state === "ready" && !m.cache))) void rescan();
     } catch (e) {
-      ctx.log.warn(`discovery fast loop: ${String(e)}`);
+      ctx.log.warn(`discovery fast loop: ${String(e)}`, "scan.fast");
     } finally {
+      ctx.obs.observe("scan.fast_ms", performance.now() - started);
       fastBusy = false;
     }
   };
@@ -153,11 +157,6 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
       return view.models.find((m) => m.state === "ready" && m.servedModels.some((s) => s.toLowerCase() === n));
     },
     rescan,
-    onChange: (fn) => {
-      listeners.add(fn);
-      return () => listeners.delete(fn);
-    },
-    classifyEndpoint: (port) => view.endpoints.find((e) => e.port === port)?.kind ?? null,
   };
 
   const lifecycle = createLifecycle({ ctx, svc, view: () => view, rescan, setStopping });
@@ -165,8 +164,8 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
   return {
     service: { runtime, lifecycle },
     routes: discoveryRoutes(runtime, lifecycle),
-    async start() {
-      await rescan();
+    start() {
+      void rescan();
       timers = [setInterval(() => void fast(), FAST_MS), setInterval(() => void rescan(), FULL_MS)];
     },
     stop() {

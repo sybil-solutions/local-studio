@@ -149,22 +149,3 @@ export const buildPlan = (
   };
   return { plan, weights, warnings, asset, scratchDir };
 };
-
-export const previewArgv = (p: LaunchPlan): string[] => [
-  "docker",
-  "run",
-  "-d",
-  "--name",
-  p.containerName,
-  ...Object.entries(p.labels).flatMap(([k, v]) => ["--label", `${k}=${v}`]),
-  "--gpus",
-  `"device=${p.gpuUuids.join(",")}"`,
-  ...(p.shm ? ["--shm-size", p.shm] : []),
-  ...(p.entrypoint ? ["--entrypoint", p.entrypoint] : []),
-  "-p",
-  `127.0.0.1:${p.hostPort}:${p.containerPort}`,
-  ...p.mounts.flatMap((m) => ["-v", `${m.source}:${m.target}${m.readOnly ? ":ro" : ""}`]),
-  ...Object.entries(p.env).flatMap(([k, v]) => ["-e", `${k}=${v}`]),
-  p.image,
-  ...p.args,
-];

@@ -2,6 +2,7 @@
 import { runAgentCli } from "./agents";
 import { createApp } from "./app";
 import { loadConfig } from "./core/config";
+import { errText } from "./core/log";
 import { runDeployCli } from "./deploy";
 
 const USAGE = `local-studio <command>
@@ -17,16 +18,29 @@ const USAGE = `local-studio <command>
 const serve = async (argv: string[]): Promise<number> => {
   const config = loadConfig(argv);
   const app = createApp(config);
+  const { log, obs } = app.ctx;
+  process.on("unhandledRejection", (e) => log.error(`unhandled rejection: ${errText(e)}`, "unhandledRejection"));
+  process.on("uncaughtException", (e) => log.error(`uncaught exception: ${errText(e)}`, "uncaughtException"));
+  const t0 = performance.now();
   await app.start();
   const server = Bun.serve({ hostname: config.host, port: config.port, idleTimeout: 255, fetch: app.hono.fetch, maxRequestBodySize: 64 * 1024 * 1024 });
-  app.ctx.log.info(`local-studio ${config.version} listening on http://${server.hostname}:${server.port} data=${config.dataDir}${config.readOnly ? " read-only" : ""}`);
-  const shutdown = async () => {
+  obs.gauge("http.pending_requests", () => server.pendingRequests);
+  log.info(`local-studio ${config.version} listening on http://${server.hostname}:${server.port} data=${config.dataDir}${config.readOnly ? " read-only" : ""} startup=${Math.round(performance.now() - t0)}ms`);
+  let stopping = false;
+  const shutdown = async (sig: string) => {
+    if (stopping) process.exit(1);
+    stopping = true;
+    log.info(`${sig}: draining ${server.pendingRequests} requests`);
+    setTimeout(() => process.exit(1), 10_000).unref();
+    void server.stop(false);
+    app.quiesce();
+    for (let i = 0; i < 50 && server.pendingRequests > 0; i++) await Bun.sleep(100);
     server.stop(true);
     await app.stop();
     process.exit(0);
   };
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
   return await new Promise<number>(() => {});
 };
 

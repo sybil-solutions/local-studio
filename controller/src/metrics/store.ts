@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
-import type { EngineSample, Price, RequestRecord } from "@local-studio/contracts";
+import type { Price, RequestRecord } from "@local-studio/contracts";
 import { DECODE_MIN_TOKENS, PREFILL_MIN_TOKENS } from "@local-studio/contracts";
-import { migrate } from "../core/db";
+import { checkpoint, migrate } from "../core/db";
 
 const DAY_MS = 86_400_000;
 
@@ -42,7 +42,11 @@ export const MIGRATIONS = [
       AND r.model = usage_daily.model AND r.client = usage_daily.client AND r.via = 'local' AND r.prefill_tps IS NOT NULL AND r.ttft_ms IS NOT NULL
       AND r.usage_source NOT IN ('estimated','none') AND r.input_uncached >= ${PREFILL_MIN_TOKENS})
   WHERE EXISTS (SELECT 1 FROM requests r WHERE r.day = usage_daily.day AND r.machine_id = usage_daily.machine_id AND r.model = usage_daily.model AND r.client = usage_daily.client);`,
+  `DROP TABLE IF EXISTS engine_samples; UPDATE requests SET chunk_dt = NULL, chunk_time0 = NULL; CREATE INDEX IF NOT EXISTS requests_model_ts2 ON requests(model, ts_start);`,
 ];
+
+const MAX_ROWS = 200_000;
+const FLUSH_MS = 250;
 
 export type Row = Record<string, string | number | null>;
 
@@ -90,17 +94,16 @@ export const rowToRecord = (r: Row): RequestRecord => ({
   enginePrefillMs: r.engine_prefill_ms === null ? null : Number(r.engine_prefill_ms),
   engineDecodeMs: r.engine_decode_ms === null ? null : Number(r.engine_decode_ms),
   capsStripped: r.caps_stripped ? (JSON.parse(String(r.caps_stripped)) as string[]) : [],
-  chunkTime0: r.chunk_time0 === null ? null : Number(r.chunk_time0),
-  chunkDt: r.chunk_dt ? (JSON.parse(String(r.chunk_dt)) as number[]) : null,
 });
 
 export interface Store {
   insert(rec: RequestRecord, costUsd: number | null): void;
   check(id: string, before: unknown, after: unknown, deltas: unknown, agreement: unknown): void;
+  flush(): void;
+  queued(): number;
   getCheck(id: string): { before: unknown; after: unknown; deltas: unknown; agreement: unknown } | null;
   get(id: string): RequestRecord | null;
   recent(limit: number, before?: number): RequestRecord[];
-  sample(s: EngineSample): void;
   prices(): Price[];
   price(model: string): Price | null;
   putPrice(p: Price): void;
@@ -108,14 +111,14 @@ export interface Store {
   day(ts: number): string;
 }
 
-export const createStore = (db: Database, tz: string): Store => {
+export const createStore = (db: Database, tz: string, onError: (e: unknown) => void): Store => {
   migrate(db, "metrics", MIGRATIONS);
   const day = dayFormatter(tz);
   const ins = db.query(
     `INSERT OR REPLACE INTO requests VALUES ($id,$ts_start,$ts_upstream,$ts_first_token,$ts_end,$day,$machine_id,$model_id,$model,$engine,$client,$workspace_id,$session_id,
      $dialect,$stream,$via,$peer_id,$status,$finish,$error_code,$error_message,$input_uncached,$cache_read,$cache_write,$output,$reasoning,$prompt_total,$total,
      $usage_source,$cache_source,$context_window,$ttft_ms,$decode_ms,$prefill_tps,$decode_tps,$engine_queue_ms,$engine_prefill_ms,$engine_decode_ms,
-     $caps_stripped,$chunk_time0,$chunk_dt,$cost_usd)`,
+     $caps_stripped,NULL,NULL,$cost_usd)`,
   );
   const upsert = db.query(
     `INSERT INTO usage_daily (day, machine_id, model, client, requests, errors, input_uncached, cache_read, cache_write, output, reasoning,
@@ -129,7 +132,7 @@ export const createStore = (db: Database, tz: string): Store => {
        ttft_sum_ms=ttft_sum_ms+excluded.ttft_sum_ms, ttft_n=ttft_n+excluded.ttft_n, cost_usd=cost_usd+excluded.cost_usd,
        cache_unknown_prompt=cache_unknown_prompt+excluded.cache_unknown_prompt`,
   );
-  const tx = db.transaction((rec: RequestRecord, cost: number | null) => {
+  const write = (rec: RequestRecord, cost: number | null) => {
     const d = day(rec.tsStart);
     ins.run({
       id: rec.id, ts_start: rec.tsStart, ts_upstream: rec.tsUpstream, ts_first_token: rec.tsFirstToken, ts_end: rec.tsEnd, day: d,
@@ -139,8 +142,7 @@ export const createStore = (db: Database, tz: string): Store => {
       cache_write: rec.cacheWrite, output: rec.output, reasoning: rec.reasoning, prompt_total: rec.promptTotal, total: rec.total,
       usage_source: rec.usageSource, cache_source: rec.cacheSource, context_window: rec.contextWindow, ttft_ms: rec.ttftMs, decode_ms: rec.decodeMs,
       prefill_tps: rec.prefillTps, decode_tps: rec.decodeTps, engine_queue_ms: rec.engineQueueMs, engine_prefill_ms: rec.enginePrefillMs,
-      engine_decode_ms: rec.engineDecodeMs, caps_stripped: JSON.stringify(rec.capsStripped), chunk_time0: rec.chunkTime0,
-      chunk_dt: rec.chunkDt ? JSON.stringify(rec.chunkDt) : null, cost_usd: cost,
+      engine_decode_ms: rec.engineDecodeMs, caps_stripped: JSON.stringify(rec.capsStripped), cost_usd: cost,
     });
     if (rec.via !== "local") return;
     const measured = rec.usageSource !== "estimated" && rec.usageSource !== "none";
@@ -154,31 +156,59 @@ export const createStore = (db: Database, tz: string): Store => {
       ttft_sum_ms: measured && rec.ttftMs !== null ? rec.ttftMs : 0, ttft_n: measured && rec.ttftMs !== null ? 1 : 0, cost_usd: cost ?? 0,
       cache_unknown_prompt: known ? 0 : rec.promptTotal,
     });
-  });
+  };
   const checkIns = db.query("INSERT OR REPLACE INTO request_checks VALUES (?, ?, ?, ?, ?)");
-  const sampleIns = db.query("INSERT INTO engine_samples VALUES (?, ?, ?, ?, ?)");
+  let queue: (() => void)[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const flush = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (!queue.length) return;
+    const batch = queue;
+    queue = [];
+    try {
+      db.transaction(() => {
+        for (const w of batch)
+          try {
+            w();
+          } catch (e) {
+            onError(e);
+          }
+      })();
+    } catch (e) {
+      onError(e);
+    }
+  };
+  const enqueue = (w: () => void) => {
+    queue.push(w);
+    if (queue.length >= 256) flush();
+    else timer ??= setTimeout(flush, FLUSH_MS);
+  };
+
   const priceRow = (r: Row): Price => ({ model: String(r.model), input: Number(r.input), output: Number(r.output), cacheRead: Number(r.cache_read), cacheWrite: Number(r.cache_write) });
   const parse = (s: unknown) => (typeof s === "string" ? (JSON.parse(s) as unknown) : null);
   return {
-    insert: (rec, cost) => tx(rec, cost),
-    check: (id, before, after, deltas, agreement) => {
-      checkIns.run(id, JSON.stringify(before), JSON.stringify(after), JSON.stringify(deltas), JSON.stringify(agreement));
-    },
+    insert: (rec, cost) => enqueue(() => write(rec, cost)),
+    check: (id, before, after, deltas, agreement) =>
+      enqueue(() => checkIns.run(id, JSON.stringify(before), JSON.stringify(after), JSON.stringify(deltas), JSON.stringify(agreement))),
+    flush,
+    queued: () => queue.length,
     getCheck: (id) => {
+      flush();
       const r = db.query<Row, [string]>("SELECT * FROM request_checks WHERE request_id = ?").get(id);
       return r ? { before: parse(r.before), after: parse(r.after), deltas: parse(r.deltas), agreement: parse(r.agreement) } : null;
     },
     get: (id) => {
+      flush();
       const r = db.query<Row, [string]>("SELECT * FROM requests WHERE id = ?").get(id);
       return r ? rowToRecord(r) : null;
     },
-    recent: (limit, before) =>
-      db
+    recent: (limit, before) => {
+      flush();
+      return db
         .query<Row, [number, number]>("SELECT * FROM requests WHERE ts_start < ? ORDER BY ts_start DESC LIMIT ?")
         .all(before ?? Number.MAX_SAFE_INTEGER, Math.max(1, Math.min(1000, limit)))
-        .map(rowToRecord),
-    sample: (s) => {
-      sampleIns.run(s.ts, s.modelId, s.engine, JSON.stringify(s.counters), JSON.stringify(s.gauges));
+        .map(rowToRecord);
     },
     prices: () => db.query<Row, []>("SELECT * FROM prices ORDER BY model").all().map(priceRow),
     price: (model) => {
@@ -189,13 +219,11 @@ export const createStore = (db: Database, tz: string): Store => {
       db.query("INSERT OR REPLACE INTO prices VALUES (?, ?, ?, ?, ?)").run(p.model, p.input, p.output, p.cacheRead, p.cacheWrite);
     },
     prune: () => {
-      const now = Date.now();
-      db.query("DELETE FROM requests WHERE ts_start < ?").run(now - 90 * DAY_MS);
-      db.query("DELETE FROM engine_samples WHERE ts < ?").run(now - 7 * DAY_MS);
-      db.query("DELETE FROM request_checks WHERE request_id NOT IN (SELECT request_id FROM request_checks ORDER BY rowid DESC LIMIT 1000)").run();
-      db.query(
-        "UPDATE requests SET chunk_dt = NULL WHERE chunk_dt IS NOT NULL AND id NOT IN (SELECT id FROM requests WHERE chunk_dt IS NOT NULL ORDER BY ts_start DESC LIMIT 2000)",
-      ).run();
+      flush();
+      db.query("DELETE FROM requests WHERE ts_start < ?").run(Date.now() - 90 * DAY_MS);
+      db.query(`DELETE FROM requests WHERE ts_start < (SELECT ts_start FROM requests ORDER BY ts_start DESC LIMIT 1 OFFSET ${MAX_ROWS})`).run();
+      db.query("DELETE FROM request_checks WHERE rowid <= (SELECT rowid FROM request_checks ORDER BY rowid DESC LIMIT 1 OFFSET 1000)").run();
+      checkpoint(db);
     },
     day,
   };

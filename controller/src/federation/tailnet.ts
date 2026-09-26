@@ -3,6 +3,7 @@ import type { TailnetCandidate } from "@local-studio/contracts";
 import { SERVICE } from "@local-studio/contracts";
 import type { Ctx } from "../context";
 import { which } from "../core/exec";
+import { pool } from "../discovery/util";
 
 interface TsNode {
   HostName?: string;
@@ -27,19 +28,6 @@ const tailscaleBin = async (): Promise<string | null> => {
   const found = await which("tailscale", ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin"]);
   if (found) return found;
   return existsSync(MAC_APP_CLI) ? MAC_APP_CLI : null;
-};
-
-const pool = async <T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Promise<R[]> => {
-  const out: R[] = new Array(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      out[i] = await fn(items[i] as T);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(n, items.length) }, worker));
-  return out;
 };
 
 export const discoverTailnet = async (

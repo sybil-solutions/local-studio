@@ -15,7 +15,7 @@ interface Pending {
   handoff: Promise<EngineSample | null> | null;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 const msOf = (s: number | null): number | null => (s === null ? null : Math.round(s * 1000));
 
 export interface Attribution {
@@ -103,7 +103,7 @@ export const createAttribution = (ctx: Ctx, store: Store, scraper: Scraper, find
       const m = p ? find(p.modelId) : undefined;
       if (p?.before && m) {
         let after: EngineSample | null = null;
-        await sleep(60);
+        await Bun.sleep(60);
         const beforeSuccess = successTotal(p.before.counters);
         const aborted = rec.errorCode === "ABORTED";
         const settled = (a: EngineSample): boolean => {
@@ -116,7 +116,7 @@ export const createAttribution = (ctx: Ctx, store: Store, scraper: Scraper, find
           const handed = p.handoff;
           after = handed ? await handed : await scraper.scrape(m, 250);
           if (handed || (after && settled(after))) break;
-          await sleep(100);
+          await Bun.sleep(100);
           if (p.handoff) {
             after = await p.handoff;
             break;
@@ -125,16 +125,13 @@ export const createAttribution = (ctx: Ctx, store: Store, scraper: Scraper, find
         rec = attribute(rec, p, after, cachedReported);
       } else if (p) store.check(rec.id, null, null, null, { exclusive: false, reasons: p.reasons });
     } catch (e) {
-      ctx.log.warn(`metrics attribution ${h.id}: ${String(e)}`);
+      ctx.log.warn(`metrics attribution ${h.id}: ${String(e)}`, "metrics.attribution");
     } finally {
       release(h, p);
     }
     const cost = blendedCost(rec);
-    try {
-      store.insert(rec, cost);
-    } catch (e) {
-      ctx.log.error(`metrics insert ${h.id}: ${String(e)}`);
-    }
+    store.insert(rec, cost);
+    ctx.obs.count(`requests.${rec.errorCode ?? "ok"}`);
     ctx.bus.emit({ type: "request", data: rec });
     return rec;
   };

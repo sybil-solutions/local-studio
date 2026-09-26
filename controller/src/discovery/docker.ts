@@ -11,12 +11,6 @@ export interface ImageInfo {
   Env: string[];
 }
 
-export const dockerStatus = async (ctx: Ctx): Promise<DockerStatus> => {
-  if (!Bun.which("docker")) return "absent";
-  const r = await ctx.exec(["docker", "info", "--format", "{{.ID}}"], { timeoutMs: 3000 });
-  return r.code === 0 && r.stdout.trim() ? "ok" : "unavailable";
-};
-
 export const inspectContainers = async (ctx: Ctx, ids: string[]): Promise<Inspect[]> => {
   if (!ids.length) return [];
   const r = await ctx.exec(["docker", "inspect", ...ids], { timeoutMs: 8000 });
@@ -28,11 +22,21 @@ export const inspectContainers = async (ctx: Ctx, ids: string[]): Promise<Inspec
   }
 };
 
-export const runningContainers = async (ctx: Ctx): Promise<Inspect[]> => {
+let downUntil = 0;
+let lastOk = { at: 0, containers: [] as Inspect[] };
+
+export const dockerScan = async (ctx: Ctx): Promise<{ docker: DockerStatus; containers: Inspect[] }> => {
+  if (!Bun.which("docker")) return { docker: "absent", containers: [] };
+  const stale = Date.now() - lastOk.at < 300_000 ? lastOk.containers : [];
+  if (Date.now() < downUntil) return { docker: "unavailable", containers: stale };
   const r = await ctx.exec(["docker", "ps", "-q", "--no-trunc"], { timeoutMs: 5000 });
-  if (r.code !== 0) return [];
+  if (r.code !== 0) {
+    if (!stale.length) downUntil = Date.now() + 60_000;
+    return { docker: "unavailable", containers: stale };
+  }
   const ids = r.stdout.split("\n").map((s) => s.trim()).filter(Boolean);
-  return (await inspectContainers(ctx, ids)).filter((c) => c.State?.Running);
+  lastOk = { at: Date.now(), containers: (await inspectContainers(ctx, ids)).filter((c) => c.State?.Running) };
+  return { docker: "ok", containers: lastOk.containers };
 };
 
 const imageCache = new Map<string, ImageInfo | null>();

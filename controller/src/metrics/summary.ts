@@ -43,8 +43,8 @@ export const AGG = `
   SUM(CASE WHEN ${MEASURED} AND ttft_ms IS NOT NULL THEN 1 ELSE 0 END) AS ttft_n,
   SUM(CASE WHEN via = 'local' THEN cost_usd END) AS cost_usd`;
 
-type AggRow = Record<string, number | string | null>;
-const n = (v: unknown): number => (typeof v === "number" ? v : 0);
+export type AggRow = Record<string, number | string | null>;
+export const n = (v: unknown): number => (typeof v === "number" ? v : 0);
 
 export const sliceOf = (key: string, r: AggRow): MetricsSlice => {
   const b = { inputUncached: n(r.input_uncached), cacheRead: n(r.cache_read), cacheWrite: n(r.cache_write), output: n(r.output), reasoning: n(r.reasoning) };

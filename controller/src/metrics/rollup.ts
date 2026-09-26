@@ -1,10 +1,8 @@
 import type { Database } from "bun:sqlite";
 import type { Activity, ModelCardStats, RunningModel } from "@local-studio/contracts";
 import { ACTIVITY_DAYS, ratio } from "@local-studio/contracts";
-import { AGG, sliceOf } from "./summary";
+import { AGG, type AggRow, n, sliceOf } from "./summary";
 
-type R = Record<string, number | string | null>;
-const n = (v: unknown): number => (typeof v === "number" ? v : 0);
 const DAY_MS = 86_400_000;
 
 const addDays = (day: string, k: number): string => new Date(Date.parse(`${day}T12:00:00Z`) + k * DAY_MS).toISOString().slice(0, 10);
@@ -16,7 +14,7 @@ export const activity = (db: Database, machineId: string, today: string): Activi
   const start = addDays(monday, -19 * 7);
   const days = new Array<number>(ACTIVITY_DAYS).fill(0);
   const rows = db
-    .query<R, [string, string]>(
+    .query<AggRow, [string, string]>(
       "SELECT day, SUM(input_uncached + cache_read + cache_write + output) AS t FROM usage_daily WHERE machine_id = ? AND day >= ? GROUP BY day",
     )
     .all(machineId, start);
@@ -26,15 +24,15 @@ export const activity = (db: Database, machineId: string, today: string): Activi
   }
   const all =
     db
-      .query<R, [string]>(
+      .query<AggRow, [string]>(
         "SELECT SUM(requests) AS r, SUM(input_uncached + cache_read + cache_write + output) AS t, MIN(day) AS since FROM usage_daily WHERE machine_id = ? AND requests > 0",
       )
       .get(machineId) ?? {};
   const week =
     db
-      .query<R, [string, string]>("SELECT SUM(input_uncached + cache_read + cache_write + output) AS t FROM usage_daily WHERE machine_id = ? AND day > ?")
+      .query<AggRow, [string, string]>("SELECT SUM(input_uncached + cache_read + cache_write + output) AS t FROM usage_daily WHERE machine_id = ? AND day > ?")
       .get(machineId, addDays(today, -7))?.t ?? 0;
-  const last = db.query<R, [string]>("SELECT MAX(ts_end) AS l FROM requests WHERE machine_id = ? AND via = 'local'").get(machineId)?.l;
+  const last = db.query<AggRow, [string]>("SELECT MAX(ts_end) AS l FROM requests WHERE machine_id = ? AND via = 'local'").get(machineId)?.l;
   return {
     start,
     today: dayDiff(start, today),
@@ -52,11 +50,11 @@ const LINE_POINTS = 24;
 export const card = (db: Database, m: RunningModel, day: (ts: number) => string): ModelCardStats => {
   const now = Date.now();
   const base = "model = ? AND via = 'local'";
-  const sumSince = (from: number) => n(db.query<R, [string, number]>(`SELECT SUM(total) AS t FROM requests WHERE ${base} AND ts_start >= ?`).get(m.primaryModel, from)?.t);
-  const span = db.query<R, [string]>(`SELECT MIN(ts_start) AS a, MAX(ts_end) AS b, SUM(total) AS t FROM requests WHERE ${base}`).get(m.primaryModel) ?? {};
-  const week = sliceOf("7d", db.query<R, [string, number]>(`SELECT ${AGG} FROM requests WHERE ${base} AND ts_start >= ?`).get(m.primaryModel, now - 7 * DAY_MS) ?? {});
+  const sumSince = (from: number) => n(db.query<AggRow, [string, number]>(`SELECT SUM(total) AS t FROM requests WHERE ${base} AND ts_start >= ?`).get(m.primaryModel, from)?.t);
+  const span = db.query<AggRow, [string]>(`SELECT MIN(ts_start) AS a, MAX(ts_end) AS b, SUM(total) AS t FROM requests WHERE ${base}`).get(m.primaryModel) ?? {};
+  const week = sliceOf("7d", db.query<AggRow, [string, number]>(`SELECT ${AGG} FROM requests WHERE ${base} AND ts_start >= ?`).get(m.primaryModel, now - 7 * DAY_MS) ?? {});
   const day24 = db
-    .query<R, [string, number]>(`SELECT COUNT(*) AS c, SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS e FROM requests WHERE ${base} AND ts_start >= ?`)
+    .query<AggRow, [string, number]>(`SELECT COUNT(*) AS c, SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS e FROM requests WHERE ${base} AND ts_start >= ?`)
     .get(m.primaryModel, now - DAY_MS) ?? {};
   const line = new Array<number>(LINE_POINTS).fill(0);
   const a = typeof span.a === "number" ? span.a : null;
@@ -64,7 +62,7 @@ export const card = (db: Database, m: RunningModel, day: (ts: number) => string)
   if (a !== null && b !== null) {
     const width = Math.max(1, b - a + 1);
     const buckets = db
-      .query<R, [number, number, number, string]>(
+      .query<AggRow, [number, number, number, string]>(
         `SELECT MIN(?, CAST((ts_start - ?) * ${LINE_POINTS} / ? AS INTEGER)) AS k, SUM(total) AS t FROM requests WHERE ${base} GROUP BY k`,
       )
       .all(LINE_POINTS - 1, a, width, m.primaryModel);

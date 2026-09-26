@@ -63,8 +63,6 @@ export interface RequestRecord extends TokenBuckets {
   enginePrefillMs: number | null;
   engineDecodeMs: number | null;
   capsStripped: string[];
-  chunkTime0: number | null;
-  chunkDt: number[] | null;
 }
 
 export interface EngineCounters {

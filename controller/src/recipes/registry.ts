@@ -102,7 +102,6 @@ const flatten = (doc: V2Doc, source: string, commit: string | null, fetchedAt: n
 
 export interface Registry {
   load(opts?: { sync?: boolean }): Promise<LoadedCatalog>;
-  record(id: string): Promise<Record<string, unknown> | null>;
   modelInstanceIds(): Promise<string[]>;
   git(args: string[], timeoutMs: number, cwd?: string): ReturnType<Ctx["exec"]>;
   ensureClone(): Promise<boolean>;
@@ -216,22 +215,6 @@ export const createRegistry = (ctx: Ctx): Registry => {
     return p;
   };
 
-  const record = async (id: string): Promise<Record<string, unknown> | null> => {
-    if (!RECIPE_ID.test(id)) return null;
-    const path = `registry/recipe/${id}.json`;
-    if (existsSync(join(dir, ".git"))) {
-      const r = await git(["show", `origin/main:${path}`], 60_000);
-      if (r.code === 0) return JSON.parse(r.stdout) as Record<string, unknown>;
-      if (/does not exist|exists on disk, but not in/.test(r.stderr)) return null;
-    }
-    try {
-      const res = await ctx.fetch(`${rawBase}/${path}`, { timeoutMs: 15_000 });
-      return res.ok ? ((await res.json()) as Record<string, unknown>) : null;
-    } catch {
-      return null;
-    }
-  };
-
   const modelInstanceIds = async (): Promise<string[]> => {
     const commit = current?.catalog.registryCommit ?? null;
     if (instanceIds && instanceIds.commit === commit) return instanceIds.ids;
@@ -246,5 +229,5 @@ export const createRegistry = (ctx: Ctx): Registry => {
     return ids;
   };
 
-  return { load, record, modelInstanceIds, git, ensureClone };
+  return { load, modelInstanceIds, git, ensureClone };
 };

@@ -16,22 +16,18 @@ export const parseProm = (text: string): Prom => {
     if (!line || line.startsWith("#")) continue;
     const brace = line.indexOf("{");
     const space = line.indexOf(" ");
-    let name: string;
-    let labels: Record<string, string> = {};
-    let rest: string;
-    if (brace >= 0 && (space < 0 || brace < space)) {
+    const labelled = brace >= 0 && (space < 0 || brace < space);
+    const name = line.slice(0, labelled ? brace : space);
+    if (space < 0 || name.endsWith("_bucket") || name.endsWith("_created")) continue;
+    const labels: Record<string, string> = {};
+    let rest = line.slice(space + 1);
+    if (labelled) {
       const close = line.lastIndexOf("}");
       if (close < brace) continue;
-      name = line.slice(0, brace);
       for (const m of line.slice(brace + 1, close).matchAll(LABEL)) labels[m[1]!] = m[2]!.replace(/\\(.)/g, (_s, c: string) => (c === "n" ? "\n" : c));
-      rest = line.slice(close + 1).trim();
-    } else {
-      if (space < 0) continue;
-      name = line.slice(0, space);
-      rest = line.slice(space + 1).trim();
+      rest = line.slice(close + 1);
     }
-    if (name.endsWith("_created")) continue;
-    const v = rest.split(/\s+/)[0] ?? "";
+    const v = rest.trim().split(/\s+/)[0] ?? "";
     const value = v === "+Inf" ? Infinity : v === "-Inf" ? -Infinity : Number(v);
     if (Number.isNaN(value)) continue;
     let list = out.get(name);
@@ -147,4 +143,3 @@ export const normalise = (p: Prom): { engine: "vllm" | "sglang" | "llamacpp" | n
   return { engine, counters: c, gauges: g };
 };
 
-export const cacheConfig = (p: Prom): Record<string, string> | null => p.get("vllm:cache_config_info")?.[0]?.labels ?? null;

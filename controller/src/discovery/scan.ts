@@ -1,6 +1,6 @@
 import type { CacheInfo, Dialect, Endpoint, Engine, Gpu, ModelState, RunningModel, RuntimeRef, SpecDecodeInfo, Watchdog } from "@local-studio/contracts";
 import type { Ctx, RuntimeView } from "../context";
-import { containerName, digestOf, dockerStatus, imageInfo, type Inspect, publishedPorts, runningContainers, wantsGpu } from "./docker";
+import { containerName, digestOf, dockerScan, imageInfo, type Inspect, publishedPorts, wantsGpu } from "./docker";
 import { computeGroups } from "./groups";
 import { type ComputeApp, type HardwareList, resolveGpuRefs, scanGpus } from "./gpus";
 import { type Fingerprint, fingerprint, get, type Health, healthCheck, type ModelEntry, PROBE_CONCURRENCY, PROBE_MAX, type ProbeCache } from "./probe";
@@ -173,9 +173,8 @@ const signalBlock = (uid: number | undefined): string | null =>
 export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null, excluded: Set<number>): Promise<ScanResult> => {
   const t0 = performance.now();
   const errors: string[] = [];
-  const [gs, procs, listeners, docker] = await Promise.all([scanGpus(ctx, hw), listProcs(ctx), listListeners(ctx), dockerStatus(ctx)]);
+  const [gs, procs, listeners, { docker, containers }] = await Promise.all([scanGpus(ctx, hw), listProcs(ctx), listListeners(ctx), dockerScan(ctx)]);
   if (gs.error) errors.push(gs.error);
-  const containers = docker === "ok" ? await runningContainers(ctx) : [];
   const statePids = new Map<number, Inspect>(containers.filter((c) => c.State.Pid > 0).map((c) => [c.State.Pid, c]));
   const gpuByUuid = new Map(gs.gpus.map((g) => [g.uuid, g]));
 

@@ -9,7 +9,7 @@ import { ChatAggregator, ChatUpstreamDecoder, chatErrorBody, chatErrorFrame, dec
 import { MessagesEncoder, decodeMessagesRequest, messagesErrorBody } from "./dialects/messages";
 import { ResponsesEncoder, decodeResponsesRequest, responsesErrorBody } from "./dialects/responses";
 import type { Route } from "./route-model";
-import { gatewayModels, refreshDevModels, resolveModel } from "./route-model";
+import { gatewayModels, resolveModel } from "./route-model";
 import { CONNECT_TIMEOUT_MS, openUpstream, toChatBody } from "./upstream";
 
 type C = Context<Env>;
@@ -17,6 +17,7 @@ type C = Context<Env>;
 const PATHS: Record<Dialect, string> = { chat: "/v1/chat/completions", responses: "/v1/responses", messages: "/v1/messages" };
 const KEEPALIVE_MS = 15_000;
 const PEER_NONSTREAM_MS = 6 * 3600_000;
+const STALL_MS = 15 * 60_000;
 const enc = new TextEncoder();
 
 const errorBody = (d: Dialect, code: ErrorCode, message: string, status: number) =>
@@ -40,7 +41,11 @@ const ZERO: TokenBuckets = { inputUncached: 0, cacheRead: 0, cacheWrite: 0, outp
 
 export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
   const r = new Hono<Env>();
-  const loggedKeys = new Set<string>();
+  const firstScan = async () => {
+    if (svc.runtime.view().discovery.lastScanAt === null) await svc.runtime.rescan();
+  };
+  let inflight = 0;
+  ctx.obs.gauge("gateway.inflight", () => inflight);
 
   const draft = (
     h: RequestHandle,
@@ -90,8 +95,6 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
       prefillTps: usageSource === "estimated" ? null : prefillTps(b.inputUncached, t),
       decodeTps: usageSource === "estimated" ? null : decodeTps(b.output, dMs),
       capsStripped: m.capsStripped,
-      chunkTime0: x.chunkTime0 ?? null,
-      chunkDt: x.chunkDt ?? null,
       cachedReported: x.cachedReported ?? false,
     };
   };
@@ -103,6 +106,7 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
   };
 
   const handle = async (c: C, dialect: Dialect): Promise<Response> => {
+    const t0 = performance.now();
     try {
       (c.env as { timeout?: (req: Request, s: number) => void } | undefined)?.timeout?.(c.req.raw, 0);
     } catch {}
@@ -125,7 +129,9 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
     };
     if (!isObj(body)) return fail(m, 400, "INVALID_REQUEST", "request body must be a JSON object");
     if (!m.model) return fail(m, 400, "INVALID_REQUEST", "model is required");
-    const route = await resolveModel(ctx, svc, m.model);
+    await firstScan();
+    let route = resolveModel(svc, m.model);
+    if (route.kind === "missing" && Date.now() - (svc.runtime.view().discovery.lastScanAt ?? 0) > 3000) route = (await svc.runtime.rescan(), resolveModel(svc, m.model));
     if (route.kind === "missing") return fail(m, 404, "MODEL_NOT_FOUND", `model '${m.model}' is not served here or on any connected machine`);
     if (route.kind === "loading") {
       m.model = route.served;
@@ -133,7 +139,7 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
     }
     m.model = route.served;
     if (route.kind === "peer") return forwardPeer(c, m, body, route);
-    return runLocal(c, m, body, route.model, route.served);
+    return runLocal(c, m, body, route.model, route.served, t0);
   };
 
   const forwardPeer = async (c: C, m: Meta, body: Json, route: Extract<Route, { kind: "peer" }>): Promise<Response> => {
@@ -206,7 +212,7 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
     return new Response(out, { status, headers });
   };
 
-  const runLocal = async (c: C, m: Meta, body: Json, model: RunningModel, served: string): Promise<Response> => {
+  const runLocal = async (c: C, m: Meta, body: Json, model: RunningModel, served: string, t0: number): Promise<Response> => {
     let upBody: Json;
     let wantsUsage = false;
     let encoder: Encoder | null = null;
@@ -233,13 +239,11 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
       if (e instanceof DialectError) return fail(m, e.status, e.code, e.message, { modelId: model.id, engine: model.engine });
       throw e;
     }
-    const keyTag = m.dialect;
-    if (!loggedKeys.has(keyTag)) {
-      loggedKeys.add(keyTag);
-      ctx.log.info(`gateway debug: upstream body keys for ${m.dialect} → ${model.id}: ${Object.keys(upBody).sort().join(",")} (capsStripped=${JSON.stringify(m.capsStripped)})`);
-    }
     const base = { modelId: model.id, engine: model.engine, contextWindow: model.contextWindow };
+    const tb = performance.now();
     const h = await svc.metrics.begin(model.id, m.tsStart);
+    ctx.obs.observe("gateway.attribution_begin_ms", performance.now() - tb);
+    ctx.obs.observe("gateway.pre_upstream_ms", performance.now() - t0);
     m.tsStart = Date.now();
     const outHeaders: Record<string, string> = { "x-request-id": h.id };
     let open: Awaited<ReturnType<typeof openUpstream>>;
@@ -273,12 +277,21 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
     const agg = m.dialect === "chat" && !m.stream ? new ChatAggregator(() => dec.reasoningField) : null;
     let clientGone = false;
     let lastWrite = Date.now();
+    let lastRead = Date.now();
     let sink: (s: string) => void = () => {};
+    let pending = "";
     const emit = (s: string) => {
-      if (!s) return;
-      lastWrite = Date.now();
-      sink(s);
+      pending += s;
     };
+    const flushOut = () => {
+      if (!pending) return;
+      lastWrite = Date.now();
+      sink(pending);
+      pending = "";
+    };
+    const stall = setInterval(() => {
+      if (Date.now() - lastRead > STALL_MS) open.abort.abort(new DOMException(`no bytes from upstream for ${STALL_MS / 60000} min`, "TimeoutError"));
+    }, 30_000);
 
     const pump = async (): Promise<{ rec: RequestRecord; finish: CFinish | null; error: { code: ErrorCode; message: string; status: number } | null; rawUsage: unknown }> => {
       const parser = new SseParser();
@@ -288,18 +301,20 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
       let rawUsage: unknown = null;
       let finish: CFinish | null = null;
       let first: number | null = null;
-      const times: number[] = [];
       let heldUsage: Json | null = null;
       let upstreamError: Extract<CEvent, { t: "error" }> | null = null;
       let transport: string | null = null;
       let sawDone = false;
       let contentEvents = 0;
       let tsEnd = Date.now();
+      inflight++;
       if (encoder && m.stream) emit((encoder as ResponsesEncoder | MessagesEncoder).begin());
       try {
         outer: for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
+          const tc = performance.now();
+          lastRead = Date.now();
           for (const ev of parser.push(td.decode(value, { stream: true }))) {
             if (ev.data === "[DONE]") {
               sawDone = true;
@@ -318,7 +333,6 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
             for (const e of events) {
               if (isContentEvent(e)) {
                 first ??= now;
-                times.push(now);
                 contentEvents++;
               }
               if (e.t === "usage") {
@@ -337,12 +351,17 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
               else emit(`${ev.raw}\n\n`);
             }
           }
+          flushOut();
+          ctx.obs.observe("gateway.chunk_us", (performance.now() - tc) * 1000);
         }
         tsEnd = Date.now();
         if (sawDone) void reader.cancel().catch(() => {});
       } catch (e) {
         tsEnd = Date.now();
         transport = String(e);
+      } finally {
+        clearInterval(stall);
+        inflight--;
       }
       const aborted = clientGone || c.req.raw.signal.aborted;
       let error: { code: ErrorCode; message: string; status: number } | null = null;
@@ -363,8 +382,6 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
         })();
         usage = { ...ZERO, inputUncached: req ? estimateTokens(req) : 0, output: contentEvents };
       }
-      const chunkTime0 = times[0] ?? null;
-      const chunkDt = times.length ? times.map((t, i) => (i === 0 ? 0 : t - times[i - 1]!)) : null;
       const recFinish: Finish = error ? (error.code === "ABORTED" ? "aborted" : error.code === "EMPTY_RESPONSE" ? (finish === "tool_calls" ? "tool_calls" : finish === "length" ? "length" : "stop") : "error") : finish === "content_filter" || !finish ? "stop" : finish;
       const d = draft(h, m, {
         ...base,
@@ -378,11 +395,9 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
         errorMessage: error?.message ?? null,
         usageSource,
         cachedReported: dec.cachedReported(),
-        chunkTime0,
-        chunkDt,
       });
       const rec = svc.metrics.preview(h, d);
-      void svc.metrics.finish(h, d).catch((e) => ctx.log.error(`metrics finish ${h.id}: ${String(e)}`));
+      void svc.metrics.finish(h, d).catch((e) => ctx.log.error(`metrics finish ${h.id}: ${String(e)}`, "metrics.finish"));
       if (m.stream && !aborted) {
         if (m.dialect === "chat") {
           if (heldUsage && wantsUsage) emit(`data: ${JSON.stringify(rec.cacheSource ? patchUsageChunk(heldUsage, rec) : heldUsage)}\n\n`);
@@ -392,6 +407,7 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
           if (error && error.code !== "EMPTY_RESPONSE") emit(encoder.fail(error.code, error.message));
           else emit(encoder.finish(rec, finish));
         }
+        flushOut();
       }
       return { rec, finish, error, rawUsage };
     };
@@ -425,10 +441,10 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
           }
         };
         keepalive = setInterval(() => {
-          if (Date.now() - lastWrite >= KEEPALIVE_MS - 50) emit(": keepalive\n\n");
+          if (Date.now() - lastWrite >= KEEPALIVE_MS - 50) sink(": keepalive\n\n");
         }, KEEPALIVE_MS);
         void pump()
-          .catch((e) => ctx.log.error(`gateway pump ${h.id}: ${String(e)}`))
+          .catch((e) => ctx.log.error(`gateway pump ${h.id}: ${String(e)}`, "gateway.pump"))
           .finally(() => {
             clearInterval(keepalive);
             closed = true;
@@ -457,7 +473,7 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
     const body = await c.req.json().catch(() => null);
     if (!isObj(body)) return errorJson("messages", 400, "INVALID_REQUEST", "request body must be a JSON object");
     const req = decodeMessagesRequest(body);
-    const route = req.model ? await resolveModel(ctx, svc, req.model) : ({ kind: "missing" } as const);
+    const route = req.model ? resolveModel(svc, req.model) : ({ kind: "missing" } as const);
     if (route.kind === "peer") {
       try {
         const res = await svc.peers.fetch(route.peer.id, "/v1/messages/count_tokens", {
@@ -489,7 +505,7 @@ export const gatewayRoutes = (ctx: Ctx, svc: Services): Hono<Env> => {
   });
 
   r.get("/v1/models", async (c) => {
-    if (process.env.LOCAL_STUDIO_DEV_UPSTREAM) await refreshDevModels(ctx);
+    await firstScan();
     const list = gatewayModels(ctx, svc);
     if (c.req.header("anthropic-version"))
       return c.json({

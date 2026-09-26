@@ -106,7 +106,8 @@ export const createPoller = (ctx: Ctx, store: PeerStore): Poller => {
   };
 
   const round = async () => {
-    await Promise.all([...states.keys()].map(pollOne));
+    if (!states.size) return;
+    await ctx.obs.time("federation.poll_ms", Promise.all([...states.keys()].map(pollOne)));
     flush();
   };
 

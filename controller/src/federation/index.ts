@@ -4,7 +4,7 @@ import { ConnectPeerBody } from "@local-studio/contracts";
 import type { Ctx, Env, Module, PeerService, Services } from "../context";
 import { buildSnapshot } from "../core/snapshot";
 import { emptyActivity } from "../metrics";
-import { PeerError, createPeerStore, toPeer } from "./peers";
+import { createPeerStore, toPeer } from "./peers";
 import { createPoller } from "./poll";
 import { cleanRequestHeaders, proxyToPeer, upstreamFetch } from "./proxy";
 import { discoverTailnet } from "./tailnet";
@@ -118,41 +118,26 @@ export const createFederation = (ctx: Ctx, svc: Services): Module<PeerService> =
   };
 
   const routes = new Hono<Env>();
-  const err = (e: unknown) => {
-    if (e instanceof PeerError) return Response.json({ error: { code: e.code, message: e.message } }, { status: e.status });
-    return Response.json({ error: { code: "INTERNAL", message: e instanceof Error ? e.message : String(e) } }, { status: 500 });
-  };
-
   routes.get("/api/machines", (c) => c.json(service.list()));
 
   routes.post("/api/machines", async (c) => {
-    let raw: unknown;
-    try {
-      raw = await c.req.json();
-    } catch {
-      return c.json({ error: { code: "BAD_REQUEST", message: "body must be JSON" } }, 400);
-    }
-    const parsed = ConnectPeerBody.safeParse(raw);
+    const parsed = ConnectPeerBody.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: { code: "BAD_REQUEST", message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") } }, 400);
-    try {
-      const { row, snapshot, adminKey } = await store.connect(parsed.data);
-      if (adminKey) ctx.log.warn(`peer ${row.name}: connected with its admin key; issue a scoped one there with \`local-studio key --federation\` and reconnect`);
-      poller.sync();
-      const s = poller.states.get(row.id);
-      if (s) {
-        s.snapshot = snapshot;
-        s.online = true;
-        s.misses = 0;
-        s.error = null;
-        s.version = snapshot.machine?.version ?? null;
-      }
-      ctx.log.info(`peer connected: ${row.name} ${row.base_url} (${row.id})`);
-      if (s) ctx.bus.emit({ type: "peer", data: toPeer(s) });
-      ctx.bus.emit({ type: "fleet", data: fleet() });
-      return c.json(s ? { ...toPeer(s), ...(adminKey ? { warning: "this is the peer's admin key; a scoped key from `local-studio key --federation` limits what this hub can do there" } : {}) } : null, 201);
-    } catch (e) {
-      return err(e);
+    const { row, snapshot, adminKey } = await store.connect(parsed.data);
+    if (adminKey) ctx.log.warn(`peer ${row.name}: connected with its admin key; issue a scoped one there with \`local-studio key --federation\` and reconnect`);
+    poller.sync();
+    const s = poller.states.get(row.id);
+    if (s) {
+      s.snapshot = snapshot;
+      s.online = true;
+      s.misses = 0;
+      s.error = null;
+      s.version = snapshot.machine?.version ?? null;
     }
+    ctx.log.info(`peer connected: ${row.name} ${row.base_url} (${row.id})`);
+    if (s) ctx.bus.emit({ type: "peer", data: toPeer(s) });
+    ctx.bus.emit({ type: "fleet", data: fleet() });
+    return c.json(s ? { ...toPeer(s), ...(adminKey ? { warning: "this is the peer's admin key; a scoped key from `local-studio key --federation` limits what this hub can do there" } : {}) } : null, 201);
   });
 
   routes.delete("/api/machines/:id", (c) => {

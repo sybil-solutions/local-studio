@@ -82,7 +82,6 @@ export const createPrOpener = (ctx: Ctx, svc: Services, registry: Registry, expo
     const pr = await ctx.exec(gh, { timeoutMs: 60_000, cwd: worktree });
     if (pr.code !== 0) throw new HttpError(502, "GH_PR", `gh pr create failed: ${pr.timedOut ? "timed out" : tail(pr.stderr)}`);
     const url = pr.stdout.trim().split("\n").filter((l) => l.startsWith("https://")).pop() ?? pr.stdout.trim();
-    ctx.db.query("INSERT INTO recipe_prs (at, model_id, recipe_id, branch, url) VALUES (?, ?, ?, ?, ?)").run(Date.now(), modelId, id, branch, url);
     return { url, branch, files };
   };
   return { openPr };

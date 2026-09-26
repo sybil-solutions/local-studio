@@ -1,6 +1,6 @@
 export class HttpError extends Error {
   constructor(
-    readonly status: 400 | 403 | 404 | 409 | 422 | 500 | 502 | 503,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 422 | 500 | 502 | 503,
     readonly code: string,
     message: string,
   ) {
@@ -67,14 +67,7 @@ export const intOrNull = (s: string | null | undefined): number | null => {
   return Number.isFinite(n) ? Math.round(n) : null;
 };
 
-export const parseJson = <T>(s: string | null): T | null => {
-  if (!s) return null;
-  try {
-    return JSON.parse(s) as T;
-  } catch {
-    return null;
-  }
-};
+export { parseJson } from "../discovery/util";
 
 export const scrubArgv = (argv: string[]): { argv: string[]; dropped: string[] } => {
   const out: string[] = [];

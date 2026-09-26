@@ -5,6 +5,7 @@ import type { Health, Peer, Snapshot } from "@local-studio/contracts";
 import { SERVICE } from "@local-studio/contracts";
 import type { Ctx } from "../context";
 import { migrate } from "../core/db";
+import { HttpError } from "../recipes/util";
 
 export interface PeerRow {
   id: string;
@@ -26,20 +27,10 @@ export interface PeerState {
   persistedSeenAt: number;
 }
 
-export class PeerError extends Error {
-  constructor(
-    readonly status: 400 | 401 | 404 | 409 | 502,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
 export const normaliseUrl = (raw: string): string => {
   const u = new URL(raw);
-  if (u.protocol !== "http:" && u.protocol !== "https:") throw new PeerError(400, "BAD_URL", "peer url must be http or https");
-  if (u.username || u.password) throw new PeerError(400, "BAD_URL", "peer url must not carry credentials");
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new HttpError(400, "BAD_URL", "peer url must be http or https");
+  if (u.username || u.password) throw new HttpError(400, "BAD_URL", "peer url must not carry credentials");
   return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, "")}`;
 };
 
@@ -106,28 +97,28 @@ export const createPeerStore = (ctx: Ctx): PeerStore => {
       try {
         const res = await ctx.fetch(`${baseUrl}/health`, { method: "GET", timeoutMs: 5000 });
         const body = (await readJson(res)) as Partial<Health> | null;
-        if (!res.ok || !body) throw new PeerError(502, "PEER_UNREACHABLE", `${baseUrl}/health answered ${res.status}`);
+        if (!res.ok || !body) throw new HttpError(502, "PEER_UNREACHABLE", `${baseUrl}/health answered ${res.status}`);
         if (body.service !== SERVICE || !body.machineId)
-          throw new PeerError(400, "NOT_LOCAL_STUDIO", `${baseUrl} is not a Local Studio controller (legacy controller or other service)`);
+          throw new HttpError(400, "NOT_LOCAL_STUDIO", `${baseUrl} is not a Local Studio controller (legacy controller or other service)`);
         health = body as Health;
       } catch (e) {
-        if (e instanceof PeerError) throw e;
-        throw new PeerError(502, "PEER_UNREACHABLE", `${baseUrl}/health: ${e instanceof Error ? e.message : String(e)}`);
+        if (e instanceof HttpError) throw e;
+        throw new HttpError(502, "PEER_UNREACHABLE", `${baseUrl}/health: ${e instanceof Error ? e.message : String(e)}`);
       }
-      if (health.machineId === ctx.identity.machineId) throw new PeerError(400, "SELF", "that URL is this controller");
+      if (health.machineId === ctx.identity.machineId) throw new HttpError(400, "SELF", "that URL is this controller");
       let snapshot: Snapshot;
       try {
         const res = await ctx.fetch(`${baseUrl}/api/snapshot`, { method: "GET", headers: { authorization: `Bearer ${key}` }, timeoutMs: 10_000 });
         if (res.status === 401 || res.status === 403) {
           await res.body?.cancel();
-          throw new PeerError(401, "PEER_AUTH", `peer ${health.name} rejected the key (HTTP ${res.status}); nothing was stored`);
+          throw new HttpError(401, "PEER_AUTH", `peer ${health.name} rejected the key (HTTP ${res.status}); nothing was stored`);
         }
         const body = (await readJson(res)) as Snapshot | null;
-        if (!res.ok || !body?.machine) throw new PeerError(502, "PEER_SNAPSHOT", `peer snapshot answered ${res.status}`);
+        if (!res.ok || !body?.machine) throw new HttpError(502, "PEER_SNAPSHOT", `peer snapshot answered ${res.status}`);
         snapshot = body;
       } catch (e) {
-        if (e instanceof PeerError) throw e;
-        throw new PeerError(502, "PEER_UNREACHABLE", `${baseUrl}/api/snapshot: ${e instanceof Error ? e.message : String(e)}`);
+        if (e instanceof HttpError) throw e;
+        throw new HttpError(502, "PEER_UNREACHABLE", `${baseUrl}/api/snapshot: ${e instanceof Error ? e.message : String(e)}`);
       }
       const adminKey = await ctx
         .fetch(`${baseUrl}/api/keys`, { method: "GET", headers: { authorization: `Bearer ${key}` }, timeoutMs: 5000 })

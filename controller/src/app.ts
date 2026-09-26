@@ -7,35 +7,41 @@ import { createAgents } from "./agents";
 import { authMiddleware } from "./core/auth";
 import { createBus } from "./core/bus";
 import type { Config } from "./core/config";
-import { openDb } from "./core/db";
+import { checkpoint, dbBytes, openDb } from "./core/db";
 import { exec, fetchWithTimeout } from "./core/exec";
 import { loadIdentity } from "./core/identity";
 import { createKeyStore } from "./core/keys";
-import { createLog } from "./core/log";
+import { createLog, errText } from "./core/log";
+import { createObs } from "./core/obs";
 import { buildSnapshot, snapshotKey } from "./core/snapshot";
-import { sseResponse } from "./core/sse";
+import { createSse } from "./core/sse";
 import { createDiscovery } from "./discovery";
 import { createFederation } from "./federation";
 import { createGateway } from "./gateway";
 import { createMetrics } from "./metrics";
 import { createRecipes } from "./recipes";
+import { HttpError } from "./recipes/util";
 
 export interface App {
   ctx: Ctx;
   svc: Services;
   hono: Hono<Env>;
   start(): Promise<void>;
+  quiesce(): void;
   stop(): Promise<void>;
 }
 
 export const createApp = (config: Config): App => {
   const bus = createBus();
   const db = openDb(config.dataDir);
+  const obs = createObs();
+  const sse = createSse(bus, obs);
   const ctx: Ctx = {
     config,
     db,
     bus,
-    log: createLog(bus),
+    obs,
+    log: createLog(bus, obs),
     keys: createKeyStore(db, config.dataDir, config.apiKeyOverride),
     identity: loadIdentity(config),
     exec,
@@ -58,18 +64,23 @@ export const createApp = (config: Config): App => {
   const modules: Module<unknown>[] = [discovery, metrics, federation, gateway, recipes, agents];
 
   const hono = new Hono<Env>();
+  obs.gauge("db.bytes", () => dbBytes(config.dataDir).db);
+  obs.gauge("db.wal_bytes", () => dbBytes(config.dataDir).wal);
   hono.onError((err, c) => {
-    ctx.log.error(`${c.req.method} ${c.req.path}: ${err.message}`);
+    if (err instanceof HttpError) return c.json({ error: { code: err.code, message: err.message } }, err.status);
+    ctx.log.error(`${c.req.method} ${c.req.path}: ${errText(err)}`, "http");
     return c.json({ error: { code: "INTERNAL", message: err.message } }, 500);
   });
   hono.get("/health", (c) => c.json(ctx.identity.health()));
+  hono.get("/metrics", (c) => c.text(obs.prom(), 200, { "content-type": "text/plain; version=0.0.4" }));
   hono.use("*", authMiddleware(config, ctx.keys));
+  hono.get("/api/health/detail", (c) => c.json(obs.health()));
   hono.get("/api/snapshot", (c) => c.json(buildSnapshot(svc)));
   hono.get("/api/fleet", (c) => c.json(svc.peers.fleet()));
   hono.get("/api/events", (c) => {
     const types = c.req.query("types");
     const filter = types ? new Set(types.split(",") as ControllerEventType[]) : null;
-    return sseResponse(bus, [{ type: "snapshot", data: buildSnapshot(svc) }], filter, c.req.raw.signal);
+    return sse.response([{ type: "snapshot", data: buildSnapshot(svc) }], filter, c.req.raw.signal);
   });
   hono.get("/api/keys", (c) => c.json(ctx.keys.list()));
   for (const m of modules) if (m.routes) hono.route("/", m.routes);
@@ -93,21 +104,37 @@ export const createApp = (config: Config): App => {
     async start() {
       for (const m of modules) await m.start?.();
       snapTimer = setInterval(() => {
+        const t = performance.now();
         try {
           const s = buildSnapshot(svc);
+          obs.observe("snapshot_ms", performance.now() - t);
           const key = snapshotKey(s);
           if (key !== lastKey) {
             lastKey = key;
             bus.emit({ type: "snapshot", data: s });
           }
         } catch (e) {
-          ctx.log.warn(`snapshot: ${String(e)}`);
+          ctx.log.warn(`snapshot: ${errText(e)}`, "snapshot");
         }
       }, 1000);
     },
-    async stop() {
+    quiesce() {
       clearInterval(snapTimer);
-      for (const m of [...modules].reverse()) await m.stop?.();
+      sse.stop();
+    },
+    async stop() {
+      this.quiesce();
+      for (const m of [...modules].reverse()) {
+        try {
+          await m.stop?.();
+        } catch (e) {
+          ctx.log.warn(`shutdown: ${errText(e)}`, "shutdown");
+        }
+      }
+      try {
+        checkpoint(db);
+      } catch {}
+      obs.stop();
       db.close();
     },
   };

@@ -1,11 +1,9 @@
 import type { EngineCounters, EngineRates, EngineSample, RunningModel } from "@local-studio/contracts";
 import type { Ctx } from "../context";
-import { cacheConfig, normalise, parseProm } from "./prom";
-import type { Store } from "./store";
+import { normalise, parseProm } from "./prom";
 
 export const RING_MS = 60_000;
 export const SCRAPE_EVERY_MS = 5_000;
-const STORE_IDLE_MS = 60_000;
 
 const d = (a: number | null, b: number | null): number | null => (a === null || b === null ? null : a - b);
 const div = (n: number | null, den: number | null): number | null => (n === null || den === null || den <= 0 ? null : n / den);
@@ -44,17 +42,13 @@ const isReset = (prev: EngineCounters, next: EngineCounters): boolean =>
 
 export interface Scraper {
   scrape(m: RunningModel, timeoutMs: number, record?: boolean): Promise<EngineSample | null>;
-  latest(modelId: string): EngineSample | null;
   rates(modelId: string): EngineRates | null;
   allRates(): EngineRates[];
-  cacheInfo(modelId: string): Record<string, string> | null;
   tick(models: RunningModel[]): Promise<void>;
 }
 
-export const createScraper = (ctx: Ctx, store: Store): Scraper => {
+export const createScraper = (ctx: Ctx): Scraper => {
   const ring = new Map<string, EngineSample[]>();
-  const lastStored = new Map<string, { ts: number; key: string }>();
-  const info = new Map<string, Record<string, string>>();
 
   const push = (s: EngineSample) => {
     let list = ring.get(s.modelId) ?? [];
@@ -69,15 +63,16 @@ export const createScraper = (ctx: Ctx, store: Store): Scraper => {
     if (!m.metricsUrl) return null;
     try {
       const r = await ctx.fetch(m.metricsUrl, { timeoutMs });
-      if (!r.ok) return null;
-      const p = parseProm(await r.text());
-      const n = normalise(p);
-      const ci = cacheConfig(p);
-      if (ci) info.set(m.id, ci);
+      if (!r.ok) {
+        ctx.obs.count("scrape.http_error");
+        return null;
+      }
+      const n = normalise(parseProm(await r.text()));
       const s: EngineSample = { ts: Date.now(), modelId: m.id, engine: n.engine ?? m.engine, counters: n.counters, gauges: n.gauges };
       if (record) push(s);
       return s;
     } catch {
+      ctx.obs.count("scrape.failed");
       return null;
     }
   };
@@ -121,14 +116,7 @@ export const createScraper = (ctx: Ctx, store: Store): Scraper => {
     for (const id of ring.keys()) if (!ids.has(id)) ring.delete(id);
     await Promise.all(
       live.map(async (m) => {
-        const s = await scrape(m, 2000, true);
-        if (!s) return;
-        const key = JSON.stringify(s.counters);
-        const prev = lastStored.get(m.id);
-        if (!prev || prev.key !== key || s.ts - prev.ts >= STORE_IDLE_MS) {
-          store.sample(s);
-          lastStored.set(m.id, { ts: s.ts, key });
-        }
+        if (!(await scrape(m, 2000, true))) return;
         const r = rates(m.id);
         if (r) ctx.bus.emit({ type: "engine", data: r });
       }),
@@ -137,13 +125,8 @@ export const createScraper = (ctx: Ctx, store: Store): Scraper => {
 
   return {
     scrape,
-    latest: (id) => {
-      const l = ring.get(id);
-      return l?.[l.length - 1] ?? null;
-    },
     rates,
     allRates: () => [...ring.keys()].map(rates).filter((r): r is EngineRates => r !== null),
-    cacheInfo: (id) => info.get(id) ?? null,
     tick,
   };
 };

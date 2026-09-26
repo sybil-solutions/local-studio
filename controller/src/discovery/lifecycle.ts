@@ -201,10 +201,10 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       const { cancelled: _c, containerStarted: _s, ...pub } = launches.get(launchId)!;
       return pub;
     },
-    progress: () =>
-      [...launches.values()]
-        .filter((l) => !TERMINAL.has(l.phase) || Date.now() - l.updatedAt < 10 * 60 * 1000)
-        .map(({ cancelled: _c, containerStarted: _s, ...pub }) => pub),
+    progress: () => {
+      for (const [id, l] of launches) if (TERMINAL.has(l.phase) && Date.now() - l.updatedAt > 10 * 60 * 1000) launches.delete(id);
+      return [...launches.values()].map(({ cancelled: _c, containerStarted: _s, ...pub }) => pub);
+    },
     cancel(launchId) {
       const l = launches.get(launchId);
       if (!l || TERMINAL.has(l.phase) || ctx.config.readOnly) return false;
@@ -299,15 +299,6 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       d.setStopping(m.id, false);
       await d.rescan();
       return { ok: true, detail: "native process stopped" };
-    },
-    async logs(modelId, tail) {
-      const m = findModel(modelId);
-      if (!m) return "";
-      const n = Math.max(1, Math.min(5000, Math.floor(tail) || 200));
-      if (m.runtime.kind === "docker") return dockerLogs(m.runtime.containerName, n);
-      if (m.runtime.kind === "external") return `no log source: ${m.runtime.note}`;
-      const r = await ctx.exec(["journalctl", `_PID=${m.runtime.pid}`, "-n", String(n), "--no-pager"], { timeoutMs: 10000 });
-      return r.code === 0 && r.stdout.trim() ? redact(r.stdout) : `native process ${m.runtime.pid}: no log source (argv: ${redact(m.argv.join(" "))})`;
     },
     async inspect(modelId): Promise<DockerInspect | null> {
       const m = findModel(modelId);

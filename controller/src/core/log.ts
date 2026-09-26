@@ -1,4 +1,5 @@
 import type { Bus } from "./bus";
+import type { Obs } from "./obs";
 
 const SECRET = /(Bearer\s+|x-api-key:\s*|api[_-]?key["'=:\s]+|token=)([A-Za-z0-9._\-]{12,})/gi;
 
@@ -6,17 +7,23 @@ export const redact = (s: string): string => s.replace(SECRET, (_m, p: string) =
 
 export interface Log {
   info(msg: string): void;
-  warn(msg: string): void;
-  error(msg: string): void;
+  warn(msg: string, where?: string): void;
+  error(msg: string, where?: string): void;
 }
 
-export const createLog = (bus: Bus): Log => {
-  const out = (level: "info" | "warn" | "error", msg: string) => {
+export const errText = (e: unknown): string => (e instanceof Error ? (e.stack ?? e.message) : String(e));
+
+export const createLog = (bus: Bus, obs: Obs): Log => {
+  const out = (level: "info" | "warn" | "error", msg: string, where?: string) => {
     const clean = redact(msg);
-    const line = `${new Date().toISOString()} ${level} ${clean}`;
-    if (level === "error") console.error(line);
-    else console.log(line);
-    bus.emit({ type: "log", data: { level, msg: clean, at: Date.now() } });
+    const at = Date.now();
+    const line = JSON.stringify({ ts: new Date(at).toISOString(), level, ...(where ? { where } : {}), msg: clean });
+    if (level === "info") console.log(line);
+    else {
+      console.error(line);
+      obs.error(where ?? level, clean);
+    }
+    bus.emit({ type: "log", data: { level, msg: clean, at } });
   };
-  return { info: (m) => out("info", m), warn: (m) => out("warn", m), error: (m) => out("error", m) };
+  return { info: (m) => out("info", m), warn: (m, w) => out("warn", m, w), error: (m, w) => out("error", m, w) };
 };
