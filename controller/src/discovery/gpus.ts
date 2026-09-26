@@ -181,7 +181,7 @@ const scanIntel = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =>
       name: displayName(product),
       hardwareId: matchHardware(hw, "intel-xpu", product, total),
       memTotalMiB: total,
-      memUsedMiB: null,
+      memUsedMiB: intelUsed(intelApps, uuid),
       utilPct: util,
       tempC: temp !== null && Number.isFinite(temp) ? Math.round(temp / 1000) : null,
       powerW: power,
@@ -209,6 +209,11 @@ export const intelClients = async (pids: number[], nodes: Map<string, string>, n
     for (const [uuid, m] of per) out.push({ uuid, pid, processName: names.get(pid) ?? String(pid), usedMiB: Math.round([...m.values()].reduce((s, v) => s + v, 0) / 1024) });
   }
   return out;
+};
+
+const intelUsed = (apps: ComputeApp[], uuid: string): number | null => {
+  const known = apps.filter((a) => a.uuid === uuid && a.usedMiB !== null);
+  return known.length ? Math.round(known.reduce((s, a) => s + (a.usedMiB ?? 0), 0)) : null;
 };
 
 const vramCache = new Map<string, { at: number; byBus: Map<string, number> | null }>();
@@ -248,8 +253,7 @@ export const setIntelApps = (gs: GpuScan, apps: ComputeApp[]): void => {
     if (g.backend !== "intel-xpu") continue;
     const mine = apps.filter((a) => a.uuid === g.uuid);
     g.processes = mine.map((a) => ({ pid: a.pid, processName: a.processName, usedMiB: a.usedMiB, modelId: null }));
-    const known = mine.filter((a) => a.usedMiB !== null);
-    if (known.length) g.memUsedMiB = Math.round(known.reduce((s, a) => s + (a.usedMiB ?? 0), 0));
+    g.memUsedMiB = intelUsed(apps, g.uuid);
   }
 };
 
