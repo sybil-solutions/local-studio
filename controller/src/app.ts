@@ -73,8 +73,8 @@ export const createApp = (config: Config): App => {
     return c.json({ error: { code: "INTERNAL", message: err.message } }, 500);
   });
   hono.get("/health", (c) => c.json(ctx.identity.health()));
-  hono.get("/metrics", (c) => c.text(obs.prom(), 200, { "content-type": "text/plain; version=0.0.4" }));
   hono.use("*", authMiddleware(config, ctx.keys));
+  hono.get("/metrics", (c) => c.text(obs.prom(), 200, { "content-type": "text/plain; version=0.0.4" }));
   hono.get("/api/health/detail", (c) => c.json(obs.health()));
   hono.get("/api/snapshot", (c) => c.json(buildSnapshot(svc)));
   hono.get("/api/fleet", (c) => c.json(svc.peers.fleet()));

@@ -92,7 +92,7 @@ export const authMiddleware = (config: Config, keys: KeyStore): MiddlewareHandle
     }
     const proxied = PROXY_HEADERS.some((h) => c.req.header(h) !== undefined);
     const loopbackTrusted = LOOPBACK.has(remote) && LOOPBACK_HOST.test(c.req.header("host") ?? "") && !foreignOrigin && !proxied;
-    const isApi = path.startsWith("/api/") || path.startsWith("/v1/");
+    const isApi = path.startsWith("/api/") || path.startsWith("/v1/") || path === "/metrics";
     if (isApi && !id && !loopbackTrusted) return c.json({ error: { code: "AUTH", message: "missing or invalid API key" } }, 401);
     if (path.startsWith("/api/") && id && id.scope === "client") return c.json({ error: { code: "AUTH", message: "client keys may only call /v1/*" } }, 403);
     if (path.startsWith("/api/") && id && id.scope === "federation" && !federationAllows(id, c.req.method, path))
