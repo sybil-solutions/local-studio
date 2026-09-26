@@ -1,16 +1,14 @@
 import { join } from "node:path";
-import type { BuiltLaunch, Client } from "@local-studio/contracts";
-import { HARNESS_CLIENT, HARNESSES } from "@local-studio/contracts";
+import type { BuiltLaunch, Client, Harness } from "@local-studio/contracts";
+import { HARNESS_CLIENT } from "@local-studio/contracts";
 import { readSecret } from "./keys";
 
-export const AGENT_HARNESSES = [...HARNESSES, "pi", "omp"] as const;
-export type AgentHarness = (typeof AGENT_HARNESSES)[number];
 export type TerminalHarness = "claude" | "codex" | "pi" | "omp";
-export const isTerminal = (h: AgentHarness): h is TerminalHarness => h === "claude" || h === "codex" || h === "pi" || h === "omp";
-export const clientOf = (h: AgentHarness): Client => (h === "pi" || h === "omp" ? h : HARNESS_CLIENT[h]);
+export const isTerminal = (h: Harness): h is TerminalHarness => h === "claude" || h === "codex" || h === "pi" || h === "omp";
+export const clientOf = (h: Harness): Client => HARNESS_CLIENT[h];
 
 export interface LaunchInput {
-  harness: AgentHarness;
+  harness: Harness;
   home: string;
   model: string;
   contextWindow: number | null;
@@ -26,12 +24,12 @@ export interface LaunchInput {
 
 export const SAFE_FLAG = "--safe";
 
-export const YOLO: Partial<Record<AgentHarness, string>> = {
+export const YOLO: Partial<Record<Harness, string>> = {
   claude: "--dangerously-skip-permissions",
   codex: "--dangerously-bypass-approvals-and-sandbox",
 };
 
-export const ENV_UNSET: Partial<Record<AgentHarness, string[]>> = {
+export const ENV_UNSET: Partial<Record<Harness, string[]>> = {
   claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "ANTHROPIC_SMALL_FAST_MODEL", "MAX_THINKING_TOKENS", "CLAUDE_CODE_MAX_OUTPUT_TOKENS"],
   codex: ["OPENAI_BASE_URL"],
 };

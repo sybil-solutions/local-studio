@@ -104,32 +104,26 @@ Every route except `/health` needs auth (§4). Errors are `{"error":{"code","mes
 | `GET /api/snapshot` | core | `Snapshot` of this machine |
 | `GET /api/fleet` | federation | `FleetSnapshot` (self + cached peer snapshots) |
 | `GET /api/events[?types=snapshot,fleet,request,engine,launch,peer,log]` | core | SSE of `ControllerEvent` |
-| `GET /api/gpus` | discovery | `{gpus, groups}` |
-| `GET /api/models`, `GET /api/models/:id` | discovery | `RunningModel[]` / one |
-| `POST /api/discovery/rescan` | discovery | runs a full scan now and returns `RuntimeView` |
 | `POST /api/models/:id/stop` `{confirm, force?}` | discovery | stops the model (§6.5). Refused in read-only mode |
-| `GET /api/models/:id/logs?tail=200` | discovery | redacted `docker logs` / journal tail, text |
 | `POST /api/models/:id/export` | recipes | `RecipeExport` (read-only on the host; writes only under `<dataDir>/exports`) |
 | `POST /api/models/:id/export/pr` `{title?, draft}` | recipes | `RecipePr` |
-| `GET /api/recipes[?hardware=&fit=1]`, `GET /api/recipes/:id` | recipes | `RecipeRow[]` / one |
+| `GET /api/recipes[?hardware=&fit=1]` | recipes | `RecipeRow[]` |
 | `GET /api/recipes/:id/plan?gpuKeys=` | recipes | `{plan: LaunchPlan, dockerArgv: string[]}` preview, nothing executed (allowed in read-only) |
 | `POST /api/recipes/sync` | recipes | fetches the registry and returns `RecipeCatalog` metadata |
 | `POST /api/recipes/:id/launch` `{gpuKeys?}` | recipes→lifecycle | `202 LaunchProgress` (non-blocking; progress arrives over SSE `launch`) |
 | `GET /api/launches`, `POST /api/launches/:id/cancel` | discovery | `LaunchProgress[]` |
 | `GET /api/metrics/summary?window=&model=&client=&machine=` | metrics | `MetricsSummary` |
 | `GET /api/metrics/requests?limit=&before=` | metrics | `RequestRecord[]` newest first |
-| `GET /api/metrics/engine/:modelId` | metrics | `{latest: EngineSample, rates: EngineRates}` |
-| `GET /api/metrics/check/:requestId` | metrics | cross-check record (§8.4): usage vs Prometheus deltas vs wall clock |
 | `GET /api/usage/daily?from=&to=&group=model,client` | metrics | `DailyRow[]` |
-| `GET /api/usage/activity` | metrics | `Activity` (140-day calendar) |
+| `GET /api/usage/hourly?from=&to=` (epoch ms, default last 24 h) | metrics | `HourlyRow[]` per hour, machine, model, client |
+| `GET /api/health/detail`, `GET /metrics` | core | `ControllerHealth` / Prometheus text |
 | `GET/PUT /api/prices` | metrics | `Price[]` (optional "equivalent cloud" USD per 1M tokens) |
 | `GET /api/machines`, `POST /api/machines` `{url,key,name?}`, `DELETE /api/machines/:id` | federation | peers |
 | `GET /api/machines/discover` | federation | `TailnetCandidate[]` |
 | `ALL /api/peers/:id/*` | federation | passthrough to the registered peer, authenticated with the hub's stored key |
 | `GET /api/agents` | agents | `HarnessInfo[]` |
 | `POST /api/agents/launch` | agents | `AgentLaunchResult` |
-| `GET /api/agents/dsh` | agents | `DshStatus` (+ one-time login URL for the UI) |
-| `GET/POST /api/workspaces`, `DELETE /api/workspaces/:id` | agents | `Workspace` rows (delete never removes the directory) |
+| `GET /api/workspaces`, `DELETE /api/workspaces/:id` | agents | `Workspace` rows (delete never removes the directory) |
 | `GET /api/keys`, `POST /api/keys`, `DELETE /api/keys/:id` | core (GET) / agents (POST, DELETE) | key metadata; POST returns the plaintext once |
 | `GET /v1/models` | gateway | merged local + peer models (OpenAI shape, or Anthropic shape if the request carries `anthropic-version`) |
 | `POST /v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/messages/count_tokens` | gateway | §7 |
@@ -275,7 +269,6 @@ requests(id TEXT PK, ts_start INT, ts_upstream INT, ts_first_token INT, ts_end I
   engine_queue_ms INT, engine_prefill_ms INT, engine_decode_ms INT,
   caps_stripped TEXT, chunk_time0 INT, chunk_dt TEXT, cost_usd REAL)
   -- indexes: (ts_start), (day, model), (model_id, ts_start), (client, day)
-request_checks(request_id PK, before TEXT, after TEXT, deltas TEXT, agreement TEXT)  -- last 1000 only
 engine_samples(ts INT, model_id, engine, counters TEXT, gauges TEXT)                 -- every 5 s while ready; 7 days
 usage_daily(day, machine_id, model, client, requests, errors, input_uncached, cache_read, cache_write,
   output, reasoning, decode_tokens, decode_ms, prefill_tokens, prefill_ms, ttft_sum_ms, ttft_n, cost_usd,
@@ -327,7 +320,7 @@ The **scraper** fetches `/metrics` of every `ready` model every 5 s (2 s timeout
 2. `metrics.finish(handle, draft)`: it scrapes `after` 60 ms after stream end, retrying up to 3 times over 300 ms until `ΣrequestsSuccess` has advanced.
 3. The request counts as exclusive only if all of these hold: gateway in-flight to this model stayed at 1 for the whole interval, `before.running == 0 && before.waiting == 0`, `ΔΣrequestsSuccess == 1`, and `ΔpromptTokens == draft.promptTotal` (when usage was reported). If any check fails, nothing is attributed and those fields stay `null`.
 4. When exclusive: `cacheRead = ΔpromptTokensCached` if the engine did not report it (`cacheSource:"metrics"`, `usageSource:"engine+metrics"`), and `engineQueueMs`, `enginePrefillMs`, `engineDecodeMs` come from the histogram sum deltas. When the engine did report cached tokens, `cacheSource:"engine"` and the metrics delta is kept only as a cross-check.
-5. `before`, `after`, the deltas, and an `agreement` object `{prompt, output, cached, ttftVsEngine, decodeVsEngine}` go to `request_checks`, readable at `GET /api/metrics/check/:id`. Any disagreement is logged at `warn`.
+5. Any disagreement between usage and the Prometheus deltas (prompt, output, cached) is logged at `warn`.
 
 Usage without an engine usage block (a rare engine, or a truncated stream) is `usageSource:"estimated"`: output is 1 per content delta and prompt is the chars/4 heuristic. These rows are excluded from speed aggregates.
 

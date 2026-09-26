@@ -6,7 +6,6 @@ const err = (code: string, message: string) => ({ error: { code, message } });
 
 export const discoveryRoutes = (runtime: RuntimeService, lifecycle: LifecycleService): Hono<Env> => {
   const r = new Hono<Env>();
-  r.post("/api/discovery/rescan", async (c) => c.json(await runtime.rescan()));
   r.post("/api/models/:id/stop", async (c) => {
     const id = c.req.param("id");
     const parsed = StopModelBody.safeParse(await c.req.json().catch(() => null));

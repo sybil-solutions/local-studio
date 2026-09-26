@@ -43,6 +43,7 @@ export const MIGRATIONS = [
       AND r.usage_source NOT IN ('estimated','none') AND r.input_uncached >= ${PREFILL_MIN_TOKENS})
   WHERE EXISTS (SELECT 1 FROM requests r WHERE r.day = usage_daily.day AND r.machine_id = usage_daily.machine_id AND r.model = usage_daily.model AND r.client = usage_daily.client);`,
   `DROP TABLE IF EXISTS engine_samples; UPDATE requests SET chunk_dt = NULL, chunk_time0 = NULL; CREATE INDEX IF NOT EXISTS requests_model_ts2 ON requests(model, ts_start);`,
+  `DROP TABLE IF EXISTS request_checks;`,
 ];
 
 const MAX_ROWS = 200_000;
@@ -98,11 +99,8 @@ export const rowToRecord = (r: Row): RequestRecord => ({
 
 export interface Store {
   insert(rec: RequestRecord, costUsd: number | null): void;
-  check(id: string, before: unknown, after: unknown, deltas: unknown, agreement: unknown): void;
   flush(): void;
   queued(): number;
-  getCheck(id: string): { before: unknown; after: unknown; deltas: unknown; agreement: unknown } | null;
-  get(id: string): RequestRecord | null;
   recent(limit: number, before?: number): RequestRecord[];
   prices(): Price[];
   price(model: string): Price | null;
@@ -157,7 +155,6 @@ export const createStore = (db: Database, tz: string, onError: (e: unknown) => v
       cache_unknown_prompt: known ? 0 : rec.promptTotal,
     });
   };
-  const checkIns = db.query("INSERT OR REPLACE INTO request_checks VALUES (?, ?, ?, ?, ?)");
   let queue: (() => void)[] = [];
   let timer: ReturnType<typeof setTimeout> | null = null;
   const flush = () => {
@@ -186,23 +183,10 @@ export const createStore = (db: Database, tz: string, onError: (e: unknown) => v
   };
 
   const priceRow = (r: Row): Price => ({ model: String(r.model), input: Number(r.input), output: Number(r.output), cacheRead: Number(r.cache_read), cacheWrite: Number(r.cache_write) });
-  const parse = (s: unknown) => (typeof s === "string" ? (JSON.parse(s) as unknown) : null);
   return {
     insert: (rec, cost) => enqueue(() => write(rec, cost)),
-    check: (id, before, after, deltas, agreement) =>
-      enqueue(() => checkIns.run(id, JSON.stringify(before), JSON.stringify(after), JSON.stringify(deltas), JSON.stringify(agreement))),
     flush,
     queued: () => queue.length,
-    getCheck: (id) => {
-      flush();
-      const r = db.query<Row, [string]>("SELECT * FROM request_checks WHERE request_id = ?").get(id);
-      return r ? { before: parse(r.before), after: parse(r.after), deltas: parse(r.deltas), agreement: parse(r.agreement) } : null;
-    },
-    get: (id) => {
-      flush();
-      const r = db.query<Row, [string]>("SELECT * FROM requests WHERE id = ?").get(id);
-      return r ? rowToRecord(r) : null;
-    },
     recent: (limit, before) => {
       flush();
       return db
@@ -222,7 +206,6 @@ export const createStore = (db: Database, tz: string, onError: (e: unknown) => v
       flush();
       db.query("DELETE FROM requests WHERE ts_start < ?").run(Date.now() - 90 * DAY_MS);
       db.query(`DELETE FROM requests WHERE ts_start < (SELECT ts_start FROM requests ORDER BY ts_start DESC LIMIT 1 OFFSET ${MAX_ROWS})`).run();
-      db.query("DELETE FROM request_checks WHERE rowid <= (SELECT rowid FROM request_checks ORDER BY rowid DESC LIMIT 1 OFFSET 1000)").run();
       checkpoint(db);
     },
     day,

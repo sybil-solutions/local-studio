@@ -60,7 +60,7 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
   return (
     <div className="cols">
       <div className="col">
-        <SectionHeading aside={<span className="label">{DESKTOP ? "opens natively" : "copy the command"}</span>}>agent</SectionHeading>
+        <SectionHeading>agent</SectionHeading>
         {AGENTS.map(([h, label]) => {
           const i = info(h);
           return (
@@ -94,7 +94,7 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
           {!ws && (
             <>
               <label htmlFor="d">folder</label>
-              <input id="d" className="input" value={dir} onChange={(e) => setDir(e.target.value)} placeholder="~/LocalStudio/workspaces/<name>" spellCheck={false} />
+              <input id="d" className="input" value={dir} onChange={(e) => setDir(e.target.value)} spellCheck={false} />
             </>
           )}
         </div>
@@ -103,15 +103,12 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
             {busy ? "Starting" : DESKTOP ? (agent === "dsh" ? "Open ›" : "Open terminal ›") : "Start ›"}
           </Btn>
           {readOnly && <span className="label">read-only controller</span>}
-          {models?.length === 0 && <span className="label">no model on the gateway</span>}
         </div>
-        {info(agent)?.note && <div className="note gap-block">{info(agent)!.note}</div>}
         <Err>{err}</Err>
         {res && (
           <div className="gut gap-group">
             <div className="value">
               {res.how} · {res.workspaceId}
-              {res.note ? ` · ${res.note}` : ""}
             </div>
             {res.url && (
               <div className="btns gap-block">
@@ -137,7 +134,7 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
           ]}
           rows={workspaces.filter((w) => AGENTS.some(([h]) => h === w.harness))}
           keyOf={(w) => w.id}
-          empty="no workspaces yet"
+          empty="–"
         />
       </div>
     </div>

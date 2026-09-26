@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import type { DailyRow, MetricsSlice, MetricsSummary, RequestRecord, Window } from "@local-studio/contracts/client";
+import type { DailyRow, HourlyRow, MetricsSlice, MetricsSummary, Window } from "@local-studio/contracts/client";
 import { ERROR_CODES, fmt } from "@local-studio/contracts/client";
 import { get, via } from "../api";
 import { type Col, SectionHeading, Table } from "../components/basics";
 import { ActivityGrid, FigureGrid, sliceHit } from "../components/cards";
-import { life, machines, MONTHS, type MachineView, sumActivity } from "../model/view";
+import { life, machines, type MachineView, sumActivity } from "../model/view";
 import { useStore } from "../store";
 
 const WINDOWS: Window[] = ["24h", "7d", "30d", "all"];
@@ -18,26 +18,8 @@ interface Data {
   m: MachineView;
   sum: MetricsSummary | null;
   daily: DailyRow[];
-  reqs: RequestRecord[];
+  hourly: HourlyRow[];
 }
-
-const fromRecord = (r: RequestRecord): Omit<Agg, "key"> => ({
-  requests: 1,
-  errors: r.errorCode ? 1 : 0,
-  inputUncached: r.inputUncached,
-  cacheRead: r.cacheRead,
-  cacheWrite: r.cacheWrite,
-  output: r.output,
-  reasoning: r.reasoning,
-  cacheUnknownPrompt: r.cacheSource === null ? r.promptTotal : 0,
-  decodeTokens: r.decodeTps && r.decodeMs ? (r.decodeTps * r.decodeMs) / 1000 : 0,
-  decodeMs: r.decodeTps && r.decodeMs ? r.decodeMs : 0,
-  prefillTokens: 0,
-  prefillMs: 0,
-  ttftSumMs: r.ttftMs ?? 0,
-  ttftN: r.ttftMs === null ? 0 : 1,
-  costUsd: null,
-});
 
 const fold = <T extends Omit<Agg, "key">>(rows: T[], keyOf: (r: T) => string): Agg[] => {
   const m = new Map<string, Agg>();
@@ -51,15 +33,19 @@ const fold = <T extends Omit<Agg, "key">>(rows: T[], keyOf: (r: T) => string): A
   return [...m.values()];
 };
 
+const SLICE_SUMS = [...SUMS, "promptTotal"] as const;
 const mergeSlices = (lists: MetricsSlice[][]): MetricsSlice[] => {
-  const m = new Map<string, MetricsSlice>();
+  const m = new Map<string, MetricsSlice & { exact: boolean }>();
   for (const s of lists.flat()) {
     const a = m.get(s.key);
-    if (!a) m.set(s.key, { ...s });
+    if (!a) m.set(s.key, { ...s, exact: typeof s.decodeMs === "number" });
     else {
-      for (const k of ["requests", "errors", "inputUncached", "cacheRead", "cacheWrite", "output", "reasoning", "promptTotal", "cacheUnknownPrompt"] as const) a[k] += s[k];
+      for (const k of SLICE_SUMS) a[k] = (a[k] ?? 0) + (s[k] ?? 0);
       a.costUsd = a.costUsd === null && s.costUsd === null ? null : (a.costUsd ?? 0) + (s.costUsd ?? 0);
-      a.decodeTps = a.prefillTps = a.meanTtftMs = null;
+      a.exact &&= typeof s.decodeMs === "number";
+      a.decodeTps = a.exact && a.decodeMs > 0 ? a.decodeTokens / (a.decodeMs / 1000) : null;
+      a.prefillTps = a.exact && a.prefillMs > 0 ? a.prefillTokens / (a.prefillMs / 1000) : null;
+      a.meanTtftMs = a.exact && a.ttftN > 0 ? a.ttftSumMs / a.ttftN : null;
     }
   }
   return [...m.values()].sort((a, b) => b.promptTotal + b.output - (a.promptTotal + a.output));
@@ -93,7 +79,7 @@ const sliceCols = (h: string): Col<MetricsSlice>[] => [
 
 const hourKey = (t: number) => {
   const d = new Date(t);
-  return `${MONTHS[d.getMonth()]} ${String(d.getDate()).padStart(2, " ")} ${String(d.getHours()).padStart(2, "0")}:00`;
+  return `${ymd(d)} ${String(d.getHours()).padStart(2, "0")}:00`;
 };
 
 export const UsagePage = ({ machineId }: { machineId: string | null }) => {
@@ -114,16 +100,16 @@ export const UsagePage = ({ machineId }: { machineId: string | null }) => {
       to.setDate(to.getDate() + 1);
       const out = await Promise.all(
         pick.map(async (m) => {
-          const [s, d, r] = await Promise.all([
+          const [s, d, h] = await Promise.all([
             get<MetricsSummary>(via(m.peerId, `/api/metrics/summary?window=${win}`)),
             get<DailyRow[]>(via(m.peerId, `/api/usage/daily?from=${ymd(from)}&to=${ymd(to)}&group=model,client`)),
-            get<RequestRecord[]>(via(m.peerId, "/api/metrics/requests?limit=1000")),
+            get<HourlyRow[]>(via(m.peerId, `/api/usage/hourly?from=${Date.now() - 86_400_000}`)),
           ]);
           return {
             m,
             sum: s.ok && typeof s.data?.requests === "number" ? s.data : null,
             daily: d.ok && Array.isArray(d.data) ? d.data : [],
-            reqs: r.ok && Array.isArray(r.data) ? r.data.filter((x) => x.via === "local") : [],
+            hourly: h.ok && Array.isArray(h.data) ? h.data : [],
           };
         }),
       );
@@ -141,9 +127,8 @@ export const UsagePage = ({ machineId }: { machineId: string | null }) => {
   const sums = data.map((d) => d.sum).filter((s): s is MetricsSummary => !!s);
   const tot = fold(sums.map((s) => ({ ...s, ttftSumMs: 0, ttftN: 0 })), () => "all")[0];
   const one = sums.length === 1 ? sums[0]! : null;
-  const since = Date.now() - 86_400_000;
-  const recs = data.flatMap((d) => d.reqs).filter((r) => r.tsStart >= since);
-  const hours = fold(recs.map((r) => ({ ...fromRecord(r), t: r.tsStart })), (r) => hourKey(r.t)).sort((a, b) => b.key.localeCompare(a.key));
+  const hourly = data.flatMap((d) => d.hourly);
+  const hours = fold(hourly, (r) => hourKey(r.hour)).sort((a, b) => b.key.localeCompare(a.key));
   const days = fold(data.flatMap((d) => d.daily), (r) => r.day).sort((a, b) => b.key.localeCompare(a.key));
   const codes = ERROR_CODES.map((c) => ({ c, n: sums.reduce((t, s) => t + (s.errorsByCode[c] ?? 0), 0) })).filter((x) => x.n > 0);
   const prompt = tot ? tot.inputUncached + tot.cacheRead + tot.cacheWrite + tot.cacheUnknownPrompt : 0;
@@ -210,18 +195,18 @@ export const UsagePage = ({ machineId }: { machineId: string | null }) => {
             ]}
             rows={codes}
             keyOf={(x) => x.c}
-            empty="no errors"
+            empty="–"
           />
-          <SectionHeading aside={<span className="label">last 24 h, {fmt.k(recs.length)} requests</span>}>by hour</SectionHeading>
-          <Table cols={aggCols("hour")} rows={hours} keyOf={(r) => r.key} empty="no requests in the last 24 h" />
+          <SectionHeading aside={<span className="label">24h</span>}>by hour</SectionHeading>
+          <Table cols={aggCols("hour")} rows={hours} keyOf={(r) => r.key} empty="–" />
         </div>
         <div className="col">
           <SectionHeading>by model</SectionHeading>
-          <Table cols={sliceCols("model")} rows={mergeSlices(sums.map((s) => s.byModel))} keyOf={(r) => r.key} empty="no usage in this window" />
+          <Table cols={sliceCols("model")} rows={mergeSlices(sums.map((s) => s.byModel))} keyOf={(r) => r.key} empty="–" />
           <SectionHeading>by client</SectionHeading>
-          <Table cols={sliceCols("client")} rows={mergeSlices(sums.map((s) => s.byClient))} keyOf={(r) => r.key} empty="no usage in this window" />
+          <Table cols={sliceCols("client")} rows={mergeSlices(sums.map((s) => s.byClient))} keyOf={(r) => r.key} empty="–" />
           <SectionHeading aside={<span className="label">local days</span>}>by day</SectionHeading>
-          <Table cols={aggCols("day")} rows={days} keyOf={(r) => r.key} empty="no usage in this window" />
+          <Table cols={aggCols("day")} rows={days} keyOf={(r) => r.key} empty="–" />
         </div>
       </div>
     </>

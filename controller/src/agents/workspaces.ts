@@ -4,8 +4,8 @@ import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { Harness, Workspace } from "@local-studio/contracts";
+import { HARNESSES } from "@local-studio/contracts";
 import { migrate } from "../core/db";
-import { AGENT_HARNESSES } from "./launch-table";
 
 interface Row {
   id: string;
@@ -47,7 +47,7 @@ const toWorkspace = (r: Row): Workspace => {
     id: r.id,
     name: r.name,
     dir: r.dir,
-    harness: ((AGENT_HARNESSES as readonly string[]).includes(r.harness) ? r.harness : "claude") as Harness,
+    harness: ((HARNESSES as readonly string[]).includes(r.harness) ? r.harness : "claude") as Harness,
     model: r.model,
     flags,
     createdAt: r.created_at,

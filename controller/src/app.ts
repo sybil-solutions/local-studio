@@ -89,9 +89,11 @@ export const createApp = (config: Config): App => {
   if (uiDir) {
     hono.get("*", async (c) => {
       const p = normalize(c.req.path).replace(/^(\.\.[/\\])+/, "");
+      if (/^\/(api|v1)\//.test(p)) return c.json({ error: { code: "NOT_FOUND", message: `no route ${p}` } }, 404);
       const file = join(uiDir, p);
-      if (file.startsWith(uiDir) && p !== "/" && existsSync(file)) return new Response(Bun.file(file));
-      return new Response(Bun.file(join(uiDir, "index.html")), { headers: { "content-type": "text/html; charset=utf-8" } });
+      if (file.startsWith(uiDir) && p !== "/" && existsSync(file))
+        return new Response(Bun.file(file), { headers: { "cache-control": p.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache" } });
+      return new Response(Bun.file(join(uiDir, "index.html")), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
     });
   }
 

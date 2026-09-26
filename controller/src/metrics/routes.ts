@@ -1,16 +1,14 @@
 import type { Database } from "bun:sqlite";
 import { Hono } from "hono";
-import type { DailyRow } from "@local-studio/contracts";
+import type { DailyRow, HourlyRow } from "@local-studio/contracts";
 import { PriceBody, WindowParam } from "@local-studio/contracts";
 import type { Env, MetricsService } from "../context";
 import type { Store } from "./store";
-import { type AggRow, n } from "./summary";
+import { AGG, type AggRow, n } from "./summary";
 
 const err = (code: string, message: string) => ({ error: { code, message } });
 
-
-const dailyRow = (r: AggRow): DailyRow => ({
-  day: String(r.day),
+const usageRow = (r: AggRow): Omit<DailyRow, "day"> => ({
   machineId: String(r.machine_id),
   model: String(r.model),
   client: String(r.client),
@@ -30,6 +28,8 @@ const dailyRow = (r: AggRow): DailyRow => ({
   ttftN: n(r.ttft_n),
   costUsd: n(r.cost_usd),
 });
+const dailyRow = (r: AggRow): DailyRow => ({ day: String(r.day), ...usageRow(r) });
+const hourlyRow = (r: AggRow): HourlyRow => ({ hour: n(r.hour), ...usageRow(r) });
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const COLS = ["requests", "errors", "input_uncached", "cache_read", "cache_write", "output", "reasoning", "decode_tokens", "decode_ms", "prefill_tokens", "prefill_ms", "ttft_sum_ms", "ttft_n", "cost_usd", "cache_unknown_prompt"];
@@ -46,13 +46,6 @@ export const metricsRoutes = (db: Database, svc: MetricsService, store: Store): 
     const before = c.req.query("before");
     return c.json(svc.recent(Number.isFinite(limit) ? limit : 50, before ? Number(before) : undefined));
   });
-  r.get("/api/metrics/check/:requestId", (c) => {
-    const id = c.req.param("requestId");
-    const record = store.get(id);
-    if (!record) return c.json(err("NOT_FOUND", `no request ${id}`), 404);
-    const check = store.getCheck(id);
-    return c.json({ record, ...(check ?? { before: null, after: null, deltas: null, agreement: null }) });
-  });
   r.get("/api/usage/daily", (c) => {
     const from = c.req.query("from") ?? "0000-01-01";
     const to = c.req.query("to") ?? "9999-12-31";
@@ -68,6 +61,18 @@ export const metricsRoutes = (db: Database, svc: MetricsService, store: Store): 
       )
       .all(from, to);
     return c.json(rows.map(dailyRow));
+  });
+  r.get("/api/usage/hourly", (c) => {
+    const from = Number(c.req.query("from") ?? Date.now() - 86_400_000);
+    const to = Number(c.req.query("to") ?? Date.now());
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return c.json(err("INVALID_REQUEST", "from/to must be epoch ms"), 400);
+    store.flush();
+    const rows = db
+      .query<AggRow, [number, number]>(
+        `SELECT (ts_start / 3600000) * 3600000 AS hour, machine_id, model, client, ${AGG} FROM requests WHERE via = 'local' AND ts_start >= ? AND ts_start < ? GROUP BY hour, machine_id, model, client ORDER BY hour`,
+      )
+      .all(from, to);
+    return c.json(rows.map(hourlyRow));
   });
   r.get("/api/prices", (c) => c.json(store.prices()));
   r.put("/api/prices", async (c) => {

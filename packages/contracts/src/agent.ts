@@ -1,4 +1,4 @@
-export const HARNESSES = ["dsh", "claude", "codex", "codex-desktop", "claude-desktop"] as const;
+export const HARNESSES = ["dsh", "claude", "codex", "pi", "omp", "codex-desktop", "claude-desktop"] as const;
 
 export type Harness = (typeof HARNESSES)[number];
 
@@ -10,6 +10,8 @@ export const HARNESS_CLIENT: Record<Harness, Client> = {
   dsh: "dsh",
   claude: "claude-code",
   codex: "codex-cli",
+  pi: "pi",
+  omp: "omp",
   "codex-desktop": "codex-desktop",
   "claude-desktop": "claude-desktop",
 };

@@ -166,6 +166,12 @@ export interface MetricsSlice extends TokenBuckets {
   promptTotal: number;
   cacheUnknownPrompt: number;
   cacheHit: number | null;
+  decodeTokens: number;
+  decodeMs: number;
+  prefillTokens: number;
+  prefillMs: number;
+  ttftSumMs: number;
+  ttftN: number;
   decodeTps: number | null;
   prefillTps: number | null;
   meanTtftMs: number | null;
@@ -187,6 +193,10 @@ export interface DailyRow extends TokenBuckets {
   ttftSumMs: number;
   ttftN: number;
   costUsd: number;
+}
+
+export interface HourlyRow extends Omit<DailyRow, "day"> {
+  hour: number;
 }
 
 export interface Activity {

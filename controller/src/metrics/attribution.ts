@@ -123,7 +123,7 @@ export const createAttribution = (ctx: Ctx, store: Store, scraper: Scraper, find
           }
         }
         rec = attribute(rec, p, after, cachedReported);
-      } else if (p) store.check(rec.id, null, null, null, { exclusive: false, reasons: p.reasons });
+      }
     } catch (e) {
       ctx.log.warn(`metrics attribution ${h.id}: ${String(e)}`, "metrics.attribution");
     } finally {
@@ -138,10 +138,7 @@ export const createAttribution = (ctx: Ctx, store: Store, scraper: Scraper, find
 
   const attribute = (rec: RequestRecord, p: Pending, after: EngineSample | null, cachedReported: boolean): RequestRecord => {
     const before = p.before!;
-    if (!after) {
-      store.check(rec.id, before, null, null, { exclusive: false, reasons: [...p.reasons, "after scrape failed"] });
-      return rec;
-    }
+    if (!after) return rec;
     const dl = counterDeltas(before.counters, after.counters);
     const reasons = [...p.reasons];
     const usageReported = rec.usageSource === "engine";
@@ -179,35 +176,12 @@ export const createAttribution = (ctx: Ctx, store: Store, scraper: Scraper, find
       const pt = promptTotal(out);
       out = { ...out, promptTotal: pt, total: pt + out.output, prefillTps: cacheKnown(out) ? prefillTps(out.inputUncached, out.ttftMs) : null };
     }
-    const engineTtftMs = dl.ttftCount && dl.ttftCount > 0 && dl.ttftSum !== null ? (dl.ttftSum / dl.ttftCount) * 1000 : null;
-    const agreement = {
-      exclusive,
-      reasons,
-      prompt: { usage: rec.promptTotal, engine: dl.promptTokens, ok: dl.promptTokens === rec.promptTotal },
-      output: { usage: rec.output, engine: dl.generationTokens, ok: dl.generationTokens === rec.output },
-      cached: { usage: cachedReported ? rec.cacheRead : null, engine: dl.promptTokensCached, recorded: out.cacheRead, cacheSource: out.cacheSource, ok: !cachedReported || dl.promptTokensCached === rec.cacheRead },
-      ttftVsEngine: {
-        gatewayTtftMs: rec.ttftMs,
-        engineTtftMs,
-        engineQueueMs: out.engineQueueMs,
-        enginePrefillMs: out.enginePrefillMs,
-        prefillWithinTtft: out.enginePrefillMs === null || rec.ttftMs === null ? null : out.enginePrefillMs <= rec.ttftMs,
-        enginePrefillTps: out.enginePrefillMs ? out.inputUncached / (out.enginePrefillMs / 1000) : null,
-      },
-      decodeVsEngine: {
-        gatewayDecodeMs: rec.decodeMs,
-        engineDecodeMs: out.engineDecodeMs,
-        ratio: rec.decodeMs && out.engineDecodeMs ? out.engineDecodeMs / rec.decodeMs : null,
-        engineDecodeTps: out.engineDecodeMs && dl.genTokensHistSum !== null ? dl.genTokensHistSum / (out.engineDecodeMs / 1000) : null,
-        gatewayDecodeTps: rec.decodeTps,
-      },
-    };
-    const disagree = p.exclusive && (dl.requestsSuccess === 1 || dl.requestsSuccess === null) && (!agreement.prompt.ok || !agreement.output.ok || !agreement.cached.ok);
+    const cachedOk = !cachedReported || dl.promptTokensCached === rec.cacheRead;
+    const disagree = p.exclusive && (dl.requestsSuccess === 1 || dl.requestsSuccess === null) && (dl.promptTokens !== rec.promptTotal || dl.generationTokens !== rec.output || !cachedOk);
     if (disagree)
       ctx.log.warn(
-        `metrics disagreement ${rec.id} ${rec.model}: prompt ${rec.promptTotal}/${dl.promptTokens} output ${rec.output}/${dl.generationTokens} cached ${agreement.cached.usage}/${dl.promptTokensCached}`,
+        `metrics disagreement ${rec.id} ${rec.model}: prompt ${rec.promptTotal}/${dl.promptTokens} output ${rec.output}/${dl.generationTokens} cached ${cachedReported ? rec.cacheRead : null}/${dl.promptTokensCached}`,
       );
-    store.check(rec.id, before, after, dl, agreement);
     return out;
   };
 

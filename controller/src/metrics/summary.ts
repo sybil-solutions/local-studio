@@ -39,7 +39,7 @@ export const AGG = `
   SUM(CASE WHEN via = 'local' AND ${MEASURED} AND decode_tps IS NOT NULL AND output >= ${DECODE_MIN_TOKENS} THEN decode_ms ELSE 0 END) AS decode_ms,
   SUM(CASE WHEN via = 'local' AND ${MEASURED} AND ${CACHE_KNOWN} AND prefill_tps IS NOT NULL AND input_uncached >= ${PREFILL_MIN_TOKENS} THEN input_uncached ELSE 0 END) AS prefill_tokens,
   SUM(CASE WHEN via = 'local' AND ${MEASURED} AND ${CACHE_KNOWN} AND prefill_tps IS NOT NULL AND input_uncached >= ${PREFILL_MIN_TOKENS} THEN ttft_ms ELSE 0 END) AS prefill_ms,
-  SUM(CASE WHEN ${MEASURED} AND ttft_ms IS NOT NULL THEN ttft_ms ELSE 0 END) AS ttft_sum,
+  SUM(CASE WHEN ${MEASURED} AND ttft_ms IS NOT NULL THEN ttft_ms ELSE 0 END) AS ttft_sum_ms,
   SUM(CASE WHEN ${MEASURED} AND ttft_ms IS NOT NULL THEN 1 ELSE 0 END) AS ttft_n,
   SUM(CASE WHEN via = 'local' THEN cost_usd END) AS cost_usd`;
 
@@ -58,11 +58,17 @@ export const sliceOf = (key: string, r: AggRow): MetricsSlice => {
     requests: n(r.requests),
     errors: n(r.errors),
     promptTotal,
+    decodeTokens: dtok,
+    decodeMs: dms,
+    prefillTokens: n(r.prefill_tokens),
+    prefillMs: n(r.prefill_ms),
+    ttftSumMs: n(r.ttft_sum_ms),
+    ttftN: n(r.ttft_n),
     cacheUnknownPrompt,
     cacheHit: ratio(b.cacheRead, promptTotal - cacheUnknownPrompt),
     decodeTps: dms > 0 ? dtok / (dms / 1000) : null,
     prefillTps: n(r.prefill_ms) > 0 ? n(r.prefill_tokens) / (n(r.prefill_ms) / 1000) : null,
-    meanTtftMs: n(r.ttft_n) > 0 ? n(r.ttft_sum) / n(r.ttft_n) : null,
+    meanTtftMs: n(r.ttft_n) > 0 ? n(r.ttft_sum_ms) / n(r.ttft_n) : null,
     costUsd: typeof r.cost_usd === "number" ? r.cost_usd : null,
   };
 };

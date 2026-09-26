@@ -6,7 +6,7 @@ import { openDb } from "../core/db";
 import { which } from "../core/exec";
 import { createKeyStore } from "../core/keys";
 import { ensureClientKey } from "./keys";
-import { type AgentHarness, ENV_UNSET, SAFE_FLAG, buildLaunch, clientOf, isTerminal } from "./launch-table";
+import { ENV_UNSET, SAFE_FLAG, buildLaunch, clientOf, isTerminal } from "./launch-table";
 import { createWorkspaceStore } from "./workspaces";
 
 const USAGE = "local-studio agent run <workspaceId> [--print] [--resume] [--home DIR]";
@@ -31,7 +31,7 @@ export const runAgentCli = async (argv: string[]): Promise<number> => {
       console.error(`local-studio agent: no workspace ${wsId} in ${config.dataDir}`);
       return 1;
     }
-    const harness = ws.harness as AgentHarness;
+    const harness = ws.harness;
     if (!isTerminal(harness)) {
       console.error(`local-studio agent: ${ws.harness} is launched by the controller, not by agent run`);
       return 2;
