@@ -69,8 +69,11 @@ export const resourceTotals = (list: { online: boolean; snapshot: Snapshot | nul
     if (online) t.online++;
     for (const g of s.gpus) {
       t.gpus++;
+      if (g.unified) {
+        t.unifiedMiB += g.memTotalMiB;
+        continue;
+      }
       t.vramTotalMiB += g.memTotalMiB;
-      if (g.unified) t.unifiedMiB += g.memTotalMiB;
       if (online && g.memUsedMiB !== null) t.vramUsedMiB += g.memUsedMiB;
       else t.vramUnmeasured++;
     }

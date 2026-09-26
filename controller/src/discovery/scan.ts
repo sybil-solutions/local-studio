@@ -4,7 +4,7 @@ import { modelPathArg, quantFromConfig, quantFromFlag, quantFromName, quantNames
 import type { Ctx, RuntimeView } from "../context";
 import { containerName, digestOf, dockerScan, imageInfo, type Inspect, publishedPorts, wantsGpu } from "./docker";
 import { computeGroups } from "./groups";
-import { type ComputeApp, containerIntelVram, type HardwareList, intelClients, resolveGpuRefs, scanGpus, setIntelApps } from "./gpus";
+import { type ComputeApp, containerDrm, drmClients, type HardwareList, intelClients, intelMemUsed, resolveGpuRefs, scanGpus, setIntelApps, sumClients } from "./gpus";
 import { type Fingerprint, fingerprint, get, type Health, healthCheck, type ModelEntry, PROBE_CONCURRENCY, PROBE_MAX, type ProbeCache } from "./probe";
 import { ancestors, cmdline, descendants, type Listener, listListeners, listProcs, type ProcTable, probeHost } from "./procs";
 import { ENGINE_RE, embeddingArgv, engineFromArgs, envMap, flag, flagList, hasFlag, num, parseJson, pool, portArg, promLabels } from "./util";
@@ -212,14 +212,24 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
   if (gs.nodes.size) {
     const engines = [...procs.byPid.values()].filter((p) => ENGINE_RE.test(p.args));
     const names = new Map(engines.map((p) => [p.pid, p.args.split(" ")[0]?.split("/").pop() ?? ""]));
-    const apps = await intelClients(engines.map((p) => p.pid), gs.nodes, names);
+    const intel = [...new Set(gs.nodes.values())];
+    const host = await drmClients([...procs.byPid.values()].filter((p) => myUid === null || myUid === 0 || p.uid === myUid).map((p) => p.pid), gs.nodes);
+    const apps = intelClients(host, engines.map((p) => p.pid), names);
+    const held: { uuids: string[]; clients: Awaited<ReturnType<typeof containerDrm>> }[] = [];
     for (const c of containers) {
-      const uuids = [...new Set((c.HostConfig.Devices ?? []).map((d) => gs.nodes.get(d.PathOnHost)).filter((u): u is string => !!u))];
+      const uuids = [...new Set((c.HostConfig.Devices ?? []).flatMap((d) => (d.PathOnHost.replace(/\/+$/, "") === "/dev/dri" ? intel : [gs.nodes.get(d.PathOnHost)])).filter((u): u is string => !!u))];
+      if (!uuids.length || !c.State.Running) continue;
+      const clients = await containerDrm(ctx, c.Id);
+      held.push({ uuids, clients });
       const pid = findEnginePid(procs, c.State.Pid, []) ?? c.State.Pid;
-      const vram = uuids.length && c.State.Running ? await containerIntelVram(ctx, c.Id) : null;
-      for (const uuid of uuids) if (!apps.some((a) => a.uuid === uuid && ancestors(procs, a.pid).includes(c.State.Pid))) apps.push({ uuid, pid, processName: containerName(c), usedMiB: vram?.get(uuid.slice("intel:".length)) ?? null });
+      for (const uuid of uuids) {
+        const mine = clients?.filter((x) => `intel:${x.bus}` === uuid);
+        if (clients && !mine?.length) continue;
+        if (apps.some((a) => a.uuid === uuid && ancestors(procs, a.pid).includes(c.State.Pid))) continue;
+        apps.push({ uuid, pid, processName: containerName(c), usedMiB: mine ? Math.round(sumClients(mine.map((x) => ({ key: x.client, kib: x.kib })))) : null });
+      }
     }
-    setIntelApps(gs, apps);
+    setIntelApps(gs, apps, intelMemUsed(intel, host, held));
   }
   const statePids = new Map<number, Inspect>(containers.filter((c) => c.State.Pid > 0).map((c) => [c.State.Pid, c]));
   const gpuByUuid = new Map(gs.gpus.map((g) => [g.uuid, g]));

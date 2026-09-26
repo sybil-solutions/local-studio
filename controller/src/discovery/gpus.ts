@@ -109,6 +109,7 @@ const lsdir = (p: string): Promise<string[]> => readdir(p).catch(() => []);
 const intelNames = new Map<string, string>();
 const intelPrev = new Map<string, { t: number; idle: number | null; energy: number | null }>();
 let intelApps: ComputeApp[] = [];
+let intelMem = new Map<string, number | null>();
 
 const intelName = async (ctx: Ctx, bus: string, dev: string): Promise<string> => {
   const hit = intelNames.get(bus);
@@ -181,7 +182,7 @@ const scanIntel = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =>
       name: displayName(product),
       hardwareId: matchHardware(hw, "intel-xpu", product, total),
       memTotalMiB: total,
-      memUsedMiB: intelUsed(intelApps, uuid),
+      memUsedMiB: intelMem.has(uuid) ? (intelMem.get(uuid) ?? null) : null,
       utilPct: util,
       tempC: temp !== null && Number.isFinite(temp) ? Math.round(temp / 1000) : null,
       powerW: power,
@@ -192,68 +193,91 @@ const scanIntel = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =>
   return { gpus, apps: intelApps.filter((a) => gpus.some((g) => g.uuid === a.uuid)), error: null, nodes };
 };
 
-export const intelClients = async (pids: number[], nodes: Map<string, string>, names: Map<number, string>): Promise<ComputeApp[]> => {
-  const out: ComputeApp[] = [];
-  for (const pid of pids) {
-    const per = new Map<string, Map<string, number>>();
+export interface DrmClient {
+  uuid: string;
+  pid: number;
+  client: string;
+  kib: number;
+}
+
+export const drmKiB = (v: string): number => {
+  const m = /^\s*(\d+)\s*(KiB|MiB|GiB)?/.exec(v);
+  return m ? Number(m[1]) * (m[2] === "GiB" ? 1048576 : m[2] === "MiB" ? 1024 : m[2] === "KiB" ? 1 : 1 / 1024) : 0;
+};
+
+export const drmClients = async (pids: number[], nodes: Map<string, string>): Promise<DrmClient[]> => {
+  const out: DrmClient[] = [];
+  for (const pid of pids)
     for (const fd of await lsdir(`/proc/${pid}/fd`)) {
       const uuid = nodes.get(await readlink(`/proc/${pid}/fd/${fd}`).catch(() => ""));
       if (!uuid) continue;
       const info = (await rd(`/proc/${pid}/fdinfo/${fd}`)) ?? "";
-      const client = /drm-client-id:\s*(\d+)/.exec(info)?.[1] ?? fd;
-      const kib = Number(/drm-total-vram0:\s*(\d+)\s*KiB/.exec(info)?.[1] ?? 0);
-      const m = per.get(uuid) ?? new Map<string, number>();
-      m.set(client, Math.max(m.get(client) ?? 0, kib));
-      per.set(uuid, m);
+      out.push({ uuid, pid, client: /drm-client-id:\s*(\d+)/.exec(info)?.[1] ?? `${pid}/${fd}`, kib: drmKiB(/drm-total-vram0:([^\n]*)/.exec(info)?.[1] ?? "") });
     }
-    for (const [uuid, m] of per) out.push({ uuid, pid, processName: names.get(pid) ?? String(pid), usedMiB: Math.round([...m.values()].reduce((s, v) => s + v, 0) / 1024) });
+  return out;
+};
+
+export const sumClients = (cs: { key: string; kib: number }[]): number => {
+  const m = new Map<string, number>();
+  for (const c of cs) m.set(c.key, Math.max(m.get(c.key) ?? 0, c.kib));
+  return [...m.values()].reduce((s, v) => s + v, 0) / 1024;
+};
+
+export const intelClients = (clients: DrmClient[], pids: number[], names: Map<number, string>): ComputeApp[] => {
+  const out: ComputeApp[] = [];
+  for (const pid of pids)
+    for (const uuid of new Set(clients.filter((c) => c.pid === pid).map((c) => c.uuid)))
+      out.push({ uuid, pid, processName: names.get(pid) ?? String(pid), usedMiB: Math.round(sumClients(clients.filter((c) => c.pid === pid && c.uuid === uuid).map((c) => ({ key: c.client, kib: c.kib })))) });
+  return out;
+};
+
+const vramCache = new Map<string, { at: number; clients: { bus: string; client: string; kib: number }[] | null }>();
+
+export const containerDrm = async (ctx: Ctx, containerId: string): Promise<{ bus: string; client: string; kib: number }[] | null> => {
+  const hit = vramCache.get(containerId);
+  if (hit && Date.now() - hit.at < 15_000) return hit.clients;
+  const r = await ctx.exec(["docker", "exec", containerId, "sh", "-c", "grep -sHE '^(drm-pdev|drm-client-id|drm-total-vram0):' /proc/[0-9]*/fdinfo/*"], { timeoutMs: 4000 });
+  let clients: { bus: string; client: string; kib: number }[] | null = null;
+  if (!r.timedOut && (r.code === 0 || r.code === 1 || r.code === 2) && !r.stderr.trim()) {
+    const files = new Map<string, { bus?: string; client?: string; kib?: number }>();
+    for (const line of r.stdout.split("\n")) {
+      const m = /^(.+?):(drm-pdev|drm-client-id|drm-total-vram0):\s*(.*)$/.exec(line);
+      if (!m) continue;
+      const f = files.get(m[1] ?? "") ?? {};
+      if (m[2] === "drm-pdev") f.bus = m[3]?.trim();
+      else if (m[2] === "drm-client-id") f.client = m[3]?.trim();
+      else f.kib = drmKiB(m[3] ?? "");
+      files.set(m[1] ?? "", f);
+    }
+    clients = [...files.values()].filter((f) => f.bus && f.client).map((f) => ({ bus: f.bus!, client: f.client!, kib: f.kib ?? 0 }));
+  }
+  vramCache.set(containerId, { at: Date.now(), clients });
+  return clients;
+};
+
+export const intelMemUsed = (uuids: string[], host: DrmClient[], containers: { uuids: string[]; clients: { bus: string; client: string; kib: number }[] | null }[]): Map<string, number | null> => {
+  const out = new Map<string, number | null>();
+  for (const uuid of uuids) {
+    if (containers.some((c) => c.clients === null && c.uuids.includes(uuid))) {
+      out.set(uuid, null);
+      continue;
+    }
+    const bus = uuid.slice("intel:".length);
+    const keys = [...host.filter((c) => c.uuid === uuid).map((c) => ({ key: c.client, kib: c.kib })), ...containers.flatMap((c) => (c.clients ?? []).filter((x) => x.bus === bus).map((x) => ({ key: x.client, kib: x.kib })))];
+    out.set(uuid, Math.round(sumClients(keys)));
   }
   return out;
 };
 
-const intelUsed = (apps: ComputeApp[], uuid: string): number | null => {
-  const known = apps.filter((a) => a.uuid === uuid && a.usedMiB !== null);
-  return known.length ? Math.round(known.reduce((s, a) => s + (a.usedMiB ?? 0), 0)) : null;
-};
-
-const vramCache = new Map<string, { at: number; byBus: Map<string, number> | null }>();
-
-export const containerIntelVram = async (ctx: Ctx, containerId: string): Promise<Map<string, number> | null> => {
-  const hit = vramCache.get(containerId);
-  if (hit && Date.now() - hit.at < 15_000) return hit.byBus;
-  const r = await ctx.exec(["docker", "exec", containerId, "sh", "-c", "grep -sHE '^(drm-pdev|drm-client-id|drm-total-vram0):' /proc/[0-9]*/fdinfo/*"], { timeoutMs: 4000 });
-  let byBus: Map<string, number> | null = null;
-  if (r.stdout.trim()) {
-    const files = new Map<string, { bus?: string; client?: string; kib?: number }>();
-    for (const line of r.stdout.split("\n")) {
-      const m = /^(.+?):(drm-pdev|drm-client-id|drm-total-vram0):\s*(\S+)/.exec(line);
-      if (!m) continue;
-      const f = files.get(m[1] ?? "") ?? {};
-      if (m[2] === "drm-pdev") f.bus = m[3];
-      else if (m[2] === "drm-client-id") f.client = m[3];
-      else f.kib = Number(m[3]);
-      files.set(m[1] ?? "", f);
-    }
-    const clients = new Map<string, number>();
-    for (const f of files.values()) if (f.bus && f.client && f.kib !== undefined) clients.set(`${f.bus}/${f.client}`, Math.max(clients.get(`${f.bus}/${f.client}`) ?? 0, f.kib));
-    byBus = new Map();
-    for (const [k, kib] of clients) {
-      const bus = k.split("/")[0] ?? "";
-      byBus.set(bus, (byBus.get(bus) ?? 0) + kib / 1024);
-    }
-  }
-  vramCache.set(containerId, { at: Date.now(), byBus });
-  return byBus;
-};
-
-export const setIntelApps = (gs: GpuScan, apps: ComputeApp[]): void => {
+export const setIntelApps = (gs: GpuScan, apps: ComputeApp[], mem: Map<string, number | null>): void => {
   intelApps = apps;
+  intelMem = mem;
   gs.apps = [...gs.apps.filter((a) => !a.uuid.startsWith("intel:")), ...apps];
   for (const g of gs.gpus) {
     if (g.backend !== "intel-xpu") continue;
     const mine = apps.filter((a) => a.uuid === g.uuid);
     g.processes = mine.map((a) => ({ pid: a.pid, processName: a.processName, usedMiB: a.usedMiB, modelId: null }));
-    g.memUsedMiB = intelUsed(apps, g.uuid);
+    g.memUsedMiB = mem.has(g.uuid) ? (mem.get(g.uuid) ?? null) : null;
   }
 };
 
