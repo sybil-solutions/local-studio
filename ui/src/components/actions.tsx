@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import type { LaunchPlan, LaunchProgress, RecipeExport, RecipePr, RecipeRow } from "@local-studio/contracts/client";
+import type { LaunchPlan, LaunchProgress, Peer, RecipeExport, RecipePr, RecipeRow, TailnetCandidate } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
 import { get, post, setKey, via } from "../api";
 import { recipeChips } from "../model/view";
-import { restart, setState, useStore } from "../store";
+import { loadAll, restart, setState, useStore } from "../store";
 import { Btn, Chips, Dialog, Err } from "./basics";
 
 export interface Target {
@@ -146,20 +146,6 @@ export const ExportDialog = ({ t, modelId, onClose }: { t: Target; modelId: stri
           )}
         </>
       )}
-      <Err>{err}</Err>
-    </Dialog>
-  );
-};
-
-export const LogsDialog = ({ t, modelId, onClose }: { t: Target; modelId: string; onClose: () => void }) => {
-  const [text, setText] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
-    void get<string>(via(t.peerId, `/api/models/${enc(modelId)}/logs?tail=200`)).then((r) => (r.ok ? setText(typeof r.data === "string" ? r.data : JSON.stringify(r.data, null, 2)) : setErr(r.error)));
-  }, [t.peerId, modelId]);
-  return (
-    <Dialog title={`logs · ${modelId}`} onClose={onClose} wide>
-      <div className="blk">{text === null && !err ? <span className="label">loading…</span> : <pre className="pre" style={{ maxHeight: "60vh" }}>{text}</pre>}</div>
       <Err>{err}</Err>
     </Dialog>
   );
@@ -312,6 +298,62 @@ export const KeyPrompt = () => {
           Save<span className="chev">›</span>
         </button>
       </form>
+    </Dialog>
+  );
+};
+
+export const ConnectDialog = ({ onClose }: { onClose: () => void }) => {
+  const [cands, setCands] = useState<TailnetCandidate[] | null>(null);
+  const [url, setUrl] = useState("");
+  const [key, setKey] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void get<TailnetCandidate[]>("/api/machines/discover").then((r) => setCands(r.ok && Array.isArray(r.data) ? r.data.filter((c) => c.kind === "local-studio" && !c.alreadyConnected) : []));
+  }, []);
+  const connect = async () => {
+    setBusy(true);
+    setErr(null);
+    const r = await post<Peer>("/api/machines", { url: url.trim(), key: key.trim() });
+    setBusy(false);
+    setKey("");
+    if (!r.ok) return setErr(r.error);
+    setMsg(`connected ${r.data?.name ?? url}`);
+    setUrl("");
+    void loadAll();
+  };
+  return (
+    <Dialog title="connect a controller" onClose={onClose}>
+      <form
+        className="blk form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void connect();
+        }}
+      >
+        <label htmlFor="cu">url</label>
+        <input id="cu" className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://host:8080" spellCheck={false} />
+        <label htmlFor="ck">key</label>
+        <input id="ck" className="input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="local-studio key --federation" />
+      </form>
+      {cands && cands.length > 0 && (
+        <div className="blk btns">
+          {cands.map((c) => (
+            <Btn key={c.dnsName} onClick={() => setUrl(c.url)}>
+              {c.hostName}
+            </Btn>
+          ))}
+        </div>
+      )}
+      <div className="blk btns">
+        <Btn kind="primary" onClick={() => void connect()} disabled={busy || !url || key.length < 16}>
+          {busy ? "Connecting" : "Connect ›"}
+        </Btn>
+        {msg && <span className="value">{msg}</span>}
+      </div>
+      <div className="blk label">The key is stored on this controller (0600) and never shown again.</div>
+      <Err>{err}</Err>
     </Dialog>
   );
 };

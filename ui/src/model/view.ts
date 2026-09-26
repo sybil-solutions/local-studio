@@ -43,28 +43,7 @@ export interface CardView {
   progress: number | null;
   readOnly: boolean;
   watchdog: string | null;
-  href: string | null;
   servedModel: string | null;
-}
-
-export interface SlotView {
-  key: string;
-  rank: number;
-  at: number;
-  machineId: string;
-  peerId: string | null;
-  machineName: string;
-  label: string;
-  hint: string | null;
-  note: string | null;
-  warn: boolean;
-  crashed: boolean;
-  group: boolean;
-  readOnly: boolean;
-  run: { family: Family; label: string; recipeId: string; gpuKeys: string[] | null } | null;
-  launchId: string | null;
-  chips: Chip[];
-  detail: string | null;
 }
 
 export interface LifeView {
@@ -102,7 +81,6 @@ export const dayLabel = (s: string | number | null | undefined): string => {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 };
 
-export const tsMs = (t: number | null | undefined): number | null => (t === null || t === undefined ? null : t < 1e12 ? t * 1000 : t);
 
 export const fmtFormat = (f: string | null | undefined): string => (f ?? "").replace(/ · /g, " ");
 
@@ -256,7 +234,6 @@ export const cardOf = (mv: MachineView, s: Snapshot, m: RunningModel, launch: La
     progress: !ready && m.state === "loading" && pct !== null ? pct : null,
     readOnly: mv.readOnly,
     watchdog: m.watchdog,
-    href: `#/model/${encodeURIComponent(mv.id)}/${encodeURIComponent(m.id)}`,
     servedModel: m.servedModels[0] ?? m.primaryModel,
   };
 };
@@ -283,7 +260,6 @@ const launchCard = (mv: MachineView, s: Snapshot, l: LaunchProgress, recipes: Re
     progress: l.percent,
     readOnly: mv.readOnly,
     watchdog: null,
-    href: null,
     servedModel: r?.servedName ?? null,
   };
 };
@@ -314,96 +290,6 @@ export const recipeChips = (r: RecipeRow): Chip[] =>
   [{ text: fmtFormat(r.format) }, r.ctxTokens ? { icon: "context", text: fmt.ctx(r.ctxTokens) } : null, r.sizeGb ? { icon: "weights", text: `${Math.round(r.sizeGb)} GB` } : null].filter(
     (x): x is Chip => !!x && !!x.text,
   );
-
-export const healthChips = (g: Gpu): Chip[] => {
-  const r = gpuRow(g, null);
-  return [{ icon: "memory", text: r.mem }, ...(r.temp ? [{ icon: "temp", text: r.temp }] : [])];
-};
-
-const pickRecipe = (rows: RecipeRow[], hw: string | null, cards: number): RecipeRow | null => {
-  const c = rows.filter((r) => r.hardwareId === hw && r.cards === cards && !r.runningModelId);
-  return c.find((r) => r.recommended && r.fit === "fits") ?? c.find((r) => r.fit === "fits") ?? c[0] ?? null;
-};
-
-export const slots = (mv: MachineView, recipes: RecipeRow[] | null, live: Record<string, LaunchProgress>, selfId: string | null, dismissed: Set<string>): SlotView[] => {
-  const s = mv.snap;
-  if (!s) return [];
-  const rows = recipes ?? [];
-  const base = { machineId: mv.id, peerId: mv.peerId, machineName: mv.name, readOnly: mv.readOnly, launchId: null, detail: null, group: false, crashed: false, warn: false, hint: null, note: null, run: null };
-  const out: SlotView[] = [];
-  const groupOf = (key: string) => s.groups.find((g) => g.gpuKeys.includes(key));
-  s.gpus.forEach((g, at) => {
-    const gr = groupOf(g.key);
-    const model = gr?.modelIds.length ? s.models.find((m) => m.id === gr.modelIds[0]) : null;
-    const slot: SlotView = { ...base, key: `${mv.id}/${g.key}`, rank: 4, at, label: shortGpu(g), chips: healthChips(g) };
-    if (model || gr?.state === "running" || gr?.state === "busy") {
-      slot.rank = 1;
-      const name = (gr?.modelIds ?? []).map((id) => s.models.find((m) => m.id === id)?.primaryModel ?? id).join(", ") || "a model";
-      slot.note = `${model?.state === "ready" ? "running" : model?.state === "stopping" ? "stopping" : "starting"} ${name}`;
-    } else if (gr?.state === "foreign") {
-      slot.rank = 3;
-      slot.warn = true;
-      slot.note = "in use by another program";
-      slot.detail = g.processes.map((p) => `${p.processName} (pid ${p.pid}, ${fmt.gb(p.usedMiB)})`).join(", ") || null;
-    } else {
-      const r = pickRecipe(rows, g.hardwareId, 1);
-      if (r) {
-        slot.rank = 0;
-        slot.run = { family: family(r.family ?? r.name), label: `run ${r.name} ›`, recipeId: r.id, gpuKeys: [g.key] };
-        slot.chips = [...slot.chips, ...recipeChips(r)];
-      } else slot.note = recipes === null ? "recipes unavailable" : "no validated model yet";
-    }
-    out.push(slot);
-  });
-  const free = s.groups.filter((g) => g.state === "available").flatMap((g) => g.gpuKeys);
-  const byHw = new Map<string, string[]>();
-  for (const key of free) {
-    const g = s.gpus.find((x) => x.key === key);
-    if (!g?.hardwareId) continue;
-    byHw.set(g.hardwareId, [...(byHw.get(g.hardwareId) ?? []), key]);
-  }
-  let hwAt = 0;
-  for (const [hw, keys] of byHw) {
-    const seen = new Set<number>();
-    for (const r of rows.filter((x) => x.hardwareId === hw && x.cards > 1).sort((a, b) => a.cards - b.cards)) {
-      if (seen.has(r.cards) || keys.length < r.cards) continue;
-      const pick = pickRecipe(rows, hw, r.cards);
-      if (!pick) continue;
-      seen.add(r.cards);
-      const first = s.gpus.find((x) => x.key === keys[0])!;
-      const gpuKeys = pick.freeGroups[0] ?? keys.slice(0, pick.cards);
-      out.push({
-        ...base,
-        key: `${mv.id}/group/${hw}/${pick.cards}`,
-        rank: 0.5,
-        at: hwAt * 100 + pick.cards,
-        group: true,
-        label: `${pick.cards} × ${shortGpu(first)}`,
-        run: { family: family(pick.family ?? pick.name), label: `run ${pick.name} ›`, recipeId: pick.id, gpuKeys },
-        chips: recipeChips(pick),
-      });
-    }
-    hwAt++;
-  }
-  for (const l of launchesFor(s, live, selfId)) {
-    if (l.phase !== "failed" || dismissed.has(l.launchId)) continue;
-    const r = rows.find((x) => x.id === l.recipeId);
-    out.push({
-      ...base,
-      key: `${mv.id}/failed/${l.launchId}`,
-      rank: 2,
-      at: 0,
-      crashed: true,
-      hint: "crashed",
-      label: r ? `${r.cards > 1 ? `${r.cards} × ` : ""}${r.name}` : l.recipeId,
-      run: { family: family(r?.name), label: "run again ›", recipeId: l.recipeId, gpuKeys: null },
-      launchId: l.launchId,
-      chips: r ? recipeChips(r) : [],
-      detail: l.error ?? l.detail,
-    });
-  }
-  return out.sort((a, b) => a.rank - b.rank || a.at - b.at);
-};
 
 export interface GpuRowView {
   key: string;
@@ -438,41 +324,6 @@ export const gpuRow = (g: Gpu, s: Snapshot | null, extra = false): GpuRowView =>
     status,
     statusAlert: gr?.state === "foreign",
   };
-};
-
-export interface Figure {
-  v: string;
-  u: string;
-  k: string;
-}
-
-export const figures = (m: RunningModel, st: ModelCardStats | null, now: number, engine: EngineRates | null = null): Figure[] => {
-  const pick = (gw: number | null | undefined, en: number | null | undefined, k: string): { v: number | null; k: string } =>
-    gw != null ? { v: gw, k } : en != null ? { v: en, k: `${k} · engine` } : { v: null, k };
-  const dec = pick(st?.decodeTps, engine?.decodeTps, "decode avg");
-  const pre = pick(st?.prefillTps, engine?.prefillTps, "prefill avg");
-  const ttft = pick(st?.meanTtftMs, engine?.meanTtftMs, "first token");
-  const started = tsMs(m.startedAt);
-  return [
-    { v: fmt.tps(dec.v), u: dec.v !== null ? "tok/s" : "", k: dec.k },
-    { v: pre.v === null ? "–" : pre.v >= 1000 ? fmt.k(pre.v) : fmt.tps(pre.v), u: pre.v !== null ? "tok/s" : "", k: pre.k },
-    { v: fmt.ms(ttft.v), u: "", k: ttft.k },
-    { v: st ? fmt.k(st.sessionTokens) : "–", u: "", k: "session" },
-    { v: st ? fmt.k(st.week) : "–", u: "", k: "week" },
-    { v: started !== null ? fmt.dur((now - started) / 1000) : "–", u: "", k: "up" },
-  ];
-};
-
-export const heroChips = (m: RunningModel, s: Snapshot): Chip[] => {
-  const cards = s.gpus.filter((g) => m.gpuKeys.includes(g.key));
-  return [
-    { text: `${m.engine}${m.engineVersion ? ` ${m.engineVersion.split("+")[0]}` : ""}` },
-    ...(cards.length ? [{ icon: "gpu", text: `${cards.length} × ${shortGpu(cards[0]!)}` }] : []),
-    ...(m.contextWindow ? [{ icon: "context", text: fmt.ctx(m.contextWindow) }] : []),
-    ...(m.spec ? [{ text: `${m.spec.method}${m.spec.numSpeculativeTokens ? ` ×${m.spec.numSpeculativeTokens}` : ""}` }] : []),
-    ...(m.vision ? [{ icon: "vision", text: "" }] : []),
-    { text: m.origin },
-  ];
 };
 
 export const homeDir = (d: string): string => d.replace(/^\/(home|Users)\/[^/]+/, "~");

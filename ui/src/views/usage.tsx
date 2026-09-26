@@ -1,0 +1,229 @@
+import { useEffect, useMemo, useState } from "react";
+import type { DailyRow, MetricsSlice, MetricsSummary, RequestRecord, Window } from "@local-studio/contracts/client";
+import { ERROR_CODES, fmt } from "@local-studio/contracts/client";
+import { get, via } from "../api";
+import { type Col, SectionHeading, Table } from "../components/basics";
+import { ActivityGrid, FigureGrid, sliceHit } from "../components/cards";
+import { life, machines, MONTHS, type MachineView, sumActivity } from "../model/view";
+import { useStore } from "../store";
+
+const WINDOWS: Window[] = ["24h", "7d", "30d", "all"];
+const BACK: Record<Window, number> = { "1h": 1, "24h": 1, "7d": 6, "30d": 29, all: 3650 };
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const usd = (x: number | null) => (x === null ? "$0 local" : `$${x < 1 ? x.toFixed(3) : x.toFixed(2)}`);
+const SUMS = ["requests", "errors", "inputUncached", "cacheRead", "cacheWrite", "output", "reasoning", "cacheUnknownPrompt", "decodeTokens", "decodeMs", "prefillTokens", "prefillMs", "ttftSumMs", "ttftN"] as const;
+
+type Agg = { key: string; costUsd: number | null } & Record<(typeof SUMS)[number], number>;
+interface Data {
+  m: MachineView;
+  sum: MetricsSummary | null;
+  daily: DailyRow[];
+  reqs: RequestRecord[];
+}
+
+const fromRecord = (r: RequestRecord): Omit<Agg, "key"> => ({
+  requests: 1,
+  errors: r.errorCode ? 1 : 0,
+  inputUncached: r.inputUncached,
+  cacheRead: r.cacheRead,
+  cacheWrite: r.cacheWrite,
+  output: r.output,
+  reasoning: r.reasoning,
+  cacheUnknownPrompt: r.cacheSource === null ? r.promptTotal : 0,
+  decodeTokens: r.decodeTps && r.decodeMs ? (r.decodeTps * r.decodeMs) / 1000 : 0,
+  decodeMs: r.decodeTps && r.decodeMs ? r.decodeMs : 0,
+  prefillTokens: 0,
+  prefillMs: 0,
+  ttftSumMs: r.ttftMs ?? 0,
+  ttftN: r.ttftMs === null ? 0 : 1,
+  costUsd: null,
+});
+
+const fold = <T extends Omit<Agg, "key">>(rows: T[], keyOf: (r: T) => string): Agg[] => {
+  const m = new Map<string, Agg>();
+  for (const r of rows) {
+    const k = keyOf(r);
+    const a = m.get(k) ?? ({ key: k, costUsd: null, ...Object.fromEntries(SUMS.map((s) => [s, 0])) } as Agg);
+    for (const s of SUMS) a[s] += r[s] ?? 0;
+    if (r.costUsd) a.costUsd = (a.costUsd ?? 0) + r.costUsd;
+    m.set(k, a);
+  }
+  return [...m.values()];
+};
+
+const mergeSlices = (lists: MetricsSlice[][]): MetricsSlice[] => {
+  const m = new Map<string, MetricsSlice>();
+  for (const s of lists.flat()) {
+    const a = m.get(s.key);
+    if (!a) m.set(s.key, { ...s });
+    else {
+      for (const k of ["requests", "errors", "inputUncached", "cacheRead", "cacheWrite", "output", "reasoning", "promptTotal", "cacheUnknownPrompt"] as const) a[k] += s[k];
+      a.costUsd = a.costUsd === null && s.costUsd === null ? null : (a.costUsd ?? 0) + (s.costUsd ?? 0);
+      a.decodeTps = a.prefillTps = a.meanTtftMs = null;
+    }
+  }
+  return [...m.values()].sort((a, b) => b.promptTotal + b.output - (a.promptTotal + a.output));
+};
+
+const tokenCols = <T extends { inputUncached: number; cacheRead: number; cacheWrite: number; output: number; cacheUnknownPrompt: number; requests: number; errors: number }>(): Col<T>[] => [
+  { h: "req", n: true, c: (r) => fmt.k(r.requests) },
+  { h: "in", n: true, c: (r) => fmt.k(r.inputUncached + r.cacheWrite + r.cacheUnknownPrompt) },
+  { h: "cached", n: true, c: (r) => fmt.k(r.cacheRead) },
+  { h: "out", n: true, c: (r) => fmt.k(r.output) },
+  { h: "hit", n: true, c: (r) => sliceHit({ cacheRead: r.cacheRead, promptTotal: r.inputUncached + r.cacheRead + r.cacheWrite + r.cacheUnknownPrompt, cacheUnknownPrompt: r.cacheUnknownPrompt }) },
+  { h: "err", n: true, c: (r) => (r.errors ? <span className="alert">{`${r.errors} · ${fmt.pct(r.errors / r.requests)}`}</span> : "0") },
+];
+
+const aggCols = (h: string): Col<Agg>[] => [
+  { h, c: (r) => r.key },
+  ...tokenCols<Agg>(),
+  { h: "decode", n: true, c: (r) => fmt.tps(r.decodeMs > 0 ? r.decodeTokens / (r.decodeMs / 1000) : null) },
+  { h: "ttft", n: true, c: (r) => fmt.ms(r.ttftN ? r.ttftSumMs / r.ttftN : null) },
+  { h: "$", n: true, c: (r) => usd(r.costUsd) },
+];
+
+const sliceCols = (h: string): Col<MetricsSlice>[] => [
+  { h, c: (r) => <span className="cut" title={r.key}>{r.key}</span> },
+  ...tokenCols<MetricsSlice>(),
+  { h: "decode", n: true, c: (r) => fmt.tps(r.decodeTps) },
+  { h: "prefill", n: true, c: (r) => fmt.tps(r.prefillTps) },
+  { h: "ttft", n: true, c: (r) => fmt.ms(r.meanTtftMs) },
+  { h: "$", n: true, c: (r) => usd(r.costUsd) },
+];
+
+const hourKey = (t: number) => {
+  const d = new Date(t);
+  return `${MONTHS[d.getMonth()]} ${String(d.getDate()).padStart(2, " ")} ${String(d.getHours()).padStart(2, "0")}:00`;
+};
+
+export const UsagePage = ({ machineId }: { machineId: string | null }) => {
+  const fleet = useStore((s) => s.fleet);
+  const live = useStore((s) => s.launches);
+  const ms = useMemo(() => machines(fleet, live).filter((m) => m.online), [fleet, live]);
+  const pick = ms.filter((m) => !machineId || m.id === machineId);
+  const [win, setWin] = useState<Window>("7d");
+  const [data, setData] = useState<Data[]>([]);
+  const ids = pick.map((m) => `${m.id}:${m.peerId ?? ""}`).join(",");
+
+  useEffect(() => {
+    let on = true;
+    const load = async () => {
+      const from = new Date();
+      from.setDate(from.getDate() - BACK[win]);
+      const to = new Date();
+      to.setDate(to.getDate() + 1);
+      const out = await Promise.all(
+        pick.map(async (m) => {
+          const [s, d, r] = await Promise.all([
+            get<MetricsSummary>(via(m.peerId, `/api/metrics/summary?window=${win}`)),
+            get<DailyRow[]>(via(m.peerId, `/api/usage/daily?from=${ymd(from)}&to=${ymd(to)}&group=model,client`)),
+            get<RequestRecord[]>(via(m.peerId, "/api/metrics/requests?limit=1000")),
+          ]);
+          return {
+            m,
+            sum: s.ok && typeof s.data?.requests === "number" ? s.data : null,
+            daily: d.ok && Array.isArray(d.data) ? d.data : [],
+            reqs: r.ok && Array.isArray(r.data) ? r.data.filter((x) => x.via === "local") : [],
+          };
+        }),
+      );
+      if (on) setData(out);
+    };
+    void load();
+    const t = setInterval(load, 15_000);
+    return () => {
+      on = false;
+      clearInterval(t);
+    };
+  }, [ids, win]);
+
+  const act = machineId ? (pick[0]?.snap?.activity ?? null) : sumActivity(fleet);
+  const sums = data.map((d) => d.sum).filter((s): s is MetricsSummary => !!s);
+  const tot = fold(sums.map((s) => ({ ...s, ttftSumMs: 0, ttftN: 0 })), () => "all")[0];
+  const one = sums.length === 1 ? sums[0]! : null;
+  const since = Date.now() - 86_400_000;
+  const recs = data.flatMap((d) => d.reqs).filter((r) => r.tsStart >= since);
+  const hours = fold(recs.map((r) => ({ ...fromRecord(r), t: r.tsStart })), (r) => hourKey(r.t)).sort((a, b) => b.key.localeCompare(a.key));
+  const days = fold(data.flatMap((d) => d.daily), (r) => r.day).sort((a, b) => b.key.localeCompare(a.key));
+  const codes = ERROR_CODES.map((c) => ({ c, n: sums.reduce((t, s) => t + (s.errorsByCode[c] ?? 0), 0) })).filter((x) => x.n > 0);
+  const prompt = tot ? tot.inputUncached + tot.cacheRead + tot.cacheWrite + tot.cacheUnknownPrompt : 0;
+
+  return (
+    <>
+      <div className="top gap-top">
+        <div className="tabs">
+          {[{ id: "", name: "all machines" }, ...ms].map((m) => (
+            <a key={m.id} className={(machineId ?? "") === m.id ? "on" : ""} href={`#/usage${m.id ? `/${encodeURIComponent(m.id)}` : ""}`}>
+              {m.name}
+            </a>
+          ))}
+        </div>
+        <div className="tabs conn">
+          {WINDOWS.map((w) => (
+            <button type="button" key={w} className={w === win ? "on" : ""} onClick={() => setWin(w)}>
+              {w}
+            </button>
+          ))}
+        </div>
+      </div>
+      {act && <ActivityGrid v={life(act)} />}
+      <SectionHeading aside={<span className="label">gateway requests, {win}</span>}>totals</SectionHeading>
+      <FigureGrid
+        cells={[
+          { v: tot ? fmt.k(tot.requests) : "–", k: "requests" },
+          { v: tot ? fmt.k(tot.inputUncached + tot.cacheWrite + tot.cacheUnknownPrompt) : "–", k: "tokens in" },
+          { v: tot ? fmt.k(tot.cacheRead) : "–", k: "tokens cached" },
+          { v: tot ? fmt.k(tot.output) : "–", k: "tokens out" },
+          { v: tot ? sliceHit({ cacheRead: tot.cacheRead, promptTotal: prompt, cacheUnknownPrompt: tot.cacheUnknownPrompt }) : "–", k: "cache hit" },
+          { v: tot ? usd(tot.costUsd) : "–", k: "spend" },
+          { v: tot && tot.requests ? fmt.pct(tot.errors / tot.requests) : "–", k: `error rate${tot?.errors ? ` · ${tot.errors}` : ""}` },
+          { v: tot && tot.decodeMs ? `${fmt.tps(tot.decodeTokens / (tot.decodeMs / 1000))} tok/s` : "–", k: "decode" },
+          { v: tot && tot.prefillMs ? `${fmt.tps(tot.prefillTokens / (tot.prefillMs / 1000))} tok/s` : "–", k: "prefill" },
+          { v: one ? fmt.ms(one.ttftMs.p50) : "–", k: "ttft p50" },
+          { v: one ? fmt.ms(one.ttftMs.p90) : "–", k: "ttft p90" },
+          { v: one ? fmt.ms(one.ttftMs.p99) : "–", k: "ttft p99" },
+        ]}
+      />
+      <div className="cols">
+        <div className="col">
+          <SectionHeading>by machine</SectionHeading>
+          <Table<Data>
+            cols={[
+              { h: "machine", c: (d) => d.m.name },
+              { h: "req", n: true, c: (d) => (d.sum ? fmt.k(d.sum.requests) : "–") },
+              { h: "p50", n: true, c: (d) => fmt.ms(d.sum?.ttftMs.p50) },
+              { h: "p90", n: true, c: (d) => fmt.ms(d.sum?.ttftMs.p90) },
+              { h: "p99", n: true, c: (d) => fmt.ms(d.sum?.ttftMs.p99) },
+              { h: "decode", n: true, c: (d) => fmt.tps(d.sum?.decodeTps) },
+              { h: "prefill", n: true, c: (d) => fmt.tps(d.sum?.prefillTps) },
+              { h: "err", n: true, c: (d) => fmt.pct(d.sum?.errorRate) },
+            ]}
+            rows={data}
+            keyOf={(d) => d.m.id}
+          />
+          <SectionHeading>errors by code</SectionHeading>
+          <Table
+            cols={[
+              { h: "code", c: (x: { c: string; n: number }) => <span className="alert">{x.c}</span> },
+              { h: "count", n: true, c: (x) => fmt.k(x.n) },
+              { h: "share", n: true, c: (x) => fmt.pct(tot?.requests ? x.n / tot.requests : null) },
+            ]}
+            rows={codes}
+            keyOf={(x) => x.c}
+            empty="no errors"
+          />
+          <SectionHeading aside={<span className="label">last 24 h, {fmt.k(recs.length)} requests</span>}>by hour</SectionHeading>
+          <Table cols={aggCols("hour")} rows={hours} keyOf={(r) => r.key} empty="no requests in the last 24 h" />
+        </div>
+        <div className="col">
+          <SectionHeading>by model</SectionHeading>
+          <Table cols={sliceCols("model")} rows={mergeSlices(sums.map((s) => s.byModel))} keyOf={(r) => r.key} empty="no usage in this window" />
+          <SectionHeading>by client</SectionHeading>
+          <Table cols={sliceCols("client")} rows={mergeSlices(sums.map((s) => s.byClient))} keyOf={(r) => r.key} empty="no usage in this window" />
+          <SectionHeading aside={<span className="label">local days</span>}>by day</SectionHeading>
+          <Table cols={aggCols("day")} rows={days} keyOf={(r) => r.key} empty="no usage in this window" />
+        </div>
+      </div>
+    </>
+  );
+};

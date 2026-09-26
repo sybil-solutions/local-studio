@@ -1,59 +1,43 @@
-import { StrictMode } from "react";
+import { StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import "./theme.css";
 import { getKey, setKey } from "./api";
 import { KeyPrompt } from "./components/actions";
-import { TitleLine } from "./components/basics";
-import { parseRoute, useHash } from "./route";
 import { restart, start, useStore } from "./store";
 import { AgentsPage } from "./views/agents";
-import { ConnectPage } from "./views/connect";
-import { Home } from "./views/home";
-import { MachinePage } from "./views/machine";
-import { MetricsPage } from "./views/metrics";
-import { ModelPage } from "./views/model";
-import { RecipesPage } from "./views/recipes";
+import { ControlPage } from "./views/control";
+import { LivePage } from "./views/live";
+import { UsagePage } from "./views/usage";
 
-const NAV = [
-  ["home", "#/home"],
-  ["recipes", "#/recipes"],
-  ["metrics", "#/metrics"],
-  ["agents", "#/agents"],
-  ["connect", "#/connect"],
-] as const;
+const TABS = ["control", "live", "usage", "agents"] as const;
+
+const onHash = (f: () => void) => {
+  window.addEventListener("hashchange", f);
+  return () => window.removeEventListener("hashchange", f);
+};
 
 const App = () => {
-  const route = parseRoute(useHash());
+  const hash = useSyncExternalStore(onHash, () => location.hash);
+  const [path = "", query = ""] = hash.replace(/^#\/?/, "").split("?");
+  const [tab, arg] = path.split("/").map(decodeURIComponent);
+  const view = TABS.find((t) => t === tab) ?? "control";
   const needKey = useStore((s) => s.needKey);
   const conn = useStore((s) => s.conn);
   const retry = useStore((s) => s.retryMs);
-  const fleet = useStore((s) => s.fleet);
-  const self = fleet?.machines.find((m) => m.machineId === fleet.self)?.snapshot ?? null;
-  const models = fleet?.machines.reduce((t, m) => t + (m.snapshot?.models.length ?? 0), 0) ?? 0;
-  const view =
-    route.view === "machine" ? (
-      <MachinePage machineId={route.machineId} />
-    ) : route.view === "model" ? (
-      <ModelPage machineId={route.machineId} modelId={route.modelId} />
-    ) : route.view === "recipes" ? (
-      <RecipesPage machineId={route.machineId} />
-    ) : route.view === "metrics" ? (
-      <MetricsPage machineId={route.machineId} />
-    ) : route.view === "agents" ? (
-      <AgentsPage model={route.model} />
-    ) : route.view === "connect" ? (
-      <ConnectPage />
-    ) : (
-      <Home />
-    );
+  const self = useStore((s) => s.fleet?.machines.find((m) => m.peerId === null)?.snapshot?.machine ?? null);
   return (
     <div className="shell">
       <div className="top">
-        <TitleLine version={self?.machine.version ?? ""} />
-        <nav className="nav">
-          {NAV.map(([label, href]) => (
-            <a key={label} href={href} className={route.view === label || (label === "home" && (route.view === "machine" || route.view === "model")) ? "on" : ""}>
-              {label}
+        <span className="row-flex">
+          <a className="label" href="#/control">
+            LOCAL STUDIO
+          </a>
+          <span className="tiny dim">{self?.version ?? ""}</span>
+        </span>
+        <nav className="tabs">
+          {TABS.map((t) => (
+            <a key={t} href={`#/${t}`} className={view === t ? "on" : ""}>
+              {t}
             </a>
           ))}
         </nav>
@@ -61,29 +45,22 @@ const App = () => {
           <span className={conn === "retrying" ? "alert" : "label"}>
             {conn === "live" ? "live" : conn === "retrying" ? `reconnecting${retry ? ` in ${Math.round(retry / 1000)}s` : ""}` : "connecting"}
           </span>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => {
-              if (getKey()) {
-                setKey(null);
-                void restart();
-              } else void restart().then(() => undefined);
-            }}
-            title={getKey() ? "forget the stored key" : "reconnect"}
-          >
-            {getKey() ? "Forget key" : "Reconnect"}
-          </button>
+          {getKey() && (
+            <button type="button" className="btn" onClick={() => (setKey(null), void restart())}>
+              Forget key
+            </button>
+          )}
         </span>
       </div>
-      {view}
-      <div className="foot-line">
-        <span>{self ? `${self.machine.name} · ${self.machine.platform}` : "–"}</span>
-        <span>
-          {fleet?.machines.length ?? 0} machine{fleet?.machines.length === 1 ? "" : "s"} · {models} model{models === 1 ? "" : "s"}
-        </span>
-        {self?.machine.readOnly && <span>read-only</span>}
-      </div>
+      {view === "usage" ? (
+        <UsagePage machineId={arg || null} />
+      ) : view === "live" ? (
+        <LivePage />
+      ) : view === "agents" ? (
+        <AgentsPage model={new URLSearchParams(query).get("model")} />
+      ) : (
+        <ControlPage machineId={arg || null} />
+      )}
       {needKey && <KeyPrompt />}
     </div>
   );

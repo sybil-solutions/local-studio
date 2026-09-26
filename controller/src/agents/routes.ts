@@ -3,14 +3,15 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 import type { AgentLaunchResult, GatewayModel, Harness, HarnessInfo, Workspace } from "@local-studio/contracts";
-import { AgentLaunchBody, HARNESS_CLIENT, IssueKeyBody } from "@local-studio/contracts";
+import { AgentLaunchBody, IssueKeyBody } from "@local-studio/contracts";
+import { z } from "zod";
 import type { Ctx, Env, Services } from "../context";
 import { which } from "../core/exec";
 import { claudeHasHistory } from "./cli";
 import type { DshManager } from "./dsh";
 import { prepareClaudeDesktop, prepareCodexDesktop } from "./desktop";
 import { ensureClientKey, forgetKeyId } from "./keys";
-import { SAFE_FLAG } from "./launch-table";
+import { AGENT_HARNESSES, SAFE_FLAG, clientOf, isTerminal } from "./launch-table";
 import { hasGui, openTerminal, resolveTerminal } from "./terminals";
 import { agentRunCommand, attachCommand, sessionName, startSession, tmuxBin } from "./tmux";
 import type { WorkspaceStore } from "./workspaces";
@@ -27,14 +28,14 @@ export const gatewayUrlFor = (ctx: Ctx): string => {
 const firstLine = (s: string) => s.trim().split("\n")[0]?.trim() ?? "";
 
 export const probeHarnesses = async (ctx: Ctx, dsh: DshManager): Promise<HarnessInfo[]> => {
-  const cli = async (harness: "claude" | "codex"): Promise<HarnessInfo> => {
+  const cli = async (harness: "claude" | "codex" | "pi" | "omp"): Promise<HarnessInfo> => {
     const path = await which(harness, BIN_DIRS);
     let version: string | null = null;
     if (path) {
       const r = await ctx.exec([path, "--version"], { timeoutMs: 5000 });
-      if (r.code === 0) version = firstLine(r.stdout).replace(/^codex-cli\s+/, "").replace(/\s*\(Claude Code\)$/, "") || null;
+      if (r.code === 0) version = firstLine(r.stdout).replace(/^(codex-cli\s+|omp\/)/, "").replace(/\s*\(Claude Code\)$/, "") || null;
     }
-    return { harness, installed: !!path, path, version, tier: 1, note: path ? "runs in tmux in the workspace dir" : `${harness} not found on PATH` };
+    return { harness: harness as Harness, installed: !!path, path, version, tier: 1, note: path ? "runs in tmux in the workspace dir" : `${harness} not found on PATH` };
   };
   const app = async (harness: "codex-desktop" | "claude-desktop"): Promise<HarnessInfo> => {
     const path = process.platform === "darwin" ? APPS[harness]! : null;
@@ -55,7 +56,7 @@ export const probeHarnesses = async (ctx: Ctx, dsh: DshManager): Promise<Harness
     tier: 1,
     note: d.installed ? `dsh web on :${d.port ?? 3090}, DSH_HOME=${d.home}` : "installed on first launch (npm i @deepseek-ai/dsh@latest)",
   };
-  return [dshInfo, ...(await Promise.all([cli("claude"), cli("codex"), app("codex-desktop"), app("claude-desktop")]))];
+  return [dshInfo, ...(await Promise.all([cli("claude"), cli("codex"), cli("pi"), cli("omp"), app("codex-desktop"), app("claude-desktop")]))];
 };
 
 const resolveModel = (svc: Services, model: string): GatewayModel | null => {
@@ -141,8 +142,9 @@ export const createAgentRoutes = (
     return c.json({ ok: true, id });
   });
 
+  const LaunchBody = AgentLaunchBody.extend({ harness: z.enum(AGENT_HARNESSES) });
   r.post("/api/agents/launch", async (c) => {
-    const parsed = AgentLaunchBody.safeParse(await body(c));
+    const parsed = LaunchBody.safeParse(await body(c));
     if (!parsed.success) return bad(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
     const b = parsed.data;
     const terminalPref = c.req.query("terminal") ?? process.env.LOCAL_STUDIO_AGENT_TERMINAL ?? "auto";
@@ -151,23 +153,23 @@ export const createAgentRoutes = (
       ws = store.get(b.workspaceId);
       if (!ws) return bad(`no workspace ${b.workspaceId}`, 404, "NOT_FOUND");
       if (ws.harness !== b.harness) return bad(`workspace ${ws.id} belongs to ${ws.harness}, not ${b.harness}`, 409, "CONFLICT");
-    } else if (b.dir) ws = store.findByDir(b.dir, b.harness);
+    } else if (b.dir) ws = store.findByDir(b.dir, b.harness as Harness);
     const wasOpened = ws?.lastOpenAt != null;
     const flags = b.safe === undefined ? ws?.flags : b.safe ? [...new Set([...(ws?.flags ?? []), SAFE_FLAG])] : (ws?.flags ?? []).filter((f) => f !== SAFE_FLAG);
-    ws ??= store.create({ name: b.name, dir: b.dir, harness: b.harness, model: b.model, flags: flags ?? [] });
+    ws ??= store.create({ name: b.name, dir: b.dir, harness: b.harness as Harness, model: b.model, flags: flags ?? [] });
     const gm = resolveModel(svc, b.model);
     const gatewayUrl = gatewayUrlFor(ctx);
     const rt = { contextWindow: gm?.contextWindow ?? null, vision: gm?.vision ?? null, gatewayUrl };
-    const client = HARNESS_CLIENT[b.harness];
+    const client = clientOf(b.harness);
     const { keyFile } = ensureClientKey(ctx.db, ctx.keys, ctx.config.home, client);
     store.opened(ws.id, { model: b.model, flags, ...rt });
     const warn = gm ? "" : ` (model ${b.model} is not in the gateway's model list right now; context window unknown)`;
 
-    if (b.harness === "claude" || b.harness === "codex") {
+    if (isTerminal(b.harness)) {
       const tmux = await tmuxBin();
       if (!tmux) return bad("tmux is not installed; terminal agents run inside tmux", 500, "NO_TMUX");
       const name = sessionName(ws.id);
-      const resume = b.resume ?? (wasOpened && (b.harness === "codex" || claudeHasHistory(ws.dir)));
+      const resume = b.resume ?? (wasOpened && (b.harness !== "claude" || claudeHasHistory(ws.dir)));
       const cmd = agentRunCommand(ctx.config.home, ws.id, resume);
       const started = await startSession(ctx, tmux, name, ws.dir, cmd);
       if (started.error) return bad(`tmux: ${started.error}`, 500, "TMUX");
@@ -184,7 +186,7 @@ export const createAgentRoutes = (
       }
       ctx.log.info(`agent ${b.harness} ${ws.id}: ${detail}${warn}`);
       const attach = hasGui() ? `tmux attach -t ${name}` : `ssh -t ${ctx.identity.hostname} tmux attach -t ${name}`;
-      const res: AgentLaunchResult = { workspaceId: ws.id, harness: b.harness, how, command: cmd, url: null, tmuxSession: name, attach };
+      const res: AgentLaunchResult = { workspaceId: ws.id, harness: b.harness as Harness, how, command: cmd, url: null, tmuxSession: name, attach };
       return c.json({ ...res, created: started.created, resume, note: `${detail}${warn}` });
     }
 

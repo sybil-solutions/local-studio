@@ -13,7 +13,7 @@ export interface State {
   retryMs: number | null;
   needKey: boolean;
   error: string | null;
-  dismissed: Set<string>;
+  hist: Record<string, number[]>;
   now: number;
 }
 
@@ -28,7 +28,7 @@ let state: State = {
   retryMs: null,
   needKey: false,
   error: null,
-  dismissed: new Set(),
+  hist: {},
   now: Date.now(),
 };
 const subs = new Set<() => void>();
@@ -54,6 +54,15 @@ const fleetFromSnapshot = (s: Snapshot): FleetSnapshot => ({
   workspaces: [],
 });
 
+const HIST = 90;
+
+const track = (hist: Record<string, number[]>, f: FleetSnapshot): Record<string, number[]> => {
+  const next = { ...hist };
+  for (const m of f.machines)
+    for (const g of m.snapshot?.gpus ?? []) if (g.utilPct !== null) next[`${m.machineId}/${g.key}`] = [...(next[`${m.machineId}/${g.key}`] ?? []), g.utilPct].slice(-HIST);
+  return next;
+};
+
 export const applySnapshot = (s: Snapshot): void =>
   setState((st) => {
     if (!st.fleet) return { fleet: fleetFromSnapshot(s) };
@@ -62,7 +71,8 @@ export const applySnapshot = (s: Snapshot): void =>
     const has = f.machines.some((m) => m.machineId === self);
     const entry = { machineId: self, peerId: null, online: true, error: null, snapshot: s };
     const machines = has ? f.machines.map((m) => (m.machineId === self ? { ...m, ...entry } : m)) : [entry, ...f.machines];
-    return { fleet: { ...f, self, machines, at: Math.max(f.at, s.at) } };
+    const fleet = { ...f, self, machines, at: Math.max(f.at, s.at) };
+    return { fleet, hist: track(st.hist, { ...fleet, machines: [entry] }) };
   });
 
 export const applyFleet = (f: FleetSnapshot): void =>
@@ -70,7 +80,7 @@ export const applyFleet = (f: FleetSnapshot): void =>
     const prevSelf = st.fleet?.machines.find((m) => m.machineId === f.self && m.peerId === null);
     const has = f.machines.some((m) => m.machineId === f.self);
     const machines = has || !prevSelf ? f.machines : [prevSelf, ...f.machines];
-    return { fleet: { ...f, machines } };
+    return { fleet: { ...f, machines }, hist: track(st.hist, { ...f, machines: f.machines.filter((m) => m.peerId !== null) }) };
   });
 
 const onEvent = (e: ControllerEvent): void => {

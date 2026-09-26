@@ -1,179 +1,141 @@
 import { useEffect, useState } from "react";
-import type { AgentLaunchResult, DshStatus, Harness, HarnessInfo, Workspace } from "@local-studio/contracts/client";
-import { fmt, HARNESSES } from "@local-studio/contracts/client";
+import type { AgentLaunchResult, HarnessInfo, Workspace } from "@local-studio/contracts/client";
+import { fmt } from "@local-studio/contracts/client";
 import { get, post } from "../api";
-import { Btn, Err, FieldRow, SectionHeading, Table } from "../components/basics";
+import { Btn, Copy, Err, SectionHeading, Table } from "../components/basics";
 import { homeDir } from "../model/view";
 import { useStore } from "../store";
 
-interface GwModel {
-  id: string;
-  owned_by?: string;
-  context_length?: number;
-  local_studio?: { state?: string; via?: string };
-}
+const AGENTS = [
+  ["dsh", "DeepSeek Harness"],
+  ["claude", "Claude Code"],
+  ["codex", "Codex"],
+  ["pi", "pi"],
+  ["omp", "omp"],
+] as const;
+
+type Agent = (typeof AGENTS)[number][0];
+const DESKTOP = /Electron/.test(navigator.userAgent);
 
 export const AgentsPage = ({ model }: { model: string | null }) => {
-  const fleet = useStore((s) => s.fleet);
   const now = useStore((s) => s.now);
-  const self = fleet?.machines.find((m) => m.machineId === fleet.self)?.snapshot?.machine ?? null;
-  const [harnesses, setHarnesses] = useState<HarnessInfo[]>([]);
+  const readOnly = useStore((s) => s.fleet?.machines.find((m) => m.peerId === null)?.snapshot?.machine.readOnly ?? false);
+  const [infos, setInfos] = useState<HarnessInfo[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [models, setModels] = useState<GwModel[] | null>(null);
-  const [dsh, setDsh] = useState<DshStatus | null>(null);
-  const [harness, setHarness] = useState<Harness>("dsh");
+  const [models, setModels] = useState<{ id: string; context_length?: number }[] | null>(null);
+  const [agent, setAgent] = useState<Agent>("claude");
   const [pick, setPick] = useState(model ?? "");
+  const [ws, setWs] = useState("");
   const [dir, setDir] = useState("");
-  const [name, setName] = useState("");
-  const [resume, setResume] = useState(false);
   const [res, setRes] = useState<AgentLaunchResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const loadWs = () => void get<Workspace[]>("/api/workspaces").then((r) => r.ok && Array.isArray(r.data) && setWorkspaces(r.data));
   useEffect(() => {
-    void get<HarnessInfo[]>("/api/agents").then((r) => setHarnesses(r.ok && Array.isArray(r.data) ? r.data : fleet?.harnesses ?? []));
-    void get<Workspace[]>("/api/workspaces").then((r) => setWorkspaces(r.ok && Array.isArray(r.data) ? r.data : fleet?.workspaces ?? []));
-    void get<DshStatus>("/api/agents/dsh").then((r) => setDsh(r.ok && r.data && typeof r.data === "object" ? r.data : null));
-    void get<{ data?: GwModel[] }>("/v1/models").then((r) => {
+    void get<HarnessInfo[]>("/api/agents").then((r) => r.ok && Array.isArray(r.data) && setInfos(r.data));
+    loadWs();
+    void get<{ data?: { id: string; context_length?: number }[] }>("/v1/models").then((r) => {
       const list = r.ok && Array.isArray(r.data?.data) ? r.data.data : [];
       setModels(list);
-      if (!model && list[0]) setPick((p) => p || list[0]!.id);
+      if (list[0]) setPick((p) => p || list[0]!.id);
     });
   }, []);
 
-  const launch = async () => {
+  const launch = async (body: { harness: string; model: string; workspaceId?: string; dir?: string }) => {
     setBusy(true);
     setErr(null);
     setRes(null);
-    const r = await post<AgentLaunchResult>("/api/agents/launch", { harness, model: pick, ...(dir ? { dir } : {}), ...(name ? { name } : {}), ...(resume ? { resume } : {}) });
+    const r = await post<AgentLaunchResult>(`/api/agents/launch?terminal=${DESKTOP ? "auto" : "none"}`, body);
     setBusy(false);
-    if (r.ok) setRes(r.data);
-    else setErr(r.error);
+    if (!r.ok) return setErr(r.error);
+    setRes(r.data);
+    loadWs();
+    if (DESKTOP && r.data.url) window.open(r.data.url);
   };
-  const info = harnesses.find((h) => h.harness === harness);
+  const info = (h: string) => infos.find((x) => x.harness === h);
+  const mine = workspaces.filter((w) => w.harness === agent);
+  const go = () => void launch({ harness: agent, model: pick, ...(ws ? { workspaceId: ws } : dir ? { dir } : {}) });
 
   return (
     <div className="cols">
       <div className="col">
-        <SectionHeading>launch an agent</SectionHeading>
+        <SectionHeading aside={<span className="label">{DESKTOP ? "opens natively" : "copy the command"}</span>}>agent</SectionHeading>
+        {AGENTS.map(([h, label]) => {
+          const i = info(h);
+          return (
+            <div key={h} className={`opt${agent === h ? " on" : ""}`} onClick={() => (setAgent(h), setWs(""))}>
+              <span className="ck">{agent === h ? "✓" : ""}</span>
+              <span className="lb">{label}</span>
+              <span className="label ellipsis rv">{i ? (i.installed ? i.version ?? "installed" : "not installed") : ""}</span>
+            </div>
+          );
+        })}
         <div className="form">
-          <label htmlFor="h">harness</label>
-          <select id="h" className="input" value={harness} onChange={(e) => setHarness(e.target.value as Harness)}>
-            {HARNESSES.map((h) => (
-              <option key={h} value={h}>
-                {h}
-                {harnesses.find((x) => x.harness === h)?.installed === false ? " (not installed)" : ""}
-              </option>
-            ))}
-          </select>
           <label htmlFor="m">model</label>
           <select id="m" className="input" value={pick} onChange={(e) => setPick(e.target.value)}>
             {pick && !models?.some((m) => m.id === pick) && <option value={pick}>{pick}</option>}
             {(models ?? []).map((m) => (
               <option key={m.id} value={m.id}>
                 {m.id}
-                {m.owned_by ? ` · ${m.owned_by}` : ""}
                 {m.context_length ? ` · ${fmt.ctx(m.context_length)}` : ""}
               </option>
             ))}
           </select>
-          <label htmlFor="d">folder</label>
-          <input id="d" className="input" value={dir} onChange={(e) => setDir(e.target.value)} placeholder="~/LocalStudio/workspaces/<name>" spellCheck={false} />
-          <label htmlFor="n">name</label>
-          <input id="n" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="optional" spellCheck={false} />
-          <label htmlFor="r">resume</label>
-          <input id="r" type="checkbox" checked={resume} onChange={(e) => setResume(e.target.checked)} style={{ justifySelf: "start" }} />
+          <label htmlFor="w">workspace</label>
+          <select id="w" className="input" value={ws} onChange={(e) => setWs(e.target.value)}>
+            <option value="">new workspace</option>
+            {mine.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name} · {homeDir(w.dir)}
+              </option>
+            ))}
+          </select>
+          {!ws && (
+            <>
+              <label htmlFor="d">folder</label>
+              <input id="d" className="input" value={dir} onChange={(e) => setDir(e.target.value)} placeholder="~/LocalStudio/workspaces/<name>" spellCheck={false} />
+            </>
+          )}
         </div>
-        {info && <div className="note gap-block">{info.note || (info.installed ? `${info.path ?? ""} ${info.version ?? ""}` : "not installed")}</div>}
         <div className="btns gut gap-group">
-          <Btn kind="primary" onClick={launch} disabled={!pick || busy || !!self?.readOnly}>
-            {busy ? "Launching" : "Launch ›"}
+          <Btn kind="primary" onClick={go} disabled={!pick || busy || readOnly}>
+            {busy ? "Starting" : DESKTOP ? (agent === "dsh" ? "Open ›" : "Open terminal ›") : "Start ›"}
           </Btn>
-          {self?.readOnly && <span className="label">read-only: this controller refuses agent launches</span>}
-          {models !== null && models.length === 0 && <span className="label">no model on the gateway</span>}
+          {readOnly && <span className="label">read-only controller</span>}
+          {models?.length === 0 && <span className="label">no model on the gateway</span>}
         </div>
+        {info(agent)?.note && <div className="note gap-block">{info(agent)!.note}</div>}
         <Err>{err}</Err>
         {res && (
-          <>
-            <SectionHeading>launched</SectionHeading>
-            <FieldRow label="how" value={res.how} />
-            <FieldRow label="workspace" value={res.workspaceId} />
-            {res.tmuxSession && <FieldRow label="tmux" value={res.tmuxSession} />}
-            {res.attach && <FieldRow icon="agent" label="attach" value={res.attach} copy={res.attach} />}
+          <div className="gut gap-group">
+            <div className="value">
+              {res.how} · {res.workspaceId}
+              {res.note ? ` · ${res.note}` : ""}
+            </div>
             {res.url && (
-              <div className="gut gap-block">
+              <div className="btns gap-block">
                 <Btn kind="primary" href={res.url}>
-                  Open DSH ›
+                  Open DeepSeek Harness ›
                 </Btn>
               </div>
             )}
-            <div className="gut gap-block">
-              <div className="label">command</div>
-              <pre className="pre">{res.command}</pre>
-            </div>
-          </>
+            {res.attach && <Copy text={res.attach} />}
+          </div>
         )}
       </div>
       <div className="col">
-        <SectionHeading>harnesses</SectionHeading>
-        <Table<HarnessInfo>
-          cols={[
-            { h: "harness", c: (h) => h.harness },
-            { h: "installed", c: (h) => (h.installed ? "yes" : <span className="label">no</span>) },
-            { h: "version", c: (h) => h.version ?? "–" },
-            { h: "tier", n: true, c: (h) => String(h.tier) },
-            { h: "note", c: (h) => h.note },
-          ]}
-          rows={harnesses}
-          keyOf={(h) => h.harness}
-          empty="agents are not available on this controller yet"
-        />
-        <SectionHeading>deepseek harness</SectionHeading>
-        {dsh ? (
-          <>
-            <FieldRow label="installed" value={dsh.installed ? `yes${dsh.version ? ` · ${dsh.version}` : ""}` : "no"} />
-            <FieldRow label="running" value={dsh.running ? `yes · :${dsh.port}` : "no"} />
-            <FieldRow label="provider" value={dsh.providerId} />
-            <FieldRow label="home" value={homeDir(dsh.home)} />
-            {dsh.url && (
-              <div className="gut gap-block">
-                <Btn kind="primary" href={dsh.url}>
-                  Open DSH ›
-                </Btn>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="note gap-block">–</div>
-        )}
         <SectionHeading>workspaces</SectionHeading>
         <Table<Workspace>
           cols={[
             { h: "name", c: (w) => w.name },
-            { h: "harness", c: (w) => w.harness },
-            { h: "model", c: (w) => w.model },
+            { h: "agent", c: (w) => w.harness },
+            { h: "model", c: (w) => <span className="cut">{w.model}</span> },
             { h: "folder", c: (w) => homeDir(w.dir) },
             { h: "opened", c: (w) => (w.lastOpenAt ? fmt.ago(w.lastOpenAt, now) : "–") },
-            {
-              h: "",
-              c: (w) => (
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() => {
-                    setHarness(w.harness);
-                    setPick(w.model);
-                    setDir(w.dir);
-                    setName(w.name);
-                    setResume(true);
-                  }}
-                >
-                  Use
-                </button>
-              ),
-            },
+            { h: "", c: (w) => <Btn onClick={() => void launch({ harness: w.harness, model: w.model, workspaceId: w.id })} disabled={busy || readOnly}>Open ›</Btn> },
           ]}
-          rows={workspaces}
+          rows={workspaces.filter((w) => AGENTS.some(([h]) => h === w.harness))}
           keyOf={(w) => w.id}
           empty="no workspaces yet"
         />

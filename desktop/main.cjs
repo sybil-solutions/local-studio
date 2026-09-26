@@ -3,6 +3,9 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
 
+const HOME = require("node:os").homedir();
+process.env.PATH = [...new Set([...(process.env.PATH || "").split(":"), "/opt/homebrew/bin", "/usr/local/bin", path.join(HOME, ".local/bin"), path.join(HOME, ".bun/bin")])].filter(Boolean).join(":");
+
 const PORT = Number(process.env.LOCAL_STUDIO_PORT || 8080);
 const BASE = `http://127.0.0.1:${PORT}`;
 

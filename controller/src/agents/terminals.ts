@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Ctx } from "../context";
 import { which } from "../core/exec";
@@ -18,27 +18,29 @@ export interface Terminal {
   prepare?: (s: Session) => void;
 }
 
-const appleScript = (source: string) => ["osascript", "-e", source];
-const asLiteral = (s: string) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 const slug = (name: string) =>
   name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 const warpDir = () => join(homedir(), ".warp", "tab_configs");
+const commandFile = (s: Session) => join(tmpdir(), `local-studio-${slug(s.name)}.command`);
+const writeCommand = (s: Session) => writeFileSync(commandFile(s), `#!/bin/bash\ncd '${s.dir.replace(/'/g, `'\\''`)}' && exec ${s.command}\n`, { mode: 0o700 });
 
 const macOS: Terminal[] = [
   {
     id: "terminal",
     label: "Terminal",
     probe: "/System/Applications/Utilities/Terminal.app",
-    command: (s) => appleScript(`tell application "Terminal" to do script ${asLiteral(s.command)}`),
+    prepare: writeCommand,
+    command: (s) => ["open", "-a", "Terminal", commandFile(s)],
   },
   {
     id: "iterm",
     label: "iTerm",
     probe: "/Applications/iTerm.app",
-    command: (s) => appleScript(`tell application "iTerm" to create window with default profile command ${asLiteral(s.command)}`),
+    prepare: writeCommand,
+    command: (s) => ["open", "-a", "iTerm", commandFile(s)],
   },
   {
     id: "warp",

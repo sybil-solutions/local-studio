@@ -1,13 +1,12 @@
 import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { HARNESS_CLIENT } from "@local-studio/contracts";
 import { loadConfig } from "../core/config";
 import { openDb } from "../core/db";
 import { which } from "../core/exec";
 import { createKeyStore } from "../core/keys";
 import { ensureClientKey } from "./keys";
-import { ENV_UNSET, SAFE_FLAG, buildLaunch } from "./launch-table";
+import { type AgentHarness, ENV_UNSET, SAFE_FLAG, buildLaunch, clientOf, isTerminal } from "./launch-table";
 import { createWorkspaceStore } from "./workspaces";
 
 const USAGE = "local-studio agent run <workspaceId> [--print] [--resume] [--home DIR]";
@@ -32,18 +31,20 @@ export const runAgentCli = async (argv: string[]): Promise<number> => {
       console.error(`local-studio agent: no workspace ${wsId} in ${config.dataDir}`);
       return 1;
     }
-    if (ws.harness !== "claude" && ws.harness !== "codex") {
+    const harness = ws.harness as AgentHarness;
+    if (!isTerminal(harness)) {
       console.error(`local-studio agent: ${ws.harness} is launched by the controller, not by agent run`);
       return 2;
     }
-    const client = HARNESS_CLIENT[ws.harness];
+    const client = clientOf(harness);
     const keys = createKeyStore(db, config.dataDir, config.apiKeyOverride);
     const { keyFile } = ensureClientKey(db, keys, config.home, client);
     const gatewayUrl = rt.gatewayUrl ?? `http://127.0.0.1:${config.port}`;
     let resume = argv.includes("--resume");
     if (resume && ws.harness === "claude" && !claudeHasHistory(ws.dir)) resume = false;
     const built = buildLaunch({
-      harness: ws.harness,
+      harness,
+      home: config.home,
       model: ws.model,
       contextWindow: rt.contextWindow,
       vision: rt.vision,
@@ -60,7 +61,7 @@ export const runAgentCli = async (argv: string[]): Promise<number> => {
       console.log(`cwd  ${built.cwd}`);
       console.log(`argv ${JSON.stringify(built.argv)}`);
       console.log(`env  ${Object.keys(built.env).sort().join(" ")}`);
-      console.log(`unset ${(ENV_UNSET[ws.harness] ?? []).join(" ")}`);
+      console.log(`unset ${(ENV_UNSET[harness] ?? []).join(" ")}`);
       console.log(`files ${built.files.map((f) => f.path).join(" ") || "-"}`);
       return 0;
     }
@@ -76,7 +77,7 @@ export const runAgentCli = async (argv: string[]): Promise<number> => {
       return 127;
     }
     const env: Record<string, string | undefined> = { ...process.env };
-    for (const k of ENV_UNSET[ws.harness] ?? []) delete env[k];
+    for (const k of ENV_UNSET[harness] ?? []) delete env[k];
     delete env.LOCAL_STUDIO_API_KEY;
     Object.assign(env, built.env);
     db.close();

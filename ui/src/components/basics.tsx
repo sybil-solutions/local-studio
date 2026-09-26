@@ -17,10 +17,6 @@ const PATHS: Record<string, string> = {
   context: "M1 3h10M1 6h10M1 9h7",
   weights: "M6 1l5 2.5v5L6 11 1 8.5v-5zM1 3.5 6 6l5-2.5M6 6v5",
   vision: "M1 6s2-3.5 5-3.5S11 6 11 6 9 9.5 6 9.5 1 6 1 6zM6 4.8a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4z",
-  agent: "M1 3l3 3-3 3M6 9h5",
-  folder: "M1 3h4l1 1.5h5V10H1z",
-  machine: "M1 2h10v6H1zM4 11h4M6 8v3",
-  tailnet: "M6 1v3M2 7V5h8v2M1 7h2v3H1zM5 7h2v3H5zM9 7h2v3H9z",
 };
 
 export const Icon = ({ name }: { name: string }) =>
@@ -80,54 +76,12 @@ export const Btn = ({
   );
 };
 
-export const TitleLine = ({ version }: { version: string }) => (
-  <span className="row-flex" style={{ alignItems: "baseline" }}>
-    <a className="label" href="#/home">
-      LOCAL STUDIO
-    </a>
-    <span className="tiny" style={{ color: "var(--faint-label)" }}>
-      {version}
-    </span>
-  </span>
-);
-
 export const SectionHeading = ({ children, aside }: { children: string; aside?: ReactNode }) => (
   <div className="sec">
     {children.toUpperCase()}
     {aside && <span className="aside">{aside}</span>}
   </div>
 );
-
-export const FieldRow = ({ icon, label, value, onClick, href, copy }: { icon?: string; label: string; value: ReactNode; onClick?: () => void; href?: string; copy?: string }) => {
-  const [copied, setCopied] = useState(false);
-  const act = onClick ?? (copy ? () => void navigator.clipboard?.writeText(copy).then(() => setCopied(true)) : undefined);
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
-  const body = (
-    <>
-      {icon && <Icon name={icon} />}
-      <span className="k">{label}</span>
-      <span className="v" title={typeof value === "string" ? value : undefined}>
-        {value}
-      </span>
-      {copy && <span className="label">{copied ? "copied" : "copy"}</span>}
-    </>
-  );
-  if (href)
-    return (
-      <a className="field act" href={href}>
-        {body}
-      </a>
-    );
-  return (
-    <div className={`field${act ? " act" : ""}`} onClick={act}>
-      {body}
-    </div>
-  );
-};
 
 export interface Col<T> {
   h: string;
@@ -203,22 +157,14 @@ export const BarMark = ({ mark }: { mark: Mark }) => {
   );
 };
 
-export const Empty = ({ head, action }: { head: string; action?: ReactNode }) => (
-  <div className="empty">
-    <div className="wave">
-      <svg className="wave-track" width="200%" height="100%" viewBox="0 0 280 18" preserveAspectRatio="none" aria-hidden="true">
-        <path
-          d={Array.from({ length: 10 }, (_, i) => `M${i * 28} 2h14v14h14V2`).join("")}
-          fill="none"
-          stroke="var(--label)"
-          strokeWidth="1.5"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-    </div>
-    <div className="value">{head}</div>
-    {action}
-  </div>
-);
-
 export const Err = ({ children }: { children: ReactNode }) => (children ? <div className="err">{children}</div> : null);
+
+export const Copy = ({ text }: { text: string }) => {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="copy">
+      <pre className="pre">{text}</pre>
+      <Btn onClick={() => void navigator.clipboard?.writeText(text).then(() => setDone(true))}>{done ? "Copied" : "Copy"}</Btn>
+    </div>
+  );
+};

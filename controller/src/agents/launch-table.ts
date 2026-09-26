@@ -1,9 +1,17 @@
-import type { BuiltLaunch, Harness } from "@local-studio/contracts";
-import { HARNESS_CLIENT } from "@local-studio/contracts";
+import { join } from "node:path";
+import type { BuiltLaunch, Client } from "@local-studio/contracts";
+import { HARNESS_CLIENT, HARNESSES } from "@local-studio/contracts";
 import { readSecret } from "./keys";
 
+export const AGENT_HARNESSES = [...HARNESSES, "pi", "omp"] as const;
+export type AgentHarness = (typeof AGENT_HARNESSES)[number];
+export type TerminalHarness = "claude" | "codex" | "pi" | "omp";
+export const isTerminal = (h: AgentHarness): h is TerminalHarness => h === "claude" || h === "codex" || h === "pi" || h === "omp";
+export const clientOf = (h: AgentHarness): Client => (h === "pi" || h === "omp" ? h : HARNESS_CLIENT[h]);
+
 export interface LaunchInput {
-  harness: Harness;
+  harness: AgentHarness;
+  home: string;
   model: string;
   contextWindow: number | null;
   vision: boolean | null;
@@ -18,12 +26,12 @@ export interface LaunchInput {
 
 export const SAFE_FLAG = "--safe";
 
-export const YOLO: Partial<Record<Harness, string>> = {
+export const YOLO: Partial<Record<AgentHarness, string>> = {
   claude: "--dangerously-skip-permissions",
   codex: "--dangerously-bypass-approvals-and-sandbox",
 };
 
-export const ENV_UNSET: Partial<Record<Harness, string[]>> = {
+export const ENV_UNSET: Partial<Record<AgentHarness, string[]>> = {
   claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "ANTHROPIC_SMALL_FAST_MODEL", "MAX_THINKING_TOKENS", "CLAUDE_CODE_MAX_OUTPUT_TOKENS"],
   codex: ["OPENAI_BASE_URL"],
 };
@@ -39,7 +47,7 @@ export const readKey = (keyFile: string): string => {
 export const buildLaunch = (i: LaunchInput): BuiltLaunch => {
   const G = i.gatewayUrl.replace(/\/+$/, "");
   const M = i.model;
-  const client = HARNESS_CLIENT[i.harness];
+  const client = clientOf(i.harness);
   const extra = (i.extraArgs ?? []).filter((a) => a !== SAFE_FLAG);
   switch (i.harness) {
     case "claude": {
@@ -91,6 +99,15 @@ export const buildLaunch = (i: LaunchInput): BuiltLaunch => {
       if (!i.safe) opts.push(YOLO.codex!);
       const argv = i.resume ? ["codex", "resume", "--last", ...opts, ...extra] : ["codex", ...opts, ...extra];
       return { argv, env: { LOCAL_STUDIO_API_KEY: readKey(i.keyFile) }, files: [], cwd: i.dir };
+    }
+    case "pi":
+    case "omp": {
+      const agentDir = join(i.home, "agents", i.harness, i.workspaceId);
+      const model = { id: M, name: M, reasoning: true, input: i.vision ? ["text", "image"] : ["text"], ...(i.contextWindow ? { contextWindow: i.contextWindow } : {}), ...(i.harness === "omp" ? { omitMaxOutputTokens: true } : {}) };
+      const provider = { baseUrl: `${G}/v1`, api: "openai-completions", apiKey: `!cat '${i.keyFile.replace(/'/g, `'\\''`)}'`, models: [model] };
+      const file = { path: join(agentDir, i.harness === "pi" ? "models.json" : "models.yml"), content: `${JSON.stringify({ providers: { localstudio: provider } }, null, 2)}\n`, mode: 0o600 };
+      const argv = [i.harness, "--model", `localstudio/${M}`, ...(i.resume ? ["--continue"] : []), ...extra];
+      return { argv, env: { PI_CODING_AGENT_DIR: agentDir, ...(i.harness === "omp" ? { OMP_SKIP_SETUP: "1" } : {}) }, files: [file], cwd: i.dir };
     }
     default:
       throw new Error(`${i.harness} is not a terminal harness; it is launched by the controller`);

@@ -425,14 +425,11 @@ The UI is a Vite + React 19 SPA with no router library (hash views) and no state
 
 - **Data:** `GET /api/fleet` on load, then SSE `/api/events?types=snapshot,fleet,request,launch,engine` read with `fetch` + a streaming reader (so it can send `Authorization`), with reconnect/backoff. The local snapshot comes from `snapshot` events and peers from `fleet`. Peer-specific actions go through `/api/peers/<id>/…`. A key prompt appears only on a 401; the key is kept in localStorage.
 - **Design**: JetBrains Mono, vantablack tokens (`--bg #000`, `--surface #0f0f0f`, `--card #141414`, `--ink #fff`, `--value #d4d4d4`, `--label #b2b2b2`, `--rule #535353`, `--alert #d1a8a8`, `--alert-rule #a55555`), square corners, 1px rules, no bold, lowercase labels, UPPERCASE section headings, the plugin spacing grid × 1.25 for desktop width, and a two-column wide layout. Colors are defined only in `ui/src/theme.css`, and `prefers-reduced-motion` is honoured.
-- **Views:**
-  - **home:** machines strip (name, bar-mark status, GPU count, read-only badge, watchdog badge), activity header + calendar grid (140 days), run cards (plugin §2.5) for every running/loading model on every machine, then `AVAILABLE` slot/group rows, each with `run <recipe> ›`.
-  - **machine:** GPU rows (3px bars, owner process), groups, endpoints ("auth-gated proxy", "not a model").
-  - **model:** hero, token chart, figure grid, pills and details, errors by code, recent requests table, `GPUS`, `REACH` (gateway URL + model id, copy), and actions `Stop model` (typed-confirm dialog; disabled when read-only; extra warning when a watchdog is present), `Export recipe` (shows the JSON and doc, then `Open PR ›`), `Logs`.
-  - **recipes:** a table sorted by cards: name, engine, format, GPUs, ctx, fit word, `Launch ›`. Launch progress shows inline.
-  - **metrics:** window switch; summary pills; spend table by model × client (4 buckets + $), daily table; TTFT and decode percentiles; error table; per-engine rates (prefix hit, KV usage, spec accept length, queue).
-  - **agents:** harness list with installed state, workspaces, a launch form (harness, model from `/v1/models`, folder), the result (command, attach string, DSH link).
-  - **connect:** tailnet candidates and a paste-URL+key form.
+- **Views (four, nothing else):**
+  - **control:** machines strip (select a controller, connect one), run cards with Agent / Export / Stop, GPU rows with group state, and the recipe table with Launch (plan preview, typed-confirm stop).
+  - **live:** GPU util (with a short history), memory, power, temp; engine running/waiting, KV, prefix hit, spec accept, rates; controller health from `/api/health/detail`; recent requests (SSE locally, polled from peers).
+  - **usage:** machine and window filters, the 140-day calendar, totals (tokens in/cached/out, cache hit, spend, error rate, decode/prefill tok/s, TTFT p50/p90/p99), and tables by machine, model, client, day, hour (last 24 h from records) and error code.
+  - **agents:** DeepSeek Harness, Claude Code, Codex, pi and omp against a chosen gateway model in a persistent workspace. Inside Electron (detected by user agent) the controller opens a terminal window (`.command` files on macOS, no Apple Events); in a browser the attach command is shown to copy.
 - **Components:** `TitleLine`, `SectionHeading`, `ActivityGrid`, `ModelCard` (+`TokenLine` SVG), `SlotRow`, `GroupRow`, `Btn` (primary/secondary/danger), `Chips`, `FigureGrid`, `Pills`, `GpuRow`, `FieldRow`, `Table`, `Dialog`, `BarMark`. All numbers are formatted by `fmt` from contracts.
 
 ## 14. Left out, on purpose
