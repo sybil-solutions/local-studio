@@ -1,5 +1,6 @@
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { basename, dirname, join } from "node:path";
 import YAML from "yaml";
 import type { Ctx } from "../context";
 import { redact } from "../core/log";
@@ -58,6 +59,26 @@ export const writeDshSettings = (path: string, gatewayUrl: string, models: DshMo
   chmodSync(tmp, 0o600);
   renameSync(tmp, path);
   return { firstWrite };
+};
+
+const addWorkspace = (home: string, dir: string) => {
+  const path = join(home, "storages", "workspace.json");
+  let doc: { unit?: unknown; global?: { workspaceIds?: string[] } & Record<string, unknown>; tables?: { workspaces?: Record<string, { path: string }> } } = {};
+  try {
+    doc = JSON.parse(readFileSync(path, "utf8")) as typeof doc;
+  } catch {
+    if (existsSync(path)) return;
+  }
+  const ws = doc.tables?.workspaces ?? {};
+  if (Object.values(ws).some((w) => w.path === dir)) return;
+  const id = randomUUID();
+  const now = new Date().toISOString();
+  doc.unit ??= { name: "workspace", version: 2 };
+  doc.global = { initialized: true, archivedSessionIds: [], ...doc.global, workspaceIds: [...(doc.global?.workspaceIds ?? []), id] };
+  doc.tables = { ...doc.tables, workspaces: { ...ws, [id]: { path: dir, title: basename(dir), sessionIds: [], createdAt: now, updatedAt: now } as { path: string } } };
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writeFileSync(`${path}.tmp`, `${JSON.stringify(doc, null, 2)}\n`, { mode: 0o600 });
+  renameSync(`${path}.tmp`, path);
 };
 
 export const createDsh = (ctx: Ctx): DshManager => {
@@ -157,12 +178,15 @@ export const createDsh = (ctx: Ctx): DshManager => {
       mkdirSync(home, { recursive: true, mode: 0o700 });
       const { firstWrite } = writeDshSettings(join(home, "settings.yaml"), opts.gatewayUrl, opts.models, opts.defaultModel);
       if (firstWrite) ctx.log.info(`dsh: wrote ${join(home, "settings.yaml")} with default model ${opts.defaultModel}`);
+      const prev = lastLaunch?.cwd;
       lastLaunch = opts;
       if (child || (await probe())) {
         running = true;
-        return { ok: true, detail: child ? "dsh web already running (settings reload live)" : `something already answers on :${port}` };
+        if (!child) return { ok: true, detail: `something already answers on :${port}` };
+        return { ok: true, detail: prev && prev !== opts.cwd ? `dsh web already running in ${prev}; stop it to open ${opts.cwd}` : "dsh web already running (settings reload live)" };
       }
       stopping = false;
+      addWorkspace(home, opts.cwd);
       spawn(opts);
       for (let i = 0; i < 120; i++) {
         await Bun.sleep(500);
