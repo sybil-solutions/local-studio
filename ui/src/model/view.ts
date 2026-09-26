@@ -218,35 +218,42 @@ export interface Res {
 }
 
 export interface MachineRes {
-  vram: Res;
+  vram: Res | null;
+  unified: Res | null;
   ram: Res;
   disk: Res;
 }
 
-const gpuUsed = (g: Gpu): number | null => g.memUsedMiB ?? (g.backend === "intel-xpu" && g.processes.length === 0 ? 0 : null);
-
 export const resOf = (m: MachineView): MachineRes => {
   const s = m.snap;
-  const gs = s?.gpus ?? [];
-  const used = gs.map(gpuUsed);
-  const vt = gs.reduce((t, g) => t + g.memTotalMiB, 0);
-  const h = s?.host ?? null;
   const on = m.online;
+  const gs = s?.gpus ?? [];
+  const dis = gs.filter((g) => !g.unified);
+  const uni = gs.filter((g) => g.unified);
+  const h = s?.host ?? null;
+  const known = dis.filter((g) => g.memUsedMiB !== null);
+  const u = uni[0];
+  const ram: Res = h
+    ? { total: h.mem.totalMiB, free: on && h.mem.usedMiB !== null ? h.mem.totalMiB - h.mem.usedMiB : null }
+    : u
+      ? { total: u.memTotalMiB, free: on && u.memUsedMiB !== null ? u.memTotalMiB - u.memUsedMiB : null }
+      : { total: null, free: null };
   return {
-    vram: { total: gs.length ? vt : null, free: on && gs.length && used.every((u) => u !== null) ? vt - used.reduce<number>((t, u) => t + (u ?? 0), 0) : null },
-    ram: { total: h?.mem.totalMiB ?? null, free: on && h && h.mem.usedMiB !== null ? h.mem.totalMiB - h.mem.usedMiB : null },
+    vram: dis.length ? { total: dis.reduce((t, g) => t + g.memTotalMiB, 0), free: on && known.length ? known.reduce((t, g) => t + g.memTotalMiB - (g.memUsedMiB ?? 0), 0) : null } : null,
+    unified: uni.length ? ram : null,
+    ram,
     disk: { total: h?.storage?.totalMiB ?? null, free: on && h?.storage ? h.storage.totalMiB - h.storage.usedMiB : null },
   };
 };
 
-export const sumRes = (rs: Res[]): Res & { known: number; of: number } => {
-  const k = rs.filter((r) => r.free !== null && r.total !== null);
-  const of = rs.filter((r) => r.total !== null || r.free !== null).length || rs.length;
-  return { free: k.length ? k.reduce((t, r) => t + r.free!, 0) : null, total: k.length ? k.reduce((t, r) => t + r.total!, 0) : null, known: k.length, of };
+export const sumRes = (rs: (Res | null)[]): Res & { known: number; of: number } => {
+  const all = rs.filter((r): r is Res => !!r && r.total !== null);
+  const k = all.filter((r) => r.free !== null);
+  return { free: k.length ? k.reduce((t, r) => t + r.free!, 0) : null, total: k.length ? k.reduce((t, r) => t + r.total!, 0) : null, known: k.length, of: all.length };
 };
 
-export const resText = (r: Res): string => {
-  if (r.total === null || r.total <= 0) return "–";
+export const resText = (r: Res | null): string => {
+  if (!r || r.total === null || r.total <= 0) return "–";
   const tb = r.total >= 1024 * 1024;
   const u = (x: number) => (tb ? x / 1024 / 1024 : x / 1024);
   const n = (x: number) => (tb || u(x) < 10 ? u(x).toFixed(1) : String(Math.round(u(x))));
@@ -359,7 +366,7 @@ export interface GpuRowView {
 export const gpuRow = (g: Gpu, s: Snapshot | null): GpuRowView => {
   const used = g.memUsedMiB !== null ? g.memUsedMiB / 1024 : null;
   const total = g.memTotalMiB;
-  const mem = total <= 0 ? "–" : `${used !== null ? `${used.toFixed(1)} / ` : ""}${fmt.gb(total)}`;
+  const mem = total <= 0 ? "–" : `${used !== null ? used.toFixed(1) : "?"} / ${fmt.gb(total)}`;
   const temp = g.tempC !== null ? `${Math.round(g.tempC)}°` : "";
   const gr = s?.groups.find((x) => x.gpuKeys.includes(g.key));
   const names = (gr?.modelIds ?? []).map((id) => s?.models.find((m) => m.id === id)?.primaryModel ?? id);

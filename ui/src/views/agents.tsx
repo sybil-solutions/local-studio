@@ -28,6 +28,12 @@ const RECENT = "ls.recentDirs";
 const label = (h: string) => AGENTS.find(([k]) => k === h)?.[1] ?? h;
 const jobText = (j: HarnessJob | null) => (!j ? "" : j.state === "running" ? `${j.action}ing` : j.state === "failed" ? `${j.action} failed: ${j.detail}` : "");
 
+const ver = (v: string) => (
+  <span className="cut" style={{ maxWidth: "14ch" }} title={v}>
+    {v}
+  </span>
+);
+
 const newer = (a: string | null, b: string | null): boolean => {
   if (!a || !b || a === b) return false;
   const [x, y] = [a, b].map((v) => /^\d+\.\d+\.\d+/.exec(v)?.[0].split(".").map(Number) ?? []);
@@ -127,21 +133,52 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
   const machines = [...new Set(models.map((m) => m.owned_by ?? ""))];
   const ready = !!agent && !!pick && models.some((m) => m.id === pick);
 
+  const status = (i: HarnessInfo | undefined): [string, string] => {
+    if (!i) return ["", "label"];
+    if (i.job?.state === "running") return [jobText(i.job), "label"];
+    if (i.job?.state === "failed") return [`${i.job.action} failed`, "alert"];
+    if (!i.installed) return ["not installed", "label"];
+    if (newer(i.latest, i.version)) return ["update available", "ink"];
+    return [i.managed ? "managed" : "", "label"];
+  };
+
   return (
     <>
       <div ref={top} className="half">
-        <SectionHeading aside={<span className="label">{`${sessions.length} running`}</span>}>agents</SectionHeading>
+        <SectionHeading>agents</SectionHeading>
+        <Table<(typeof AGENTS)[number]>
+          cols={[
+            { h: "", c: ([h]) => <span className="ink">{agent === h ? "✓" : ""}</span> },
+            { h: "harness", c: ([h, l]) => <span className={agent === h ? "ink" : ""}>{l}</span> },
+            { h: "installed", c: ([h]) => ver(info(h) ? (info(h)!.installed ? (info(h)!.version ?? "?") : "–") : "") },
+            { h: "latest", c: ([h]) => ver(info(h) ? (info(h)!.latest ?? "–") : "") },
+            { h: "status", c: ([h]) => { const [t, c] = status(info(h)); return <span className={c}>{t}</span>; } },
+            {
+              h: " ",
+              c: ([h]) => {
+                const i = info(h);
+                if (!i?.package || i.job?.state === "running" || (i.installed && !newer(i.latest, i.version))) return null;
+                return (
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <Btn onClick={() => void install(h)} disabled={readOnly}>{i.installed ? "Update" : "Install"}</Btn>
+                  </span>
+                );
+              },
+            },
+          ]}
+          rows={AGENTS}
+          keyOf={([h]) => h}
+          rowClass={([h]) => (agent === h ? "hl" : "")}
+          onRow={([h]) => (setAgent(h), setRes(null))}
+        />
+        {infos
+          .filter((i) => i.job?.state === "failed")
+          .map((i) => (
+            <Err key={i.harness}>{`${label(i.harness)}: ${jobText(i.job)}`}</Err>
+          ))}
         <div className="form">
-          <span className="label">harness</span>
-          <span className="tabs">
-            {AGENTS.map(([h, l]) => (
-              <button type="button" key={h} className={agent === h ? "on" : ""} onClick={() => (setAgent(h), setRes(null))}>
-                {l}
-              </button>
-            ))}
-          </span>
           <label htmlFor="agent-model">model</label>
-          <select id="agent-model" className="input" value={pick} onChange={(e) => setPick(e.target.value)}>
+          <select id="agent-model" className="input" value={pick} required onChange={(e) => setPick(e.target.value)}>
             <option value="" disabled>
               {models.length ? "choose a ready model" : "no model is ready in the fleet"}
             </option>
@@ -173,7 +210,7 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
             {bridge()?.pickFolder && <Btn onClick={() => void choose()}>Choose ›</Btn>}
           </span>
         </div>
-        <div className="btns gut" style={{ marginTop: "var(--block)" }}>
+        <div className="btns gut" style={{ marginTop: "var(--group)" }}>
           <Btn kind="primary" onClick={() => void launch()} disabled={!ready || !!blocked || busy || readOnly}>
             {busy ? "Starting" : `Launch ${agent ? label(agent) : "harness"} on ${pick || "model"} ›`}
           </Btn>
@@ -181,7 +218,7 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
         </div>
         <Err>{err}</Err>
         {res && (
-          <div className="gut" style={{ marginTop: "var(--block)" }}>
+          <div className="gut" style={{ marginTop: "var(--group)" }}>
             <div className="ink">
               {label(res.harness)} {res.version ?? ""} · {res.how} · {homeDir(res.dir)}
             </div>
@@ -222,28 +259,6 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
           keyOf={(s) => s.id}
         />
       </div>
-      <div className="gut harness-row">
-        {AGENTS.map(([h, l]) => {
-          const i = info(h);
-          const update = !!i?.installed && newer(i.latest, i.version);
-          return (
-            <span key={h} className="row-flex">
-              <span className={i?.installed ? "" : "label"}>{l}</span>
-              <span className="label">{i ? (i.installed ? (i.version ?? "?") : "–") : ""}</span>
-              {i?.job?.state === "running" ? (
-                <span className="label">{jobText(i.job)}</span>
-              ) : i?.package && (!i.installed || update) ? (
-                <Btn onClick={() => void install(h)} disabled={readOnly}>{i.installed ? `Update ${i.latest}` : "Install"}</Btn>
-              ) : null}
-            </span>
-          );
-        })}
-      </div>
-      {infos
-        .filter((i) => i.job?.state === "failed")
-        .map((i) => (
-          <Err key={i.harness}>{`${label(i.harness)}: ${jobText(i.job)}`}</Err>
-        ))}
     </>
   );
 };

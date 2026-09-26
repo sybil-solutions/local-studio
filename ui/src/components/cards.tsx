@@ -138,10 +138,14 @@ export const MachineTile = ({ m, a, st, on, res }: { m: MachineView; a: Agg; st:
       <dd>{fmt.ms(st?.sum?.ttftMs.p50)}</dd>
     </dl>
     <dl className="kv">
-      <dt>vram free</dt>
-      <dd>{resText(res.vram)}</dd>
-      <dt>ram free</dt>
-      <dd>{resText(res.ram)}</dd>
+      {res.vram && (
+        <>
+          <dt>vram free</dt>
+          <dd>{resText(res.vram)}</dd>
+        </>
+      )}
+      <dt>{res.unified ? "mem free" : "ram free"}</dt>
+      <dd>{`${resText(res.ram)}${res.unified ? " unified" : ""}`}</dd>
       <dt>disk free</dt>
       <dd>{resText(res.disk)}</dd>
     </dl>
@@ -154,8 +158,8 @@ export interface Figure {
   k: string;
 }
 
-export const FigureGrid = ({ cells }: { cells: Figure[] }) => (
-  <div className="figs">
+export const FigureGrid = ({ cells, className = "" }: { cells: Figure[]; className?: string }) => (
+  <div className={className ? `figs ${className}` : "figs"}>
     {cells.map((c) => (
       <div key={c.k}>
         <span className="fig">{c.v}</span>

@@ -37,6 +37,7 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
     const t = sumRes(res.map((r) => r[k]));
     return { v: resText(t), k: `${k} free${t.known < t.of ? ` · ${t.known}/${t.of}` : ""}` };
   };
+  const pair = (x: string, y: string) => `${x} / ${y}`;
   const reqs = [...requests.filter((r) => r.via !== "peer"), ...ms.flatMap((m) => (m.peerId ? (stats[m.id]?.reqs ?? []) : []))].filter((r) => ms.some((m) => m.id === r.machineId));
   const log = logLines(ms, Object.fromEntries(ms.map((m) => [m.id, stats[m.id]?.health ?? null])), reqs, live, fleet.self).slice(0, 14);
   const anyAssigned = rvs.some((v) => v.per.some((p) => p.row.assigned));
@@ -54,7 +55,7 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   const target = (c: CardView): Target => ({ machineId: c.machineId, peerId: c.peerId, readOnly: c.readOnly });
   const open = dlg?.k === "recipe" ? rvs.find((v) => v.id === dlg.id) : undefined;
   return (
-    <div className="page">
+    <div className="page ctl">
       <FigureGrid
         cells={[
           { v: String(ms.filter((m) => m.online).length), k: "machines" },
@@ -65,12 +66,11 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
           { v: a.powerW === null ? "–" : `${Math.round(a.powerW)} W`, k: "power" },
           { v: String(cards.length), k: "models" },
           { v: fmt.tps(a.tps), k: "tok/s now" },
-          { v: fmt.k(tot("requests")), k: "requests 24h" },
-          { v: fmt.k(prompt), k: "tokens in" },
-          { v: fmt.k(tot("output")), k: "tokens out" },
+          { v: pair(fmt.k(tot("requests")), fmt.k(tot("errors"))), k: "req / err 24h" },
+          { v: pair(fmt.k(prompt), fmt.k(tot("output"))), k: "tok in / out" },
           { v: prompt ? sliceHit({ cacheRead: tot("cacheRead"), promptTotal: prompt, cacheUnknownPrompt: tot("cacheUnknownPrompt") }) : "–", k: "cache hit" },
-          { v: fmt.k(tot("errors")), k: "errors 24h" },
         ]}
+        className="one"
       />
       <HourCharts rows={ms.flatMap((m) => stats[m.id]?.hourly ?? [])} ttft={ms.flatMap((m) => stats[m.id]?.ttft ?? [])} now={now} />
       <SectionHeading aside={<Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>}>machines</SectionHeading>
