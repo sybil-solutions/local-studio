@@ -103,7 +103,7 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
       const gonePid = [...known].some((pid) => !gs.apps.some((a) => a.pid === pid));
       attachOwners(gs.gpus, pidOwner);
       const models: RunningModel[] = await deadline(pool(view.models, 8, async (m) => {
-        const h = await healthCheck(ctx, m.baseUrl, m.state === "ready");
+        const h = await healthCheck(ctx, m.baseUrl, m.state === "ready", m.engine);
         const prev = st.tracks.get(m.id);
         const t = nextTrack(prev, prev?.lifeKey ?? m.id, h.ok, m.startedAt, st.stopping.has(m.id), h.note);
         st.tracks.set(m.id, t);

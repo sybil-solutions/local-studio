@@ -331,8 +331,8 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
     const posKey = `${c.port}:${c.lifeKey}`;
     liveKeys.add(posKey);
     budget -= 1;
-    const health: Health = await healthCheck(ctx, base);
     let fp: Fingerprint | null = st.probes.getPos(posKey);
+    const health: Health = await healthCheck(ctx, base, false, fp?.kind === "model" ? fp.engine : c.engineHint);
     if (health.ok && !fp) {
       budget -= 1;
       fp = await fingerprint(ctx, base, c.argv.join(" "));

@@ -108,8 +108,8 @@ export interface Health {
   note: string;
 }
 
-export const healthCheck = async (ctx: Ctx, base: string, light = false): Promise<Health> => {
-  const h = await get(ctx, `${base}/health`);
+export const healthCheck = async (ctx: Ctx, base: string, light = false, engine: Engine | null = null): Promise<Health> => {
+  const h = engine === "sglang" ? { status: 404 } : await get(ctx, `${base}/health`);
   if (h.status === null) return { ok: false, models: null, note: "no connection" };
   if (h.status !== 200 && h.status !== 404) return { ok: false, models: null, note: `/health ${h.status}` };
   if (light && h.status === 200) return { ok: true, models: null, note: "" };
