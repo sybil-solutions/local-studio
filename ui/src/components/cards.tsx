@@ -1,7 +1,10 @@
 import { useState } from "react";
+import type { Gpu, HourlyRow } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
-import type { CardView, GpuRowView, LifeView, MachineView } from "../model/view";
-import { BarMark, Btn, Chips, Logo } from "./basics";
+import type { Agg, CardView, LifeView, MachineView } from "../model/view";
+import { gpuRow, hourBuckets } from "../model/view";
+import type { MachineStats } from "../store";
+import { BarMark, Btn, Chips, Logo, Table } from "./basics";
 
 export const TokenLine = ({ values, h }: { values: number[]; h: number }) => {
   const n = values.length;
@@ -16,6 +19,19 @@ export const TokenLine = ({ values, h }: { values: number[]; h: number }) => {
   );
 };
 
+export const Spark = ({ v }: { v: number[] }) =>
+  v.length < 2 ? null : (
+    <svg className="spark" viewBox="0 0 90 14" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points={v.map((x, i) => `${(i * 90) / (v.length - 1)},${13 - (Math.min(100, x) / 100) * 12}`).join(" ")} fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+
+export const Bar = ({ pct }: { pct: number | null }) => (
+  <span className="bar">
+    <i style={{ width: `${Math.max(0, Math.min(100, pct ?? 0))}%` }} />
+  </span>
+);
+
 export const ActivityGrid = ({ v }: { v: LifeView }) => {
   const [hover, setHover] = useState<number | null>(null);
   return (
@@ -29,12 +45,7 @@ export const ActivityGrid = ({ v }: { v: LifeView }) => {
       </div>
       <div className="cal" onMouseLeave={() => setHover(null)}>
         {v.cells.map((c, i) => (
-          <i
-            key={i}
-            className={c < 0 ? "fut" : `l${c}`}
-            title={c < 0 ? undefined : v.labels[i]}
-            onMouseEnter={() => setHover(c < 0 ? null : i)}
-          />
+          <i key={i} className={c < 0 ? "fut" : `l${c}`} title={c < 0 ? undefined : v.labels[i]} onMouseEnter={() => setHover(c < 0 ? null : i)} />
         ))}
       </div>
       <div className="months">
@@ -49,29 +60,28 @@ export const ActivityGrid = ({ v }: { v: LifeView }) => {
 };
 
 export const ModelCard = ({ c, onStop, onCancel, onExport }: { c: CardView; onStop: (c: CardView) => void; onCancel: (c: CardView) => void; onExport: (c: CardView) => void }) => (
-  <div className="run glow">
+  <div className="cell surface run glow">
     <TokenLine values={c.line} h={156} />
-    <div className="body">
-      <div className="name">
-        <Logo family={c.family} />
-        <span className="ellipsis">{c.name}</span>
-      </div>
-      <div className="row-flex">
-        <span className="label ellipsis">{c.gpu}</span>
-        {c.mem && <span className="dim">{c.mem}</span>}
-      </div>
-      <Chips chips={c.chips} className="label small" />
-      {!c.ready && (
-        <div>
-          <div className={c.subAlert ? "alert" : "value"}>{c.sub}</div>
-          {c.progress !== null && (
-            <div className="progress">
-              <div style={{ width: `${Math.max(0, Math.min(100, c.progress))}%` }} />
-            </div>
-          )}
-        </div>
-      )}
+    <div className="name">
+      <Logo family={c.family} />
+      <span className="ellipsis">{c.name}</span>
     </div>
+    <div className="row-flex">
+      <span className="label ellipsis">{c.machine}</span>
+      <span className="label ellipsis">{c.gpu}</span>
+      {c.mem && <span className="label">{c.mem}</span>}
+    </div>
+    <Chips chips={c.chips} className="label" />
+    {!c.ready && (
+      <div>
+        <div className={c.subAlert ? "alert" : ""}>{c.sub}</div>
+        {c.progress !== null && (
+          <div className="progress">
+            <div style={{ width: `${Math.max(0, Math.min(100, c.progress))}%` }} />
+          </div>
+        )}
+      </div>
+    )}
     <div className="foot btns">
       {c.ready && !c.embedding && (
         <Btn kind="primary" href={`#/agents?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>
@@ -80,11 +90,11 @@ export const ModelCard = ({ c, onStop, onCancel, onExport }: { c: CardView; onSt
       )}
       {c.modelId && <Btn onClick={() => onExport(c)}>Export</Btn>}
       {c.modelId ? (
-        <Btn kind="danger" onClick={() => onStop(c)} disabled={c.readOnly || !!c.stopBlocked} title={c.readOnly ? "read-only controller" : c.stopBlocked ?? undefined}>
+        <Btn kind="danger" onClick={() => onStop(c)} disabled={c.readOnly || !!c.stopBlocked}>
           Stop
         </Btn>
       ) : c.launchId ? (
-        <Btn kind="danger" onClick={() => onCancel(c)} disabled={c.readOnly} title={c.readOnly ? "read-only controller" : "cancel this launch"}>
+        <Btn kind="danger" onClick={() => onCancel(c)} disabled={c.readOnly}>
           Stop
         </Btn>
       ) : null}
@@ -92,41 +102,39 @@ export const ModelCard = ({ c, onStop, onCancel, onExport }: { c: CardView; onSt
   </div>
 );
 
-export const MachinesStrip = ({ ms, on, href }: { ms: MachineView[]; on: string | null; href: (id: string) => string }) => (
-  <div className="mstrip">
-    {ms.map((m) => (
-      <a className={`mcell${m.id === on ? " on" : ""}`} key={m.id} href={href(m.id)}>
-        <span className="name">
-          <BarMark mark={m.online ? m.mark : "failed"} />
-          {m.name}
-          {m.self && <span className="label small">this</span>}
-        </span>
-        <span className="label small ellipsis">{m.online ? m.gpuSummary : m.error ?? "offline"}</span>
-        <span className="row-flex wrap" style={{ gap: 4 }}>
-          {!m.online && <span className="badge alert">offline</span>}
-          {m.readOnly && <span className="badge">read-only</span>}
-          {m.watchdogs.length > 0 && <span className="badge" title={m.watchdogs.join(", ")}>watchdog</span>}
-        </span>
-      </a>
-    ))}
-  </div>
-);
+export const vram = (a: Agg) => (a.memTotal <= 0 ? "–" : `${a.memUsed !== null ? `${Math.round(a.memUsed / 1024)}/` : ""}${Math.round(a.memTotal / 1024)}G`);
 
-export const GpuRow = ({ g, wide }: { g: GpuRowView; wide?: boolean }) => (
-  <div className={`gpu${g.status ? " tall" : ""}${wide ? " wide" : ""}`}>
-    <span className="nm">
-      <span className="value ellipsis">{g.name}</span>
-      {g.status && <span className={`small ${g.statusAlert ? "alert" : "label"} ellipsis`}>{g.status}</span>}
+const tokensOf = (s: MachineStats["sum"]) => (s ? s.inputUncached + s.cacheRead + s.cacheWrite + s.cacheUnknownPrompt + s.output : null);
+
+export const MachineTile = ({ m, a, st, on }: { m: MachineView; a: Agg; st: MachineStats | undefined; on: boolean }) => (
+  <a className={`cell surface${on ? " on" : ""}`} href={`#/control/${encodeURIComponent(m.id)}`}>
+    <span className="name">
+      <BarMark mark={m.online ? m.mark : "failed"} />
+      <span className="ellipsis">{m.name}</span>
+      {!m.online && <span className="badge alert">offline</span>}
+      {m.watchdogs.length > 0 && <span className="badge">watchdog</span>}
     </span>
-    {g.pct !== null ? (
-      <span className="bar">
-        <div style={{ width: `${g.pct}%` }} />
-      </span>
-    ) : (
-      <span className="grow" />
-    )}
-    <span className="rt">{g.right}</span>
-  </div>
+    <span className="label ellipsis">{m.online ? m.gpuSummary : (m.error ?? "–")}</span>
+    <dl className="kv two">
+      <dt>vram</dt>
+      <dd>{vram(a)}</dd>
+      <dt>util</dt>
+      <dd>{a.util === null ? "–" : `${Math.round(a.util)}%`}</dd>
+      <dt>power</dt>
+      <dd>{a.powerW === null ? "–" : `${Math.round(a.powerW)} W`}</dd>
+      <dt>tok/s</dt>
+      <dd>{fmt.tps(a.tps)}</dd>
+      <dt>req</dt>
+      <dd>{fmt.k(st?.sum?.requests)}</dd>
+      <dt>tokens</dt>
+      <dd>{fmt.k(tokensOf(st?.sum ?? null))}</dd>
+      <dt>errors</dt>
+      <dd className={st?.sum?.errors ? "alert" : ""}>{fmt.k(st?.sum?.errors)}</dd>
+      <dt>ttft</dt>
+      <dd>{fmt.ms(st?.sum?.ttftMs.p50)}</dd>
+    </dl>
+    <span className="ellipsis">{a.models.join(", ") || "–"}</span>
+  </a>
 );
 
 export interface Figure {
@@ -135,7 +143,7 @@ export interface Figure {
 }
 
 export const FigureGrid = ({ cells }: { cells: Figure[] }) => (
-  <div className="grid6">
+  <div className="figs">
     {cells.map((c) => (
       <div key={c.k}>
         <span className="fig">{c.v}</span>
@@ -145,10 +153,76 @@ export const FigureGrid = ({ cells }: { cells: Figure[] }) => (
   </div>
 );
 
+export const Chart = ({ title, v, err, f, labels }: { title: string; v: (number | null)[]; err?: number[]; f: (n: number) => string; labels: string[] }) => {
+  const top = Math.max(0, ...v.map((x) => x ?? 0));
+  const last = [...v].reverse().find((x) => x !== null && x > 0) ?? null;
+  const w = v.length * 10;
+  const y = (x: number) => (top > 0 ? (x / top) * 58 : 0);
+  return (
+    <div className="quarter chart">
+      <div className="sec" style={{ padding: 0 }}>
+        {title.toUpperCase()}
+        <span className="aside ink">{last === null ? "–" : f(last)}</span>
+      </div>
+      <svg viewBox={`0 0 ${w} 60`} preserveAspectRatio="none" role="img" aria-label={title}>
+        {v.map((x, i) =>
+          x ? (
+            <g key={i}>
+              <rect x={i * 10 + 1} y={60 - y(x)} width={8} height={y(x)}>
+                <title>{`${labels[i]}  ${f(x)}`}</title>
+              </rect>
+              {err?.[i] ? <rect className="e" x={i * 10 + 1} y={60 - y(err[i]!)} width={8} height={y(err[i]!)} /> : null}
+            </g>
+          ) : null,
+        )}
+        <line x1={0} x2={w} y1={59.5} y2={59.5} vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div className="axis">
+        <span>{labels[0]}</span>
+        <span>{labels[labels.length - 1]}</span>
+      </div>
+    </div>
+  );
+};
+
+const hh = (t: number) => `${String(new Date(t).getHours()).padStart(2, "0")}:00`;
+
+export const HourCharts = ({ rows, now }: { rows: HourlyRow[]; now: number }) => {
+  const b = hourBuckets(rows, now);
+  const labels = b.map((x) => hh(x.at));
+  return (
+    <>
+      <Chart title="tokens / h" v={b.map((x) => x.tokens)} f={fmt.k} labels={labels} />
+      <Chart title="requests / h" v={b.map((x) => x.requests)} err={b.map((x) => x.errors)} f={fmt.k} labels={labels} />
+      <Chart title="decode tok/s" v={b.map((x) => (x.decodeMs > 0 ? x.decodeTokens / (x.decodeMs / 1000) : null))} f={fmt.tps} labels={labels} />
+      <Chart title="ttft" v={b.map((x) => (x.ttftN ? x.ttftSumMs / x.ttftN : null))} f={fmt.ms} labels={labels} />
+    </>
+  );
+};
+
+export const GpuTable = ({ ms, hist }: { ms: MachineView[]; hist?: Record<string, number[]> }) => {
+  const rows = ms.flatMap((m) => (m.snap?.gpus ?? []).map((g: Gpu) => ({ m, g, r: gpuRow(g, m.snap) })));
+  return (
+    <Table
+      cols={[
+        ...(ms.length > 1 ? [{ h: "machine", c: (x: (typeof rows)[number]) => x.m.name }] : []),
+        { h: "gpu", c: (x) => x.r.name },
+        { h: "util", n: true, c: (x) => (x.g.utilPct === null ? "–" : `${Math.round(x.g.utilPct)}%`) },
+        ...(hist ? [{ h: "history", c: (x: (typeof rows)[number]) => <Spark v={hist[`${x.m.id}/${x.g.key}`] ?? []} /> }] : []),
+        { h: "memory", c: (x) => <span className="row-flex"><Bar pct={x.r.pct} />{x.r.mem}</span> },
+        { h: "power", n: true, c: (x) => (x.g.powerW === null ? "–" : `${Math.round(x.g.powerW)}${x.g.powerLimitW ? `/${Math.round(x.g.powerLimitW)}` : ""} W`) },
+        { h: "temp", n: true, c: (x) => x.r.temp || "–" },
+        { h: "holds", c: (x) => <span className={`cut ${x.r.statusAlert ? "alert" : ""}`}>{x.r.status || "–"}</span> },
+      ]}
+      rows={rows}
+      keyOf={(x) => `${x.m.id}/${x.g.key}`}
+    />
+  );
+};
+
 export const hitText = (read: number, total: number): string => {
   const p = fmt.cacheHitPercent(read, total);
   return p === null ? "–" : `${p}%`;
 };
 
 export const sliceHit = (s: { cacheRead: number; promptTotal: number; cacheUnknownPrompt?: number }): string => hitText(s.cacheRead, s.promptTotal - (s.cacheUnknownPrompt ?? 0));
-

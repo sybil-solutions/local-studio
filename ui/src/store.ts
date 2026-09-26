@@ -1,6 +1,13 @@
 import { useSyncExternalStore } from "react";
-import type { ControllerEvent, EngineRates, FleetSnapshot, LaunchProgress, RecipeRow, RequestRecord, Snapshot } from "@local-studio/contracts/client";
+import type { ControllerEvent, ControllerHealth, EngineRates, FleetSnapshot, HourlyRow, LaunchProgress, MetricsSummary, RecipeRow, RequestRecord, Snapshot } from "@local-studio/contracts/client";
 import { type ConnState, events, get, setUnauthorizedHandler, via } from "./api";
+
+export interface MachineStats {
+  sum: MetricsSummary | null;
+  health: ControllerHealth | null;
+  hourly: HourlyRow[];
+  reqs: RequestRecord[];
+}
 
 export interface State {
   fleet: FleetSnapshot | null;
@@ -9,6 +16,7 @@ export interface State {
   launches: Record<string, LaunchProgress>;
   engines: Record<string, EngineRates>;
   recipes: Record<string, RecipeRow[] | null>;
+  stats: Record<string, MachineStats>;
   conn: ConnState;
   retryMs: number | null;
   needKey: boolean;
@@ -24,6 +32,7 @@ let state: State = {
   launches: {},
   engines: {},
   recipes: {},
+  stats: {},
   conn: "connecting",
   retryMs: null,
   needKey: false,
@@ -56,6 +65,23 @@ const fleetFromSnapshot = (s: Snapshot): FleetSnapshot => ({
 
 const HIST = 90;
 
+const list = <T>(x: T[] | null | undefined): T[] => (Array.isArray(x) ? x : []);
+const safe = (s: Snapshot | null | undefined): Snapshot | null =>
+  s && s.machine
+    ? {
+        ...s,
+        gpus: list(s.gpus),
+        models: list(s.models).map((m) => ({ ...m, gpuKeys: list(m.gpuKeys), servedModels: list(m.servedModels) })),
+        groups: list(s.groups).map((g) => ({ ...g, gpuKeys: list(g.gpuKeys), modelIds: list(g.modelIds) })),
+        engines: list(s.engines),
+        launches: list(s.launches),
+        cards: list(s.cards),
+        endpoints: list(s.endpoints),
+        discovery: { ...s.discovery, errors: list(s.discovery?.errors) },
+        machine: { ...s.machine, watchdogs: list(s.machine.watchdogs) },
+      }
+    : null;
+
 const track = (hist: Record<string, number[]>, f: FleetSnapshot): Record<string, number[]> => {
   const next = { ...hist };
   for (const m of f.machines)
@@ -63,8 +89,10 @@ const track = (hist: Record<string, number[]>, f: FleetSnapshot): Record<string,
   return next;
 };
 
-export const applySnapshot = (s: Snapshot): void =>
+export const applySnapshot = (raw: Snapshot): void =>
   setState((st) => {
+    const s = safe(raw);
+    if (!s) return {};
     if (!st.fleet) return { fleet: fleetFromSnapshot(s) };
     const f = st.fleet;
     const self = f.self || s.machine.machineId;
@@ -75,8 +103,9 @@ export const applySnapshot = (s: Snapshot): void =>
     return { fleet, hist: track(st.hist, { ...fleet, machines: [entry] }) };
   });
 
-export const applyFleet = (f: FleetSnapshot): void =>
+export const applyFleet = (raw: FleetSnapshot): void =>
   setState((st) => {
+    const f = { ...raw, peers: list(raw.peers), machines: list(raw.machines).map((m) => ({ ...m, snapshot: safe(m.snapshot) })) };
     const prevSelf = st.fleet?.machines.find((m) => m.machineId === f.self && m.peerId === null);
     const has = f.machines.some((m) => m.machineId === f.self);
     const machines = has || !prevSelf ? f.machines : [prevSelf, ...f.machines];
@@ -124,6 +153,34 @@ export const loadRecipes = async (machineId: string, peerId: string | null): Pro
   setState((s) => ({ recipes: { ...s.recipes, [machineId]: r.ok && Array.isArray(r.data) ? r.data : null } }));
 };
 
+const arr = <T>(r: { ok: boolean; data?: unknown }): T[] => (r.ok && Array.isArray(r.data) ? (r.data as T[]) : []);
+
+export const loadStats = async (): Promise<void> => {
+  const f = getState().fleet;
+  if (!f) return;
+  const hourFrom = Math.floor(Date.now() / 3_600_000) * 3_600_000 - 23 * 3_600_000;
+  await Promise.all(
+    f.machines
+      .filter((m) => m.online)
+      .map(async (m) => {
+        const p = m.peerId;
+        const [sum, health, hourly, reqs] = await Promise.all([
+          get<MetricsSummary>(via(p, "/api/metrics/summary?window=24h")),
+          get<ControllerHealth>(via(p, "/api/health/detail")),
+          get<HourlyRow[]>(via(p, `/api/usage/hourly?from=${hourFrom}`)),
+          p ? get<RequestRecord[]>(via(p, "/api/metrics/requests?limit=50")) : Promise.resolve({ ok: false as const }),
+        ]);
+        const st: MachineStats = {
+          sum: sum.ok && typeof sum.data?.requests === "number" ? sum.data : null,
+          health: health.ok && health.data?.memory ? health.data : null,
+          hourly: arr<HourlyRow>(hourly),
+          reqs: arr<RequestRecord>(reqs),
+        };
+        setState((s) => ({ stats: { ...s.stats, [m.machineId]: st } }));
+      }),
+  );
+};
+
 export const loadAll = async (): Promise<void> => {
   const [fleet, snap, reqs] = await Promise.all([get<FleetSnapshot>("/api/fleet"), get<Snapshot>("/api/snapshot"), get<RequestRecord[]>("/api/metrics/requests?limit=200")]);
   if (fleet.ok && fleet.data && Array.isArray(fleet.data.machines)) applyFleet(fleet.data);
@@ -132,7 +189,7 @@ export const loadAll = async (): Promise<void> => {
   const err = !fleet.ok && !snap.ok ? snap.error : null;
   setState({ error: err });
   const f = getState().fleet;
-  if (f) await Promise.all(f.machines.filter((m) => m.online).map((m) => loadRecipes(m.machineId, m.peerId)));
+  if (f) await Promise.all([...f.machines.filter((m) => m.online).map((m) => loadRecipes(m.machineId, m.peerId)), loadStats()]);
 };
 
 let stopEvents: (() => void) | null = null;
@@ -143,6 +200,7 @@ export const start = async (): Promise<void> => {
   if (!ticking) {
     ticking = true;
     setInterval(() => setState({ now: Date.now() }), 1000);
+    setInterval(() => void loadStats(), 10_000);
     setInterval(() => {
       const f = getState().fleet;
       if (f) f.machines.filter((m) => m.online).forEach((m) => void loadRecipes(m.machineId, m.peerId));

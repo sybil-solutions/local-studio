@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import type { LaunchPlan, LaunchProgress, Peer, RecipeExport, RecipePr, RecipeRow, TailnetCandidate } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
-import { get, post, setKey, via } from "../api";
-import { recipeChips } from "../model/view";
-import { loadAll, restart, setState, useStore } from "../store";
-import { Btn, Chips, Dialog, Err } from "./basics";
+import { call, get, post, setKey, via } from "../api";
+import { fmtFormat, type MachineView, type RecipeView } from "../model/view";
+import { loadAll, loadRecipes, restart, setState, useStore } from "../store";
+import { Btn, Dialog, Err, KV, SectionHeading, Table } from "./basics";
 
 export interface Target {
   machineId: string;
@@ -14,21 +14,7 @@ export interface Target {
 
 const enc = encodeURIComponent;
 
-export const StopDialog = ({
-  t,
-  modelId,
-  name,
-  watchdog,
-  blocked = null,
-  onClose,
-}: {
-  t: Target;
-  modelId: string;
-  name: string;
-  watchdog: string | null;
-  blocked?: string | null;
-  onClose: () => void;
-}) => {
+export const StopDialog = ({ t, modelId, name, watchdog, blocked = null, onClose }: { t: Target; modelId: string; name: string; watchdog: string | null; blocked?: string | null; onClose: () => void }) => {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -43,31 +29,26 @@ export const StopDialog = ({
   };
   return (
     <Dialog title="stop model" onClose={onClose}>
-      <div className="blk value">
-        Stop <span className="ink">{name}</span> ({modelId}). Managed containers are stopped and removed; adopted ones are only stopped.
+      <div className="blk">
+        <KV rows={[["model", name, "ink"], ["id", modelId], ...(watchdog ? [["watchdog", watchdog, "alert"] as [string, string, string]] : []), ...(blocked ? [["blocked", blocked, "alert"] as [string, string, string]] : [])]} />
       </div>
-      {watchdog && <div className="blk alert">a watchdog ({watchdog}) is running on this machine and may restart this model. Stopping sends force.</div>}
-      {t.readOnly ? (
-        <div className="blk label">read-only: this controller refuses stop.</div>
-      ) : blocked ? (
-        <div className="blk label">cannot stop from here: {blocked}</div>
-      ) : done ? (
-        <div className="blk value">stop requested. the card updates when the scan sees it gone.</div>
+      {done ? (
+        <div className="blk ink">stopping</div>
       ) : (
-        <>
-          <div className="blk">
-            <div className="label" style={{ marginBottom: 6 }}>
-              type <span className="ink">{modelId}</span> to confirm
+        !blocked &&
+        !t.readOnly && (
+          <>
+            <div className="blk">
+              <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus spellCheck={false} aria-label="type the model id" />
             </div>
-            <input className="input" value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus spellCheck={false} aria-label="model id" />
-          </div>
-          <div className="blk btns">
-            <Btn kind="danger" onClick={stop} disabled={typed !== modelId || busy}>
-              {busy ? "Stopping" : "Stop model"}
-            </Btn>
-            <Btn onClick={onClose}>Cancel</Btn>
-          </div>
-        </>
+            <div className="blk btns">
+              <Btn kind="danger" onClick={stop} disabled={typed !== modelId || busy}>
+                {busy ? "Stopping" : "Stop model"}
+              </Btn>
+              <Btn onClick={onClose}>Cancel</Btn>
+            </div>
+          </>
+        )
       )}
       <Err>{err}</Err>
     </Dialog>
@@ -89,61 +70,26 @@ export const ExportDialog = ({ t, modelId, onClose }: { t: Target; modelId: stri
     if (r.ok) setPr(r.data);
     else setErr(r.error);
   };
-  const blocked = t.readOnly || !x || x.refusals.length > 0;
   return (
     <Dialog title="export recipe" onClose={onClose} wide>
-      {!x && !err && <div className="blk label">reading the running model…</div>}
       {x && (
         <>
-          <div className="blk row-flex wrap">
-            <span className="ink">{x.recipeId}</span>
-            <span className="label">{x.launchable ? "launchable" : "not launchable"}</span>
-            <span className="label ellipsis">saved to {x.savedTo}</span>
-          </div>
-          {x.refusals.length > 0 && (
-            <div className="blk">
-              <div className="label">REFUSALS</div>
-              {x.refusals.map((r) => (
-                <div className="alert" key={r}>
-                  {r}
-                </div>
-              ))}
-            </div>
-          )}
-          {x.warnings.length > 0 && (
-            <div className="blk">
-              <div className="label">WARNINGS</div>
-              {x.warnings.map((r) => (
-                <div className="value" key={r}>
-                  {r}
-                </div>
-              ))}
-            </div>
-          )}
           <div className="blk">
-            <div className="label">RECORD</div>
+            <KV rows={[["recipe", x.recipeId, "ink"], ["launchable", x.launchable ? "yes" : "no"], ["saved", x.savedTo], ...x.refusals.map((r): [string, string, string] => ["refusal", r, "alert"]), ...x.warnings.map((r): [string, string] => ["warning", r])]} />
+          </div>
+          <div className="blk">
             <pre className="pre">{JSON.stringify(x.record, null, 2)}</pre>
           </div>
-          <div className="blk">
-            <div className="label">DOC</div>
-            <pre className="pre">{x.doc}</pre>
-          </div>
           <div className="blk btns">
-            <Btn kind="primary" onClick={openPr} disabled={blocked || busy || !!pr}>
+            <Btn kind="primary" onClick={openPr} disabled={t.readOnly || x.refusals.length > 0 || busy || !!pr}>
               Open PR ›
             </Btn>
-            {t.readOnly && <span className="label">read-only: PRs are refused on this controller</span>}
-            {!t.readOnly && x.refusals.length > 0 && <span className="label">fix the refusals first</span>}
-          </div>
-          {pr && (
-            <div className="blk value">
-              draft PR:{" "}
+            {pr && (
               <a className="ink" href={pr.url} target="_blank" rel="noreferrer">
                 {pr.url}
-              </a>{" "}
-              <span className="label">({pr.branch})</span>
-            </div>
-          )}
+              </a>
+            )}
+          </div>
         </>
       )}
       <Err>{err}</Err>
@@ -158,9 +104,9 @@ export const cancelLaunch = async (t: Target, launchId: string): Promise<string 
   return r.ok ? null : r.error;
 };
 
-export const LaunchDialog = ({ t, recipe, recipeId, gpuKeys, onClose }: { t: Target; recipe: RecipeRow | null; recipeId: string; gpuKeys: string[] | null; onClose: () => void }) => {
-  const groups = recipe?.freeGroups.length ? recipe.freeGroups : gpuKeys ? [gpuKeys] : [];
-  const [pick, setPick] = useState<string[] | null>(gpuKeys ?? groups[0] ?? null);
+const LaunchPanel = ({ t, recipe }: { t: Target; recipe: RecipeRow }) => {
+  const groups = recipe.freeGroups;
+  const [pick, setPick] = useState<string[] | null>(groups[0] ?? null);
   const [plan, setPlan] = useState<{ plan: LaunchPlan; dockerArgv: string[] } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [launch, setLaunch] = useState<LaunchProgress | null>(null);
@@ -170,8 +116,8 @@ export const LaunchDialog = ({ t, recipe, recipeId, gpuKeys, onClose }: { t: Tar
     setPlan(null);
     setErr(null);
     const q = pick ? `?gpuKeys=${enc(pick.join(","))}` : "";
-    void get<{ plan: LaunchPlan; dockerArgv: string[] }>(via(t.peerId, `/api/recipes/${enc(recipeId)}/plan${q}`)).then((r) => (r.ok ? setPlan(r.data) : setErr(r.error)));
-  }, [t.peerId, recipeId, pick]);
+    void get<{ plan: LaunchPlan; dockerArgv: string[] }>(via(t.peerId, `/api/recipes/${enc(recipe.id)}/plan${q}`)).then((r) => (r.ok ? setPlan(r.data) : setErr(r.error)));
+  }, [t.peerId, recipe.id, pick]);
   useEffect(() => {
     if (!launch || !t.peerId || !prog || !ACTIVE.has(prog.phase)) return;
     const iv = setInterval(async () => {
@@ -183,72 +129,40 @@ export const LaunchDialog = ({ t, recipe, recipeId, gpuKeys, onClose }: { t: Tar
   }, [launch, t.peerId, prog]);
   const go = async () => {
     setErr(null);
-    const r = await post<LaunchProgress>(via(t.peerId, `/api/recipes/${enc(recipeId)}/launch`), pick ? { gpuKeys: pick } : {});
+    const r = await post<LaunchProgress>(via(t.peerId, `/api/recipes/${enc(recipe.id)}/launch`), pick ? { gpuKeys: pick } : {});
     if (r.ok) {
       setLaunch(r.data);
       if (!t.peerId) setState((s) => ({ launches: { ...s.launches, [r.data.launchId]: r.data } }));
     } else setErr(r.error);
   };
   return (
-    <Dialog title={`launch ${recipe?.name ?? recipeId}`} onClose={onClose} wide>
-      {recipe && (
+    <>
+      {groups.length > 1 &&
+        groups.map((g) => (
+          <div key={g.join()} className={`opt${pick?.join() === g.join() ? " on" : ""}`} onClick={() => setPick(g)}>
+            <span className="ck">{pick?.join() === g.join() ? "✓" : ""}</span>
+            <span className="lb">{g.join(", ")}</span>
+          </div>
+        ))}
+      {plan && (
         <div className="blk">
-          <Chips chips={[{ text: recipe.engine }, ...recipeChips(recipe), { icon: "gpu", text: `${recipe.cards} × ${recipe.hardwareId}` }]} className="value" />
-        </div>
-      )}
-      {groups.length > 1 && (
-        <div className="blk">
-          <div className="label">GPUS</div>
-          {groups.map((g) => (
-            <div key={g.join()} className={`opt${pick?.join() === g.join() ? " on" : ""}`} style={{ padding: 0 }} onClick={() => setPick(g)}>
-              <span className="ck">{pick?.join() === g.join() ? "✓" : ""}</span>
-              <span className="lb">{g.join(", ")}</span>
-            </div>
-          ))}
-        </div>
-      )}
-      {plan ? (
-        <div className="blk">
-          <div className="label">PLAN (nothing runs until you press Launch)</div>
-          <dl className="kv" style={{ marginTop: 6 }}>
-            <dt>container</dt>
-            <dd>{plan.plan.containerName}</dd>
-            <dt>image</dt>
-            <dd className="ellipsis">{plan.plan.image}</dd>
-            <dt>gpus</dt>
-            <dd>{plan.plan.gpuKeys.join(", ")}</dd>
-            <dt>port</dt>
-            <dd>
-              127.0.0.1:{plan.plan.hostPort} → {plan.plan.containerPort}
-            </dd>
-            <dt>served as</dt>
-            <dd>{plan.plan.servedName}</dd>
-            {plan.plan.injected.length > 0 && (
-              <>
-                <dt>injected</dt>
-                <dd>{plan.plan.injected.join(" ")}</dd>
-              </>
-            )}
-            {plan.plan.mounts.map((m) => (
-              <span key={m.target} style={{ display: "contents" }}>
-                <dt>mount</dt>
-                <dd className="ellipsis">
-                  {m.source} → {m.target}
-                  {m.readOnly ? " (ro)" : ""}
-                </dd>
-              </span>
-            ))}
-          </dl>
-          <pre className="pre" style={{ marginTop: 8 }}>
+          <KV
+            rows={[
+              ["container", plan.plan.containerName],
+              ["gpus", plan.plan.gpuKeys.join(", ")],
+              ["port", `127.0.0.1:${plan.plan.hostPort} → ${plan.plan.containerPort}`],
+              ["injected", plan.plan.injected.join(" ") || "–"],
+              ...plan.plan.mounts.map((m): [string, string] => ["mount", `${m.source} → ${m.target}${m.readOnly ? " ro" : ""}`]),
+            ]}
+          />
+          <pre className="pre" style={{ marginTop: "var(--block)" }}>
             {plan.dockerArgv.join(" ")}
           </pre>
         </div>
-      ) : (
-        !err && <div className="blk label">planning…</div>
       )}
       {prog && (
         <div className="blk">
-          <div className={prog.phase === "failed" ? "alert" : "value"}>
+          <div className={prog.phase === "failed" ? "alert" : "ink"}>
             {prog.phase}
             {prog.percent !== null ? ` · ${Math.round(prog.percent)}%` : ""}
             {prog.detail ? ` · ${prog.detail}` : ""} <span className="label">{fmt.ms(prog.updatedAt - prog.startedAt)}</span>
@@ -270,10 +184,95 @@ export const LaunchDialog = ({ t, recipe, recipeId, gpuKeys, onClose }: { t: Tar
             Stop
           </Btn>
         )}
-        <Btn onClick={onClose}>Close</Btn>
-        {t.readOnly && <span className="label">read-only: this controller refuses launches</span>}
       </div>
       <Err>{err}</Err>
+    </>
+  );
+};
+
+const FIT: Record<RecipeRow["fit"], string> = { fits: "fits", busy: "busy", "no-hardware": "no hardware", "too-few-gpus": "too few GPUs" };
+
+export const RecipeDialog = ({ v, onClose }: { v: RecipeView; onClose: () => void }) => {
+  const stats = useStore((s) => s.stats);
+  const [target, setTarget] = useState<MachineView | null>(v.per.length === 1 && v.per[0]!.row.fit === "fits" ? v.per[0]!.m : null);
+  const [err, setErr] = useState<string | null>(null);
+  const r = v.r;
+  const assign = async (m: MachineView, on: boolean) => {
+    const res = await call("PUT", via(m.peerId, `/api/recipes/${enc(r.id)}/assigned`), { on });
+    setErr(res.ok ? null : `${m.name}: ${res.error}`);
+    await loadRecipes(m.id, m.peerId);
+  };
+  const slice = (m: MachineView) => stats[m.id]?.sum?.byModel.find((s) => s.key === r.servedName) ?? null;
+  const row = target ? v.per.find((p) => p.m.id === target.id)?.row : undefined;
+  const caps = Object.entries(r.caps).filter(([, on]) => on).map(([k]) => k);
+  return (
+    <Dialog title={r.name} onClose={onClose} wide>
+      <div className="page">
+        <div className="half">
+          <SectionHeading>recipe</SectionHeading>
+          <div className="gut">
+            <KV
+              rows={[
+                ["id", r.id],
+                ["engine", r.engine],
+                ["format", fmtFormat(r.format)],
+                ["served as", r.servedName],
+                ["gpus", `${r.cards} × ${r.hardwareId}`],
+                ["context", fmt.ctx(r.ctxTokens)],
+                ["kv tokens", fmt.k(r.kvTokens)],
+                ["size", r.sizeGb ? `${Math.round(r.sizeGb)} GB` : "–"],
+                ["caps", caps.join(" · ") || "–"],
+                ["image", r.image],
+                ...r.weights.map((w): [string, string] => ["weights", `${w.repository}@${w.revision.slice(0, 12)}`]),
+                ["port", String(r.launch.port)],
+                ["shm", r.launch.shm ?? "–"],
+                ["entrypoint", r.launch.entrypoint ?? "–"],
+              ]}
+            />
+          </div>
+        </div>
+        <div className="half">
+          <SectionHeading>argv</SectionHeading>
+          <div className="gut">
+            <pre className="pre">{r.launch.arguments.join(" ")}</pre>
+          </div>
+          <SectionHeading>env</SectionHeading>
+          <div className="gut">
+            <pre className="pre">{Object.entries(r.launch.environment).map(([k, x]) => `${k}=${x}`).join("\n") || "–"}</pre>
+          </div>
+        </div>
+        <SectionHeading>machines</SectionHeading>
+        <Table
+          cols={[
+            { h: "machine", c: (p: RecipeView["per"][number]) => <span className={target?.id === p.m.id ? "ink" : ""}>{p.m.name}</span> },
+            { h: "fit", c: (p) => (p.row.runningModelId ? "running" : FIT[p.row.fit]) },
+            { h: "free", c: (p) => p.row.freeGroups.map((g) => g.join(",")).join("  ") || "–" },
+            { h: "weights", c: (p) => (p.row.weightsPresent === null ? "–" : p.row.weightsPresent ? "here" : "download") },
+            { h: "req", n: true, c: (p) => fmt.k(slice(p.m)?.requests) },
+            { h: "decode", n: true, c: (p) => fmt.tps(slice(p.m)?.decodeTps) },
+            { h: "prefill", n: true, c: (p) => fmt.tps(slice(p.m)?.prefillTps) },
+            { h: "ttft", n: true, c: (p) => fmt.ms(slice(p.m)?.meanTtftMs) },
+            {
+              h: "assigned",
+              c: (p) => (
+                <Btn kind={p.row.assigned ? "primary" : "secondary"} onClick={() => void assign(p.m, !p.row.assigned)} disabled={p.m.readOnly}>
+                  {p.row.assigned ? "Assigned" : "Assign"}
+                </Btn>
+              ),
+            },
+            { h: "", c: (p) => <Btn onClick={() => setTarget(p.m)} disabled={p.row.fit !== "fits" || !!p.row.runningModelId}>Plan ›</Btn> },
+          ]}
+          rows={v.per}
+          keyOf={(p) => p.m.id}
+        />
+        <Err>{err}</Err>
+        {target && row && (
+          <div>
+            <SectionHeading>{`launch on ${target.name}`}</SectionHeading>
+            <LaunchPanel key={target.id} t={{ machineId: target.id, peerId: target.peerId, readOnly: target.readOnly }} recipe={row} />
+          </div>
+        )}
+      </div>
     </Dialog>
   );
 };
@@ -282,7 +281,6 @@ export const KeyPrompt = () => {
   const [v, setV] = useState("");
   return (
     <Dialog title="controller key" onClose={() => setState({ needKey: false })}>
-      <div className="blk label">This controller needs its admin key (on the host: local-studio key). It is kept in this browser only.</div>
       <form
         className="blk btns"
         onSubmit={(e) => {
@@ -293,7 +291,7 @@ export const KeyPrompt = () => {
           void restart();
         }}
       >
-        <input className="input" type="password" autoComplete="off" value={v} onChange={(e) => setV(e.target.value)} placeholder="admin key" autoFocus aria-label="admin key" />
+        <input className="input" type="password" autoComplete="off" value={v} onChange={(e) => setV(e.target.value)} autoFocus aria-label="key" />
         <button type="submit" className="btn primary has-chev">
           Save<span className="chev">›</span>
         </button>
@@ -319,12 +317,12 @@ export const ConnectDialog = ({ onClose }: { onClose: () => void }) => {
     setBusy(false);
     setKey("");
     if (!r.ok) return setErr(r.error);
-    setMsg(`connected ${r.data?.name ?? url}`);
+    setMsg(r.data?.name ?? url);
     setUrl("");
     void loadAll();
   };
   return (
-    <Dialog title="connect a controller" onClose={onClose}>
+    <Dialog title="connect" onClose={onClose}>
       <form
         className="blk form"
         onSubmit={(e) => {
@@ -333,9 +331,9 @@ export const ConnectDialog = ({ onClose }: { onClose: () => void }) => {
         }}
       >
         <label htmlFor="cu">url</label>
-        <input id="cu" className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://host:8080" spellCheck={false} />
+        <input id="cu" className="input" value={url} onChange={(e) => setUrl(e.target.value)} spellCheck={false} />
         <label htmlFor="ck">key</label>
-        <input id="ck" className="input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="local-studio key --federation" />
+        <input id="ck" className="input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
       </form>
       {cands && cands.length > 0 && (
         <div className="blk btns">
@@ -350,9 +348,8 @@ export const ConnectDialog = ({ onClose }: { onClose: () => void }) => {
         <Btn kind="primary" onClick={() => void connect()} disabled={busy || !url || key.length < 16}>
           {busy ? "Connecting" : "Connect ›"}
         </Btn>
-        {msg && <span className="value">{msg}</span>}
+        {msg && <span className="ink">{msg}</span>}
       </div>
-      <div className="blk label">The key is stored on this controller (0600) and never shown again.</div>
       <Err>{err}</Err>
     </Dialog>
   );

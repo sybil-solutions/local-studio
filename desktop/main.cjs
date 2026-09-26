@@ -68,9 +68,12 @@ function isInternal(url) {
 }
 
 function openWindow(url) {
+  const area = screen.getPrimaryDisplay().workAreaSize;
   win = new BrowserWindow({
-    width: 1280,
-    height: 860,
+    width: area.width,
+    height: area.height,
+    minWidth: 360,
+    fullscreenable: true,
     backgroundColor: "#000000",
     title: "Local Studio",
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },

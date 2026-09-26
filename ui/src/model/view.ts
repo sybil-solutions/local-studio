@@ -1,4 +1,4 @@
-import type { Activity, EngineRates, FleetSnapshot, Gpu, LaunchProgress, ModelCardStats, RecipeRow, RunningModel, Snapshot } from "@local-studio/contracts/client";
+import type { Activity, ControllerHealth, EngineRates, FleetSnapshot, Gpu, HourlyRow, LaunchProgress, ModelCardStats, RecipeRow, RequestRecord, RunningModel, Snapshot } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
 
 export type Mark = "" | "ready" | "busy" | "failed";
@@ -25,6 +25,7 @@ export interface MachineView {
 
 export interface CardView {
   key: string;
+  machine: string;
   machineId: string;
   peerId: string | null;
   modelId: string | null;
@@ -80,7 +81,6 @@ export const dayLabel = (s: string | number | null | undefined): string => {
   if (!d) return typeof s === "string" ? s : "";
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 };
-
 
 export const fmtFormat = (f: string | null | undefined): string => (f ?? "").replace(/ · /g, " ");
 
@@ -212,6 +212,7 @@ export const cardOf = (mv: MachineView, s: Snapshot, m: RunningModel, launch: La
         : `${launch?.detail || "loading"}${pct !== null ? ` · ${Math.round(pct)}%` : ""}`;
   return {
     key: `${mv.id}/${m.id}`,
+    machine: mv.name,
     machineId: mv.id,
     peerId: mv.peerId,
     modelId: m.id,
@@ -242,6 +243,7 @@ const launchCard = (mv: MachineView, s: Snapshot, l: LaunchProgress, recipes: Re
   const r = recipes?.find((x) => x.id === l.recipeId);
   return {
     key: `${mv.id}/launch/${l.launchId}`,
+    machine: mv.name,
     machineId: mv.id,
     peerId: mv.peerId,
     modelId: null,
@@ -286,44 +288,129 @@ export const homeCards = (
   return [...ready, ...working];
 };
 
-export const recipeChips = (r: RecipeRow): Chip[] =>
-  [{ text: fmtFormat(r.format) }, r.ctxTokens ? { icon: "context", text: fmt.ctx(r.ctxTokens) } : null, r.sizeGb ? { icon: "weights", text: `${Math.round(r.sizeGb)} GB` } : null].filter(
-    (x): x is Chip => !!x && !!x.text,
-  );
-
 export interface GpuRowView {
   key: string;
   name: string;
   pct: number | null;
   mem: string;
   temp: string;
-  right: string;
   status: string;
   statusAlert: boolean;
 }
 
-export const gpuRow = (g: Gpu, s: Snapshot | null, extra = false): GpuRowView => {
+export const gpuRow = (g: Gpu, s: Snapshot | null): GpuRowView => {
   const used = g.memUsedMiB !== null ? g.memUsedMiB / 1024 : null;
   const total = g.memTotalMiB;
-  const mem = `${used !== null ? `${used.toFixed(1)} / ` : ""}${fmt.gb(total)}`;
+  const mem = total <= 0 ? "–" : `${used !== null ? `${used.toFixed(1)} / ` : ""}${fmt.gb(total)}`;
   const temp = g.tempC !== null ? `${Math.round(g.tempC)}°` : "";
   const gr = s?.groups.find((x) => x.gpuKeys.includes(g.key));
   const names = (gr?.modelIds ?? []).map((id) => s?.models.find((m) => m.id === id)?.primaryModel ?? id);
   const verb = gr?.state === "busy" ? "busy" : "running";
   const grouped = gr && gr.gpuKeys.length > 1 ? ` · group of ${gr.gpuKeys.length}` : "";
-  const status = names.length ? `${verb} ${names.join(", ")}${grouped}` : gr?.state === "foreign" ? "in use by another program" : "";
-  const bits = [mem, temp];
-  if (extra) bits.push(g.utilPct !== null ? `${Math.round(g.utilPct)}%` : "", g.powerW !== null ? `${Math.round(g.powerW)} W` : "");
+  const status = names.length ? `${verb} ${names.join(", ")}${grouped}` : gr?.state === "foreign" ? "other program" : "";
   return {
     key: g.key,
     name: shortGpu(g),
     pct: g.memUsedMiB !== null && total > 0 ? Math.min(100, (g.memUsedMiB / total) * 100) : null,
     mem,
     temp,
-    right: bits.filter(Boolean).join("  "),
     status,
     statusAlert: gr?.state === "foreign",
   };
 };
 
 export const homeDir = (d: string): string => d.replace(/^\/(home|Users)\/[^/]+/, "~");
+
+export interface Agg {
+  gpus: number;
+  memUsed: number | null;
+  memTotal: number;
+  powerW: number | null;
+  util: number | null;
+  models: string[];
+  tps: number | null;
+}
+
+const total = (xs: (number | null)[]): number | null => (xs.some((x) => x !== null) ? xs.reduce<number>((t, x) => t + (x ?? 0), 0) : null);
+
+export const aggOf = (ms: MachineView[], live: Record<string, EngineRates>): Agg => {
+  const gs = ms.flatMap((m) => m.snap?.gpus ?? []);
+  const utils = gs.map((g) => g.utilPct).filter((x): x is number => x !== null);
+  const rates = ms.flatMap((m) => (m.snap ? m.snap.models.filter((x) => x.state === "ready").map((x) => engineFor(m.snap!, x.id, live, m.self)) : []));
+  return {
+    gpus: gs.length,
+    memUsed: gs.length && gs.every((g) => g.memUsedMiB !== null) ? gs.reduce((t, g) => t + (g.memUsedMiB ?? 0), 0) : null,
+    memTotal: gs.reduce((t, g) => t + g.memTotalMiB, 0),
+    powerW: total(gs.map((g) => g.powerW)),
+    util: utils.length ? utils.reduce((t, x) => t + x, 0) / utils.length : null,
+    models: ms.flatMap((m) => (m.snap?.models ?? []).map((x) => x.primaryModel || x.id)),
+    tps: total(rates.map((r) => r?.generationTpsWall ?? r?.decodeTps ?? null)),
+  };
+};
+
+export interface HourBucket {
+  at: number;
+  requests: number;
+  errors: number;
+  tokens: number;
+  decodeTokens: number;
+  decodeMs: number;
+  ttftSumMs: number;
+  ttftN: number;
+}
+
+export const hourBuckets = (rows: HourlyRow[], now: number): HourBucket[] => {
+  const start = Math.floor(now / 3_600_000) * 3_600_000 - 23 * 3_600_000;
+  const out: HourBucket[] = Array.from({ length: 24 }, (_, i) => ({ at: start + i * 3_600_000, requests: 0, errors: 0, tokens: 0, decodeTokens: 0, decodeMs: 0, ttftSumMs: 0, ttftN: 0 }));
+  for (const r of rows) {
+    const b = out[Math.round((r.hour - start) / 3_600_000)];
+    if (!b) continue;
+    b.requests += r.requests ?? 0;
+    b.errors += r.errors ?? 0;
+    b.tokens += (r.inputUncached ?? 0) + (r.cacheRead ?? 0) + (r.cacheWrite ?? 0) + (r.cacheUnknownPrompt ?? 0) + (r.output ?? 0);
+    b.decodeTokens += r.decodeTokens ?? 0;
+    b.decodeMs += r.decodeMs ?? 0;
+    b.ttftSumMs += r.ttftSumMs ?? 0;
+    b.ttftN += r.ttftN ?? 0;
+  }
+  return out;
+};
+
+export interface RecipeView {
+  id: string;
+  r: RecipeRow;
+  per: { m: MachineView; row: RecipeRow }[];
+}
+
+export const mergeRecipes = (ms: MachineView[], recipes: Record<string, RecipeRow[] | null>): RecipeView[] => {
+  const by = new Map<string, RecipeView>();
+  for (const m of ms)
+    for (const row of recipes[m.id] ?? []) {
+      const v = by.get(row.id) ?? { id: row.id, r: row, per: [] };
+      v.per.push({ m, row });
+      by.set(row.id, v);
+    }
+  return [...by.values()];
+};
+
+export interface LogLine {
+  at: number;
+  machine: string;
+  src: string;
+  msg: string;
+  alert: boolean;
+}
+
+export const logLines = (ms: MachineView[], health: Record<string, ControllerHealth | null>, reqs: RequestRecord[], live: Record<string, LaunchProgress>, selfId: string | null): LogLine[] => {
+  const out: LogLine[] = [];
+  for (const m of ms) {
+    for (const e of health[m.id]?.lastErrors ?? []) out.push({ at: e.at, machine: m.name, src: e.where, msg: e.message.split("\n")[0] ?? "", alert: true });
+    for (const l of launchesFor(m.snap, live, selfId)) out.push({ at: l.updatedAt, machine: m.name, src: `launch ${l.recipeId}`, msg: l.error ?? `${l.phase}${l.detail ? ` ${l.detail}` : ""}`, alert: l.phase === "failed" });
+    for (const x of m.snap?.models ?? []) if (x.state === "unhealthy") out.push({ at: m.snap!.at, machine: m.name, src: x.primaryModel || x.id, msg: x.error ?? "unhealthy", alert: true });
+    for (const e of m.snap?.discovery.errors ?? []) out.push({ at: m.snap!.discovery.lastScanAt ?? m.snap!.at, machine: m.name, src: "discovery", msg: e, alert: true });
+    if (!m.online) out.push({ at: Date.now(), machine: m.name, src: "peer", msg: m.error ?? "offline", alert: true });
+  }
+  const names = new Map(ms.map((m) => [m.id, m.name]));
+  for (const r of reqs) if (r.errorCode) out.push({ at: r.tsStart, machine: names.get(r.machineId) ?? r.machineId.slice(0, 8), src: `${r.client} ${r.model}`, msg: `${r.status} ${r.errorCode}${r.errorMessage ? ` ${r.errorMessage.split("\n")[0]}` : ""}`, alert: true });
+  return out.sort((a, b) => b.at - a.at);
+};

@@ -1,130 +1,144 @@
-import { useEffect, useMemo, useState } from "react";
-import type { RecipeRow } from "@local-studio/contracts/client";
+import { useMemo, useState } from "react";
 import { fmt } from "@local-studio/contracts/client";
 import { post, via } from "../api";
-import { cancelLaunch, ConnectDialog, ExportDialog, LaunchDialog, StopDialog, type Target } from "../components/actions";
+import { cancelLaunch, ConnectDialog, ExportDialog, RecipeDialog, StopDialog, type Target } from "../components/actions";
 import { Btn, Err, SectionHeading, Table } from "../components/basics";
-import { GpuRow, MachinesStrip, ModelCard } from "../components/cards";
-import { type CardView, fmtFormat, gpuRow, homeCards, launchesFor, machines } from "../model/view";
+import { FigureGrid, HourCharts, vram, GpuTable, MachineTile, ModelCard, sliceHit } from "../components/cards";
+import { aggOf, type CardView, fmtFormat, homeCards, logLines, type MachineView, machines, mergeRecipes, type RecipeView } from "../model/view";
 import { loadRecipes, useStore } from "../store";
 
-const FIT: Record<RecipeRow["fit"], string> = { fits: "fits", busy: "hardware busy", "no-hardware": "no hardware", "too-few-gpus": "too few GPUs" };
+type Show = "assigned" | "fits" | "all";
+const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 
 export const ControlPage = ({ machineId }: { machineId: string | null }) => {
   const fleet = useStore((s) => s.fleet);
   const live = useStore((s) => s.launches);
   const recipes = useStore((s) => s.recipes);
   const engines = useStore((s) => s.engines);
+  const stats = useStore((s) => s.stats);
+  const requests = useStore((s) => s.requests);
   const error = useStore((s) => s.error);
-  const [dlg, setDlg] = useState<{ k: "stop" | "export"; c: CardView } | { k: "launch"; r: RecipeRow } | { k: "connect" } | null>(null);
-  const [all, setAll] = useState(false);
+  const now = useStore((s) => Math.floor(s.now / 60_000) * 60_000);
+  const [dlg, setDlg] = useState<{ k: "stop" | "export"; c: CardView } | { k: "recipe"; id: string } | { k: "connect" } | null>(null);
+  const [show, setShow] = useState<Show | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const ms = useMemo(() => machines(fleet, live), [fleet, live]);
-  const mv = ms.find((m) => m.id === machineId) ?? ms.find((m) => m.self) ?? ms[0] ?? null;
-  const cards = useMemo(() => (mv ? homeCards([mv], live, fleet?.self ?? null, recipes, engines) : []), [mv, live, fleet, recipes, engines]);
-  const mvId = mv?.id ?? null;
-  const peerId = mv?.peerId ?? null;
-  useEffect(() => {
-    if (mvId && mv?.online) void loadRecipes(mvId, peerId);
-  }, [mvId, peerId, mv?.online]);
-  if (!fleet || !mv) return <Err>{error ?? "connecting to the controller"}</Err>;
-  const s = mv.snap;
-  const t: Target = { machineId: mv.id, peerId, readOnly: mv.readOnly };
-  const rows = recipes[mv.id];
-  const launches = launchesFor(s, live, fleet.self);
-  const shown = [...(rows ?? [])]
-    .filter((r) => all || r.fit === "fits" || !!r.runningModelId)
-    .sort((a, b) => a.cards - b.cards || Number(b.recommended) - Number(a.recommended) || a.name.localeCompare(b.name));
+  const all = useMemo(() => machines(fleet, live), [fleet, live]);
+  const ms = all.filter((m) => !machineId || m.id === machineId);
+  const cards = useMemo(() => homeCards(ms, live, fleet?.self ?? null, recipes, engines), [ms, live, fleet, recipes, engines]);
+  const rvs = useMemo(() => mergeRecipes(ms, recipes), [ms, recipes]);
+  if (!fleet) return <Err>{error ?? "connecting"}</Err>;
+  const sums = ms.map((m) => stats[m.id]?.sum).filter((s) => !!s);
+  const tot = (k: "requests" | "errors" | "inputUncached" | "cacheRead" | "cacheWrite" | "output" | "cacheUnknownPrompt") => sums.reduce((t, s) => t + (s[k] ?? 0), 0);
+  const prompt = tot("inputUncached") + tot("cacheRead") + tot("cacheWrite") + tot("cacheUnknownPrompt");
+  const a = aggOf(ms, engines);
+  const reqs = [...requests.filter((r) => r.via !== "peer"), ...ms.flatMap((m) => (m.peerId ? (stats[m.id]?.reqs ?? []) : []))].filter((r) => ms.some((m) => m.id === r.machineId));
+  const log = logLines(ms, Object.fromEntries(ms.map((m) => [m.id, stats[m.id]?.health ?? null])), reqs, live, fleet.self).slice(0, 14);
+  const anyAssigned = rvs.some((v) => v.per.some((p) => p.row.assigned));
+  const mode: Show = show ?? (anyAssigned ? "assigned" : "fits");
+  const shown = rvs
+    .filter((v) => mode === "all" || v.per.some((p) => !!p.row.runningModelId || (mode === "assigned" ? p.row.assigned : p.row.fit === "fits")))
+    .sort((x, y) => x.r.cards - y.r.cards || Number(y.r.recommended) - Number(x.r.recommended) || x.r.name.localeCompare(y.r.name));
+  const names = (v: RecipeView, f: (p: RecipeView["per"][number]) => boolean) => v.per.filter(f).map((p) => p.m.name).join(", ") || "–";
   const sync = async () => {
-    setMsg("syncing…");
-    const r = await post<{ registryCommit?: string | null }>(via(peerId, "/api/recipes/sync"));
-    setMsg(r.ok ? `synced${r.data.registryCommit ? ` @ ${r.data.registryCommit.slice(0, 8)}` : ""}` : r.error);
-    await loadRecipes(mv.id, peerId);
+    setMsg("syncing");
+    const rs = await Promise.all(ms.filter((m) => m.online).map((m) => post(via(m.peerId, "/api/recipes/sync")).then((r) => (r.ok ? null : `${m.name}: ${r.error}`))));
+    await Promise.all(ms.filter((m) => m.online).map((m) => loadRecipes(m.id, m.peerId)));
+    setMsg(rs.filter(Boolean).join("\n") || null);
   };
+  const target = (c: CardView): Target => ({ machineId: c.machineId, peerId: c.peerId, readOnly: c.readOnly });
+  const open = dlg?.k === "recipe" ? rvs.find((v) => v.id === dlg.id) : undefined;
   return (
-    <>
-      <MachinesStrip ms={ms} on={mv.id} href={(id) => `#/control/${encodeURIComponent(id)}`} />
-      <div className="btns gut gap-block">
-        <Btn onClick={() => setDlg({ k: "connect" })}>Connect controller ›</Btn>
-        {mv.readOnly && <span className="label">read-only: launch and stop are refused</span>}
-        {mv.watchdogs.length > 0 && <span className="alert">watchdog {mv.watchdogs.join(", ")} may restart models</span>}
+    <div className="page">
+      <FigureGrid
+        cells={[
+          { v: String(ms.filter((m) => m.online).length), k: "machines" },
+          { v: String(a.gpus), k: "gpus" },
+          { v: vram(a), k: "vram" },
+          { v: a.powerW === null ? "–" : `${Math.round(a.powerW)} W`, k: "power" },
+          { v: String(cards.length), k: "models" },
+          { v: fmt.tps(a.tps), k: "tok/s now" },
+          { v: fmt.k(tot("requests")), k: "requests 24h" },
+          { v: fmt.k(prompt), k: "tokens in" },
+          { v: fmt.k(tot("output")), k: "tokens out" },
+          { v: prompt ? sliceHit({ cacheRead: tot("cacheRead"), promptTotal: prompt, cacheUnknownPrompt: tot("cacheUnknownPrompt") }) : "–", k: "cache hit" },
+          { v: fmt.k(tot("errors")), k: "errors 24h" },
+        ]}
+      />
+      <HourCharts rows={ms.flatMap((m) => stats[m.id]?.hourly ?? [])} now={now} />
+      <SectionHeading aside={<Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>}>machines</SectionHeading>
+      <div className="page">
+        {ms.map((m: MachineView) => (
+          <MachineTile key={m.id} m={m} a={aggOf([m], engines)} st={stats[m.id]} on={m.id === machineId} />
+        ))}
       </div>
-      <Err>{mv.error}</Err>
-      <div className="cols">
-        <div className="col">
-          <SectionHeading aside={<span className="label">{s ? `${s.machine.platform} · v${s.machine.version} · docker ${s.discovery.docker}` : ""}</span>}>running</SectionHeading>
-          {cards.length === 0 && <div className="note">no model running</div>}
-          {cards.map((c) => (
-            <ModelCard
-              key={c.key}
-              c={c}
-              onStop={(x) => setDlg({ k: "stop", c: x })}
-              onExport={(x) => setDlg({ k: "export", c: x })}
-              onCancel={(x) => x.launchId && void cancelLaunch(t, x.launchId).then(setMsg)}
-            />
-          ))}
-          <SectionHeading>gpus</SectionHeading>
-          {s?.gpus.length ? s.gpus.map((g) => <GpuRow key={g.key} g={gpuRow(g, s, true)} />) : <div className="note">no GPU reported</div>}
-          {(s?.discovery.errors ?? []).map((e) => (
-            <div className="note alert" key={e}>
-              {e}
-            </div>
-          ))}
-        </div>
-        <div className="col">
-          <SectionHeading
-            aside={
-              <span className="btns">
-                <Btn onClick={() => setAll(!all)}>{all ? "Fits only" : "All"}</Btn>
-                <Btn onClick={() => void sync()}>Sync</Btn>
-              </span>
-            }
-          >
-            recipes
-          </SectionHeading>
-          {msg && <div className="note">{msg}</div>}
-          {rows === null ? (
-            <div className="note">recipes are not available on this controller</div>
-          ) : (
-            <Table<RecipeRow>
-              cols={[
-                { h: "name", c: (r) => <span className={r.runningModelId ? "ink" : ""}>{r.name}{r.recommended ? " ·rec" : ""}</span> },
-                { h: "engine", c: (r) => `${r.engine} · ${fmtFormat(r.format)}` },
-                { h: "gpus", n: true, c: (r) => `${r.cards} × ${r.hardwareId}` },
-                { h: "ctx", n: true, c: (r) => fmt.ctx(r.ctxTokens) },
-                { h: "size", n: true, c: (r) => (r.sizeGb ? `${Math.round(r.sizeGb)} GB` : "–") },
-                { h: "weights", c: (r) => (r.weightsPresent === null ? "–" : r.weightsPresent ? "here" : "download") },
-                {
-                  h: "",
-                  c: (r) => {
-                    const l = launches.find((x) => x.recipeId === r.id);
-                    if (l && !["ready", "failed", "cancelled"].includes(l.phase)) return `${l.phase}${l.percent !== null ? ` · ${Math.round(l.percent)}%` : ""}`;
-                    if (r.runningModelId) return "running";
-                    return (
-                      <span className="row-flex">
-                        {l?.phase === "failed" && <span className="alert" title={l.error ?? ""}>failed</span>}
-                        <Btn kind={r.fit === "fits" ? "primary" : "secondary"} onClick={() => setDlg({ k: "launch", r })} disabled={r.fit !== "fits"} title={FIT[r.fit]}>
-                          Launch ›
-                        </Btn>
-                      </span>
-                    );
-                  },
-                },
-              ]}
-              rows={shown}
-              keyOf={(r) => r.id}
-              rowClass={(r) => (r.runningModelId ? "hl" : "")}
-              empty={rows ? "no recipe fits this hardware; press All" : "loading recipes…"}
-            />
-          )}
-        </div>
+      <SectionHeading>running</SectionHeading>
+      {cards.length === 0 && <div className="note">–</div>}
+      <div className="page">
+      {cards.map((c) => (
+        <ModelCard
+          key={c.key}
+          c={c}
+          onStop={(x) => setDlg({ k: "stop", c: x })}
+          onExport={(x) => setDlg({ k: "export", c: x })}
+          onCancel={(x) => x.launchId && void cancelLaunch(target(x), x.launchId).then(setMsg)}
+        />
+      ))}
       </div>
-      {dlg?.k === "stop" && dlg.c.modelId && (
-        <StopDialog t={t} modelId={dlg.c.modelId} name={dlg.c.name} watchdog={dlg.c.watchdog} blocked={dlg.c.stopBlocked} onClose={() => setDlg(null)} />
-      )}
-      {dlg?.k === "export" && dlg.c.modelId && <ExportDialog t={t} modelId={dlg.c.modelId} onClose={() => setDlg(null)} />}
-      {dlg?.k === "launch" && <LaunchDialog t={t} recipe={dlg.r} recipeId={dlg.r.id} gpuKeys={dlg.r.freeGroups[0] ?? null} onClose={() => setDlg(null)} />}
+      <div className="half">
+        <SectionHeading>gpus</SectionHeading>
+        <GpuTable ms={ms} />
+      </div>
+      <div className="half">
+        <SectionHeading>log</SectionHeading>
+        <Table
+          cols={[
+            { h: "time", c: (l: (typeof log)[number]) => clock(l.at) },
+            ...(ms.length > 1 ? [{ h: "machine", c: (l: (typeof log)[number]) => l.machine }] : []),
+            { h: "source", c: (l) => <span className="cut">{l.src}</span> },
+            { h: "message", c: (l) => <span className="cut" title={l.msg} style={{ maxWidth: "48ch" }}>{l.msg}</span> },
+          ]}
+          rows={log}
+          keyOf={(l) => `${l.at}${l.machine}${l.src}${l.msg}`}
+          rowClass={(l) => (l.alert ? "err" : "")}
+        />
+      </div>
+      <SectionHeading
+        aside={
+          <span className="tabs">
+            {(["assigned", "fits", "all"] as const).map((x) => (
+              <button type="button" key={x} className={mode === x ? "on" : ""} onClick={() => setShow(x)}>
+                {x}
+              </button>
+            ))}
+            <button type="button" onClick={() => void sync()}>
+              sync
+            </button>
+          </span>
+        }
+      >
+        {`recipes ${shown.length}/${rvs.length}`}
+      </SectionHeading>
+      <Err>{msg}</Err>
+      <Table
+        cols={[
+          { h: "name", c: (v: RecipeView) => v.r.name },
+          { h: "engine", c: (v) => `${v.r.engine} ${fmtFormat(v.r.format)}` },
+          { h: "gpus", c: (v) => `${v.r.cards} × ${v.r.hardwareId}` },
+          { h: "ctx", n: true, c: (v) => fmt.ctx(v.r.ctxTokens) },
+          { h: "size", n: true, c: (v) => (v.r.sizeGb ? `${Math.round(v.r.sizeGb)} GB` : "–") },
+          { h: "fits", c: (v) => <span className="cut">{names(v, (p) => p.row.fit === "fits")}</span> },
+          { h: "assigned", c: (v) => <span className="cut">{names(v, (p) => !!p.row.assigned)}</span> },
+          { h: "running", c: (v) => <span className="cut ink">{names(v, (p) => !!p.row.runningModelId)}</span> },
+          { h: "", c: () => <span className="ink">›</span> },
+        ]}
+        rows={shown}
+        keyOf={(v) => v.id}
+        onRow={(v) => setDlg({ k: "recipe", id: v.id })}
+      />
+      {dlg?.k === "stop" && dlg.c.modelId && <StopDialog t={target(dlg.c)} modelId={dlg.c.modelId} name={dlg.c.name} watchdog={dlg.c.watchdog} blocked={dlg.c.stopBlocked} onClose={() => setDlg(null)} />}
+      {dlg?.k === "export" && dlg.c.modelId && <ExportDialog t={target(dlg.c)} modelId={dlg.c.modelId} onClose={() => setDlg(null)} />}
+      {open && <RecipeDialog v={open} onClose={() => setDlg(null)} />}
       {dlg?.k === "connect" && <ConnectDialog onClose={() => setDlg(null)} />}
-    </>
+    </div>
   );
 };

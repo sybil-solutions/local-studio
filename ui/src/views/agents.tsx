@@ -58,8 +58,8 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
   const go = () => void launch({ harness: agent, model: pick, ...(ws ? { workspaceId: ws } : dir ? { dir } : {}) });
 
   return (
-    <div className="cols">
-      <div className="col">
+    <div className="page">
+      <div className="half">
         <SectionHeading>agent</SectionHeading>
         {AGENTS.map(([h, label]) => {
           const i = info(h);
@@ -67,7 +67,7 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
             <div key={h} className={`opt${agent === h ? " on" : ""}`} onClick={() => (setAgent(h), setWs(""))}>
               <span className="ck">{agent === h ? "✓" : ""}</span>
               <span className="lb">{label}</span>
-              <span className="label ellipsis rv">{i ? (i.installed ? i.version ?? "installed" : "not installed") : ""}</span>
+              <span className="ellipsis rv">{i ? (i.installed ? i.version ?? "installed" : "not installed") : ""}</span>
             </div>
           );
         })}
@@ -98,20 +98,19 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
             </>
           )}
         </div>
-        <div className="btns gut gap-group">
+        <div className="btns gut" style={{ marginTop: "var(--group)" }}>
           <Btn kind="primary" onClick={go} disabled={!pick || busy || readOnly}>
             {busy ? "Starting" : DESKTOP ? (agent === "dsh" ? "Open ›" : "Open terminal ›") : "Start ›"}
           </Btn>
-          {readOnly && <span className="label">read-only controller</span>}
         </div>
         <Err>{err}</Err>
         {res && (
-          <div className="gut gap-group">
-            <div className="value">
+          <div className="gut" style={{ marginTop: "var(--group)" }}>
+            <div className="ink">
               {res.how} · {res.workspaceId}
             </div>
             {res.url && (
-              <div className="btns gap-block">
+              <div className="btns" style={{ marginTop: "var(--block)" }}>
                 <Btn kind="primary" href={res.url}>
                   Open DeepSeek Harness ›
                 </Btn>
@@ -121,7 +120,7 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
           </div>
         )}
       </div>
-      <div className="col">
+      <div className="half">
         <SectionHeading>workspaces</SectionHeading>
         <Table<Workspace>
           cols={[
@@ -134,7 +133,6 @@ export const AgentsPage = ({ model }: { model: string | null }) => {
           ]}
           rows={workspaces.filter((w) => AGENTS.some(([h]) => h === w.harness))}
           keyOf={(w) => w.id}
-          empty="–"
         />
       </div>
     </div>

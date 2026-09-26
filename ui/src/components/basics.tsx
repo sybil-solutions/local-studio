@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { Component, type ReactNode, useEffect, useState } from "react";
 import hf from "../assets/hf.svg";
 import lfm from "../assets/lfm.svg";
 import qwen from "../assets/qwen.svg";
@@ -6,8 +6,7 @@ import type { Chip, Family, Mark } from "../model/view";
 
 const LOGOS: Record<string, string> = { qwen, lfm, hf };
 
-export const Logo = ({ family, size = 18 }: { family: Family; size?: 12 | 14 | 18 }) =>
-  family && LOGOS[family] ? <img className={`logo${size === 18 ? "" : ` s${size}`}`} src={LOGOS[family]} alt="" /> : null;
+export const Logo = ({ family }: { family: Family }) => (family && LOGOS[family] ? <img className="logo" src={LOGOS[family]} alt="" /> : null);
 
 const PATHS: Record<string, string> = {
   speed: "M7 1 3 7h3l-1 4 4-6H6z",
@@ -76,8 +75,27 @@ export const Btn = ({
   );
 };
 
-export const SectionHeading = ({ children, aside }: { children: string; aside?: ReactNode }) => (
-  <div className="sec">
+export class Boundary extends Component<{ children: ReactNode; name: string }, { err: string | null }> {
+  override state = { err: null as string | null };
+  static getDerivedStateFromError(e: unknown) {
+    return { err: e instanceof Error ? e.message : String(e) };
+  }
+  override componentDidCatch(e: unknown) {
+    console.error(`${this.props.name}:`, e);
+  }
+  override render() {
+    if (!this.state.err) return this.props.children;
+    return (
+      <div className="err btns">
+        {this.props.name}: {this.state.err}
+        <Btn onClick={() => this.setState({ err: null })}>Retry</Btn>
+      </div>
+    );
+  }
+}
+
+export const SectionHeading = ({ children, aside, className = "" }: { children: string; aside?: ReactNode; className?: string }) => (
+  <div className={`sec ${className}`}>
     {children.toUpperCase()}
     {aside && <span className="aside">{aside}</span>}
   </div>
@@ -89,8 +107,8 @@ export interface Col<T> {
   c: (r: T) => ReactNode;
 }
 
-export function Table<T>({ cols, rows, keyOf, rowClass, empty = "nothing yet" }: { cols: Col<T>[]; rows: T[]; keyOf: (r: T) => string; rowClass?: (r: T) => string; empty?: string }) {
-  if (!rows.length) return <div className="note gap-block">{empty}</div>;
+export function Table<T>({ cols, rows, keyOf, rowClass, onRow }: { cols: Col<T>[]; rows: T[]; keyOf: (r: T) => string; rowClass?: (r: T) => string; onRow?: (r: T) => void }) {
+  if (!rows.length) return <div className="note">–</div>;
   return (
     <div className="tbl-wrap">
       <table className="tbl">
@@ -105,7 +123,7 @@ export function Table<T>({ cols, rows, keyOf, rowClass, empty = "nothing yet" }:
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={keyOf(r)} className={rowClass?.(r) ?? ""}>
+            <tr key={keyOf(r)} className={`${rowClass?.(r) ?? ""}${onRow ? " click" : ""}`} onClick={onRow ? () => onRow(r) : undefined}>
               {cols.map((c) => (
                 <td key={c.h} className={c.n ? "n" : ""}>
                   {c.c(r)}
@@ -131,7 +149,7 @@ export const Dialog = ({ title, onClose, children, wide }: { title: string; onCl
         <div className="ttl">
           {title.toUpperCase()}
           <button type="button" onClick={onClose} aria-label="close">
-            close
+            ×
           </button>
         </div>
         {children}
@@ -156,6 +174,17 @@ export const BarMark = ({ mark }: { mark: Mark }) => {
     </span>
   );
 };
+
+export const KV = ({ rows }: { rows: [string, ReactNode, string?][] }) => (
+  <dl className="kv">
+    {rows.map(([k, v, cls], i) => (
+      <span key={i} style={{ display: "contents" }}>
+        <dt>{k}</dt>
+        <dd className={cls}>{v}</dd>
+      </span>
+    ))}
+  </dl>
+);
 
 export const Err = ({ children }: { children: ReactNode }) => (children ? <div className="err">{children}</div> : null);
 

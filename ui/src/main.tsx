@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./theme.css";
 import { getKey, setKey } from "./api";
 import { KeyPrompt } from "./components/actions";
+import { Boundary } from "./components/basics";
 import { restart, start, useStore } from "./store";
 import { AgentsPage } from "./views/agents";
 import { ControlPage } from "./views/control";
@@ -16,6 +17,25 @@ const onHash = (f: () => void) => {
   return () => window.removeEventListener("hashchange", f);
 };
 
+const NONE: never[] = [];
+
+const Filter = ({ tab, on }: { tab: string; on: string | null }) => {
+  const ms = useStore((s) => s.fleet?.machines ?? NONE);
+  if (ms.length < 2) return null;
+  return (
+    <nav className="top tabs filter">
+      <a href={`#/${tab}`} className={on ? "" : "on"}>
+        all
+      </a>
+      {ms.map((m) => (
+        <a key={m.machineId} href={`#/${tab}/${encodeURIComponent(m.machineId)}`} className={`${on === m.machineId ? "on" : ""}${m.online ? "" : " alert"}`}>
+          {m.snapshot?.machine.name ?? m.machineId.slice(0, 8)}
+        </a>
+      ))}
+    </nav>
+  );
+};
+
 const App = () => {
   const hash = useSyncExternalStore(onHash, () => location.hash);
   const [path = "", query = ""] = hash.replace(/^#\/?/, "").split("?");
@@ -24,7 +44,8 @@ const App = () => {
   const needKey = useStore((s) => s.needKey);
   const conn = useStore((s) => s.conn);
   const retry = useStore((s) => s.retryMs);
-  const self = useStore((s) => s.fleet?.machines.find((m) => m.peerId === null)?.snapshot?.machine ?? null);
+  const version = useStore((s) => s.fleet?.machines.find((m) => m.peerId === null)?.snapshot?.machine.version ?? "");
+  const machine = arg || null;
   return (
     <div className="shell">
       <div className="top">
@@ -32,7 +53,7 @@ const App = () => {
           <a className="label" href="#/control">
             LOCAL STUDIO
           </a>
-          <span className="tiny dim">{self?.version ?? ""}</span>
+          <span className="label">{version}</span>
         </span>
         <nav className="tabs">
           {TABS.map((t) => (
@@ -42,33 +63,38 @@ const App = () => {
           ))}
         </nav>
         <span className="conn">
-          <span className={conn === "retrying" ? "alert" : "label"}>
-            {conn === "live" ? "live" : conn === "retrying" ? `reconnecting${retry ? ` in ${Math.round(retry / 1000)}s` : ""}` : "connecting"}
-          </span>
+          <span className={conn === "retrying" ? "alert" : "label"}>{conn === "retrying" && retry ? `retry ${Math.round(retry / 1000)}s` : conn}</span>
           {getKey() && (
             <button type="button" className="btn" onClick={() => (setKey(null), void restart())}>
-              Forget key
+              Sign out
             </button>
           )}
         </span>
       </div>
-      {view === "usage" ? (
-        <UsagePage machineId={arg || null} />
-      ) : view === "live" ? (
-        <LivePage />
-      ) : view === "agents" ? (
-        <AgentsPage model={new URLSearchParams(query).get("model")} />
-      ) : (
-        <ControlPage machineId={arg || null} />
-      )}
+      {view !== "agents" && <Filter tab={view} on={machine} />}
+      <Boundary key={view} name={view}>
+        {view === "usage" ? (
+          <UsagePage machineId={machine} />
+        ) : view === "live" ? (
+          <LivePage machineId={machine} />
+        ) : view === "agents" ? (
+          <AgentsPage model={new URLSearchParams(query).get("model")} />
+        ) : (
+          <ControlPage machineId={machine} />
+        )}
+      </Boundary>
       {needKey && <KeyPrompt />}
     </div>
   );
 };
 
+window.addEventListener("unhandledrejection", (e) => console.error("unhandled", e.reason));
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <Boundary name="app">
+      <App />
+    </Boundary>
   </StrictMode>,
 );
 void start();
