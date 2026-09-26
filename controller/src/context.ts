@@ -69,6 +69,8 @@ export interface DockerInspect {
     PortBindings?: Record<string, { HostIp: string; HostPort: string }[]> | null;
     DeviceRequests?: { Driver: string; Count: number; DeviceIDs: string[] | null; Capabilities: string[][] }[] | null;
     Devices?: { PathOnHost: string }[] | null;
+    SecurityOpt?: string[] | null;
+    Ulimits?: { Name: string; Soft: number; Hard: number }[] | null;
   };
   Mounts: { Type: string; Source: string; Destination: string; RW: boolean }[];
   State: { Status: string; Running: boolean; Pid: number; StartedAt: string; Health?: { Status: string } };
@@ -130,9 +132,9 @@ export interface PeerService {
 export interface RecipeService {
   catalog(): Promise<RecipeCatalog>;
   rows(): Promise<RecipeRow[]>;
-  launch(recipeId: string, gpuKeys?: string[]): Promise<LaunchProgress>;
+  launch(recipeId: string, gpuKeys?: string[], stop?: boolean): Promise<LaunchProgress>;
   exportModel(modelId: string): Promise<RecipeExport>;
-  openPr(modelId: string, opts: { title?: string; draft: boolean }): Promise<RecipePr>;
+  openPr(modelId: string, opts: { title?: string; draft: boolean; dryRun?: boolean }): Promise<RecipePr>;
 }
 
 export interface AgentService {

@@ -3,7 +3,7 @@ import type { CacheInfo, Dialect, Endpoint, Engine, Gpu, ModelState, RunningMode
 import type { Ctx, RuntimeView } from "../context";
 import { containerName, digestOf, dockerScan, imageInfo, type Inspect, publishedPorts, wantsGpu } from "./docker";
 import { computeGroups } from "./groups";
-import { type ComputeApp, type HardwareList, intelClients, resolveGpuRefs, scanGpus, setIntelApps } from "./gpus";
+import { type ComputeApp, containerIntelVram, type HardwareList, intelClients, resolveGpuRefs, scanGpus, setIntelApps } from "./gpus";
 import { type Fingerprint, fingerprint, get, type Health, healthCheck, type ModelEntry, PROBE_CONCURRENCY, PROBE_MAX, type ProbeCache } from "./probe";
 import { ancestors, cmdline, descendants, type Listener, listListeners, listProcs, type ProcTable, probeHost } from "./procs";
 import { ENGINE_RE, embeddingArgv, engineFromArgs, envMap, flag, flagList, hasFlag, num, parseJson, pool, portArg, promLabels } from "./util";
@@ -186,7 +186,8 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
     for (const c of containers) {
       const uuids = [...new Set((c.HostConfig.Devices ?? []).map((d) => gs.nodes.get(d.PathOnHost)).filter((u): u is string => !!u))];
       const pid = findEnginePid(procs, c.State.Pid, []) ?? c.State.Pid;
-      for (const uuid of uuids) if (!apps.some((a) => a.uuid === uuid && ancestors(procs, a.pid).includes(c.State.Pid))) apps.push({ uuid, pid, processName: containerName(c), usedMiB: null });
+      const vram = uuids.length && c.State.Running ? await containerIntelVram(ctx, c.Id) : null;
+      for (const uuid of uuids) if (!apps.some((a) => a.uuid === uuid && ancestors(procs, a.pid).includes(c.State.Pid))) apps.push({ uuid, pid, processName: containerName(c), usedMiB: vram?.get(uuid.slice("intel:".length)) ?? null });
     }
     setIntelApps(gs, apps);
   }

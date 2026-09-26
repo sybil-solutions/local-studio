@@ -14,6 +14,7 @@ export interface Config {
   registryDir: string;
   registryRepo: string;
   registryUrl: string;
+  registryRef: string;
   readOnly: boolean;
   tailnet: boolean;
   name: string;
@@ -75,6 +76,7 @@ export const loadConfig = (argv: string[]): Config => {
     registryDir: expand(env.LOCAL_STUDIO_REGISTRY_DIR ?? join(home, "registry")),
     registryRepo: env.LOCAL_STUDIO_REGISTRY_REPO ?? "0xSero/local-ai-registry",
     registryUrl: env.LOCAL_STUDIO_REGISTRY_URL ?? "https://github.com/0xSero/local-ai-registry.git",
+    registryRef: env.LOCAL_STUDIO_REGISTRY_REF ?? "main",
     readOnly: argv.includes("--read-only") || bool(env.LOCAL_STUDIO_READ_ONLY),
     tailnet: argv.includes("--tailnet") || bool(env.LOCAL_STUDIO_TAILNET),
     name: flag(argv, "name") ?? env.LOCAL_STUDIO_NAME ?? hostname().split(".")[0] ?? hostname(),

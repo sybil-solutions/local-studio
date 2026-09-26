@@ -27,6 +27,18 @@ export interface RecipeLaunchV2 {
   shm: string | null;
 }
 
+export interface RecipeProof {
+  at: string | null;
+  on: string;
+  gpu?: string | null;
+  gates: string;
+  tps: number | null;
+  prefill?: number | null;
+  served?: string;
+  legacy?: boolean;
+  proxy?: string;
+}
+
 export interface Recipe {
   id: string;
   name: string;
@@ -48,10 +60,17 @@ export interface Recipe {
   caps: RecipeCaps;
   recommended: boolean;
   source?: "local";
+  origin?: "yours" | "registry";
+  key?: string | null;
+  profile?: string | null;
+  machines?: number;
+  flags?: string[];
+  proof?: RecipeProof | null;
 }
 
 export interface RecipeCatalog {
   source: string;
+  ref?: string;
   registryCommit: string | null;
   generatedAt: string | null;
   fetchedAt: number;
@@ -67,6 +86,22 @@ export interface RecipeRow extends Recipe {
   runningModelId: string | null;
   weightsPresent: boolean | null;
   assigned?: boolean;
+}
+
+export interface RecipeStop {
+  machineId: string;
+  gpuKeys: string[];
+  state: "running" | "busy" | "foreign";
+  modelId: string | null;
+}
+
+export interface SelectionRow extends RecipeRow {
+  stops: RecipeStop[];
+}
+
+export interface SelectionFit {
+  machines: { machineId: string; name: string; gpuKeys: string[]; hardwareIds: string[] }[];
+  rows: SelectionRow[];
 }
 
 export interface LaunchMount {
@@ -114,6 +149,8 @@ export interface RecipeExport {
   modelId: string;
   recipeId: string;
   record: Record<string, unknown>;
+  profile: Record<string, unknown> | null;
+  files: Record<string, string>;
   doc: string;
   refusals: string[];
   warnings: string[];
@@ -125,6 +162,8 @@ export interface RecipePr {
   url: string;
   branch: string;
   files: string[];
+  worktree?: string;
+  check?: string;
 }
 
 export interface LaunchWeights {
@@ -142,5 +181,6 @@ export interface LaunchPreview {
   dockerArgvSource: "lifecycle" | "recipes-preview";
   weights: LaunchWeights[];
   warnings: string[];
+  stops?: RecipeStop[];
   executed: false;
 }

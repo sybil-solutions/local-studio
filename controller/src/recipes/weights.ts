@@ -37,7 +37,7 @@ const firstLine = (p: string): string | null => {
   }
 };
 
-const readMap = (home: string): Record<string, string> => {
+export const readMap = (home: string): Record<string, string> => {
   try {
     const m = JSON.parse(readFileSync(join(home, "weights.json"), "utf8")) as unknown;
     return m && typeof m === "object" ? (m as Record<string, string>) : {};

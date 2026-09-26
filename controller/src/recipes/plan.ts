@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { LaunchMount, LaunchPlan } from "@local-studio/contracts";
 import type { Ctx, RuntimeView } from "../context";
-import { availableKeys, fitFor, hardwareOf } from "./fit";
+import { availableKeys, fitFor, hardwareIds } from "./fit";
 import { type LoadedCatalog, normEngine, type V2Recipe } from "./registry";
 import { DEVICE_ENV, DIGEST_PINNED, DOCKER_OPT, ENV_KEY, FORBIDDEN_ARG, HttpError, REVISION_40 } from "./util";
 import type { ResolvedWeight, WeightIndex } from "./weights";
@@ -21,6 +21,7 @@ const gate = (r: V2Recipe): void => {
   if (!r.local && !DIGEST_PINNED.test(r.image)) bad("image is not pinned by digest");
   if (!/^[\w./:@-]+$/.test(r.image)) bad(`image ${r.image} is invalid`);
   if (!(r.cards >= 1 && r.cards <= 8)) bad(`cards ${r.cards} out of range`);
+  if ((r.machines ?? 1) > 1) bad(`runs across ${r.machines} machines (one rank each, host networking); launching a pod is not supported yet`);
   for (const w of r.weights) {
     if (w.hostPath !== undefined) {
       if (!r.local || !w.hostPath.startsWith("/")) bad(`weights host path ${w.hostPath} is not allowed`);
@@ -30,7 +31,7 @@ const gate = (r: V2Recipe): void => {
     }
     if (!w.mountPath.startsWith("/")) bad(`weights mount path ${w.mountPath} is not absolute`);
   }
-  for (const o of r.launch.docker ?? []) if (!DOCKER_OPT.test(o)) bad(`docker option ${o} is not allowed`);
+  for (const o of r.launch.docker ?? []) if (!DOCKER_OPT.test(o)) bad(`docker option ${o} is not supported`);
   for (const m of r.launch.mounts ?? []) if (!r.local || !m.source.startsWith("/") || !m.target.startsWith("/") || /[:,]/.test(m.source + m.target)) bad(`mount ${m.source}:${m.target} is not allowed`);
   if (!r.launch.arguments.every((a) => typeof a === "string")) bad("arguments must all be strings");
   const hay = [r.launch.entrypoint ?? "", ...r.launch.arguments, ...Object.values(r.launch.environment ?? {})].join(" ");
@@ -76,7 +77,7 @@ export const buildPlan = (
   gate(raw);
   const warnings: string[] = [];
   const hw = loaded.catalog.hardware;
-  const fit = fitFor(recipe.hardwareId, recipe.cards, view, hw);
+  const fit = fitFor(recipe.hardwareId, recipe.cards, view, hw, recipe.machines ?? 1);
   let gpuKeys: string[];
   if (opts.gpuKeys?.length) {
     gpuKeys = [...new Set(opts.gpuKeys)];
@@ -84,7 +85,7 @@ export const buildPlan = (
     for (const k of gpuKeys) {
       const g = view.gpus.find((x) => x.key === k);
       if (!g) throw new HttpError(422, "GPU_UNKNOWN", `no GPU ${k} on this machine`);
-      if (hardwareOf(g, hw) !== recipe.hardwareId) throw new HttpError(422, "GPU_HARDWARE", `${k} is not ${recipe.hardwareId}`);
+      if (!hardwareIds(g, hw).has(recipe.hardwareId)) throw new HttpError(422, "GPU_HARDWARE", `${k} is not ${recipe.hardwareId}`);
     }
     const avail = availableKeys(view);
     const held = gpuKeys.filter((k) => !avail.has(k));

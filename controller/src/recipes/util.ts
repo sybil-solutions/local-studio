@@ -40,9 +40,6 @@ export const slug = (s: string): string =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 96);
 
-export const normHardware = (name: string): string =>
-  name.toLowerCase().replace(/nvidia|geforce|intel|amd|radeon|generation|workstation|edition|[0-9]+gb|[^a-z0-9]/g, "");
-
 export const argValue = (argv: string[], ...names: string[]): string | null => {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i] ?? "";
@@ -52,20 +49,6 @@ export const argValue = (argv: string[], ...names: string[]): string | null => {
     }
   }
   return null;
-};
-
-export const argValues = (argv: string[], name: string): string[] => {
-  const i = argv.indexOf(name);
-  if (i < 0) return [];
-  const out: string[] = [];
-  for (let j = i + 1; j < argv.length && !(argv[j] ?? "").startsWith("--"); j++) out.push(argv[j] ?? "");
-  return out;
-};
-
-export const intOrNull = (s: string | null | undefined): number | null => {
-  if (s === null || s === undefined || s === "") return null;
-  const n = Number(s);
-  return Number.isFinite(n) ? Math.round(n) : null;
 };
 
 export { parseJson } from "../discovery/util";
@@ -92,4 +75,3 @@ export const nowStamp = (d = new Date()): string => {
   return `${d.getUTCFullYear()}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}`;
 };
 
-export const isoSeconds = (d = new Date()): string => d.toISOString().replace(/\.\d{3}Z$/, "Z");

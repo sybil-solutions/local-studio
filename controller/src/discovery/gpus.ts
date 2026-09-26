@@ -26,15 +26,13 @@ export const normProduct = (s: string): string =>
 
 export const displayName = (s: string): string => s.replace(/^(NVIDIA GeForce |NVIDIA |Intel |AMD Radeon |AMD )/, "").trim();
 
-export const matchHardware = (hw: HardwareList | null, backend: string, product: string, totalMiB: number): string | null => {
+export const matchHardware = (hw: HardwareList | null, backend: string, product: string, totalMiB: number, unified?: boolean): string | null => {
   if (!hw) return null;
   const n = normProduct(product);
-  const hit = hw.find(
-    (h) =>
-      h.match.backend === backend &&
-      (h.match.names.includes(n) || normProduct(h.match.name) === n) &&
-      Math.abs(h.match.vramGb * 1024 - totalMiB) <= 1024,
-  );
+  const gap = (h: HardwareList[number]) => Math.abs(h.match.vramGb * 1024 - totalMiB);
+  const hit = hw
+    .filter((h) => h.match.backend === backend && (h.match.names.includes(n) || normProduct(h.match.name) === n) && (unified || gap(h) <= Math.max(1024, h.match.vramGb * 51)))
+    .sort((a, b) => gap(a) - gap(b))[0];
   return hit?.hardwareId ?? `${backend}-${normProduct(product)}`;
 };
 
@@ -92,7 +90,7 @@ const scanNvidia = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =
       busId: f[3] ?? null,
       product,
       name: displayName(product),
-      hardwareId: matchHardware(hw, "nvidia", product, total),
+      hardwareId: matchHardware(hw, "nvidia", product, total, unified),
       memTotalMiB: total,
       memUsedMiB: unified ? (sys?.used ?? null) : cell(f[4]),
       unified: unified || undefined,
@@ -213,11 +211,46 @@ export const intelClients = async (pids: number[], nodes: Map<string, string>, n
   return out;
 };
 
+const vramCache = new Map<string, { at: number; byBus: Map<string, number> | null }>();
+
+export const containerIntelVram = async (ctx: Ctx, containerId: string): Promise<Map<string, number> | null> => {
+  const hit = vramCache.get(containerId);
+  if (hit && Date.now() - hit.at < 15_000) return hit.byBus;
+  const r = await ctx.exec(["docker", "exec", containerId, "sh", "-c", "grep -sHE '^(drm-pdev|drm-client-id|drm-total-vram0):' /proc/[0-9]*/fdinfo/*"], { timeoutMs: 4000 });
+  let byBus: Map<string, number> | null = null;
+  if (r.stdout.trim()) {
+    const files = new Map<string, { bus?: string; client?: string; kib?: number }>();
+    for (const line of r.stdout.split("\n")) {
+      const m = /^(.+?):(drm-pdev|drm-client-id|drm-total-vram0):\s*(\S+)/.exec(line);
+      if (!m) continue;
+      const f = files.get(m[1] ?? "") ?? {};
+      if (m[2] === "drm-pdev") f.bus = m[3];
+      else if (m[2] === "drm-client-id") f.client = m[3];
+      else f.kib = Number(m[3]);
+      files.set(m[1] ?? "", f);
+    }
+    const clients = new Map<string, number>();
+    for (const f of files.values()) if (f.bus && f.client && f.kib !== undefined) clients.set(`${f.bus}/${f.client}`, Math.max(clients.get(`${f.bus}/${f.client}`) ?? 0, f.kib));
+    byBus = new Map();
+    for (const [k, kib] of clients) {
+      const bus = k.split("/")[0] ?? "";
+      byBus.set(bus, (byBus.get(bus) ?? 0) + kib / 1024);
+    }
+  }
+  vramCache.set(containerId, { at: Date.now(), byBus });
+  return byBus;
+};
+
 export const setIntelApps = (gs: GpuScan, apps: ComputeApp[]): void => {
   intelApps = apps;
   gs.apps = [...gs.apps.filter((a) => !a.uuid.startsWith("intel:")), ...apps];
-  for (const g of gs.gpus)
-    if (g.backend === "intel-xpu") g.processes = apps.filter((a) => a.uuid === g.uuid).map((a) => ({ pid: a.pid, processName: a.processName, usedMiB: a.usedMiB, modelId: null }));
+  for (const g of gs.gpus) {
+    if (g.backend !== "intel-xpu") continue;
+    const mine = apps.filter((a) => a.uuid === g.uuid);
+    g.processes = mine.map((a) => ({ pid: a.pid, processName: a.processName, usedMiB: a.usedMiB, modelId: null }));
+    const known = mine.filter((a) => a.usedMiB !== null);
+    if (known.length) g.memUsedMiB = Math.round(known.reduce((s, a) => s + (a.usedMiB ?? 0), 0));
+  }
 };
 
 let appleCache: { product: string; totalMiB: number } | null = null;
@@ -251,7 +284,7 @@ const scanApple = async (ctx: Ctx, hw: HardwareList | null): Promise<GpuScan> =>
         busId: null,
         product,
         name: product.replace(/^Apple /, ""),
-        hardwareId: matchHardware(hw, "apple", product, totalMiB),
+        hardwareId: matchHardware(hw, "apple", product, totalMiB, true),
         memTotalMiB: totalMiB,
         memUsedMiB,
         unified: true,

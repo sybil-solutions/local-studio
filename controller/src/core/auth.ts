@@ -36,7 +36,7 @@ const FEDERATION_ACTIONS: RegExp[] = [
 
 const federationAllows = (id: KeyIdentity, method: string, path: string): boolean => {
   if (FEDERATION_DENY.test(path)) return false;
-  if (SAFE.has(method)) return true;
+  if (SAFE.has(method) || (method === "POST" && path === "/api/recipes/fit")) return true;
   return id.actions && FEDERATION_ACTIONS.some((r) => r.test(path));
 };
 

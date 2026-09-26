@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
-import { ExportPrBody, LaunchRecipeBody } from "@local-studio/contracts";
+import { ExportPrBody, FitBody, LaunchRecipeBody, SyncRecipesBody } from "@local-studio/contracts";
 import type { Env, RecipeService } from "../context";
 import type { RecipesInternal } from "./index";
 import { HttpError } from "./util";
@@ -31,9 +31,10 @@ export const recipeRoutes = (service: RecipeService, internal: RecipesInternal):
     return c.json(rows);
   });
   r.post("/api/recipes/sync", async (c) => {
-    const cat = await internal.sync();
-    return c.json({ source: cat.source, registryCommit: cat.registryCommit, generatedAt: cat.generatedAt, fetchedAt: cat.fetchedAt, hardware: cat.hardware.length, recipes: cat.recipes.length });
+    const cat = await internal.sync(parse(SyncRecipesBody, await body(c)).ref);
+    return c.json({ source: cat.source, ref: cat.ref, registryCommit: cat.registryCommit, fetchedAt: cat.fetchedAt, hardware: cat.hardware.length, recipes: cat.recipes.length });
   });
+  r.post("/api/recipes/fit", async (c) => c.json(await internal.fit(parse(FitBody, await body(c)))));
   r.get("/api/recipes/:id/plan", async (c) => {
     const keys = c.req.query("gpuKeys");
     const gpuKeys = keys ? parse(LaunchRecipeBody, { gpuKeys: keys.split(",").map((s) => s.trim()).filter(Boolean) }).gpuKeys : undefined;
@@ -45,11 +46,14 @@ export const recipeRoutes = (service: RecipeService, internal: RecipesInternal):
     internal.assign(c.req.param("id"), b.on);
     return c.json({ id: c.req.param("id"), assigned: b.on });
   });
-  r.post("/api/recipes/:id/launch", async (c) => c.json(await service.launch(c.req.param("id"), parse(LaunchRecipeBody, await body(c)).gpuKeys), 202));
+  r.post("/api/recipes/:id/launch", async (c) => {
+    const b = parse(LaunchRecipeBody, await body(c));
+    return c.json(await service.launch(c.req.param("id"), b.gpuKeys, b.stop), 202);
+  });
   r.post("/api/models/:id/export", async (c) => c.json(await service.exportModel(c.req.param("id"))));
   r.post("/api/models/:id/export/pr", async (c) => {
     const b = parse(ExportPrBody, await body(c));
-    return c.json(await service.openPr(c.req.param("id"), { title: b.title, draft: b.draft }));
+    return c.json(await service.openPr(c.req.param("id"), { title: b.title, draft: b.draft, dryRun: b.dryRun }));
   });
   return r;
 };

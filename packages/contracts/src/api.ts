@@ -8,10 +8,23 @@ export const ConnectPeerBody = z.object({
 });
 export type ConnectPeerBody = z.infer<typeof ConnectPeerBody>;
 
+const GpuKeys = z.array(z.string().regex(/^(nvidia|apple|intel):[0-9]{1,2}$/)).min(1).max(8);
+
 export const LaunchRecipeBody = z.object({
-  gpuKeys: z.array(z.string().regex(/^(nvidia|apple|intel):[0-9]{1,2}$/)).min(1).max(8).optional(),
+  gpuKeys: GpuKeys.optional(),
+  stop: z.boolean().optional(),
 });
 export type LaunchRecipeBody = z.infer<typeof LaunchRecipeBody>;
+
+export const FitBody = z.object({
+  selection: z.array(z.object({ machineId: z.string().min(1).max(64).optional(), gpuKeys: GpuKeys })).min(1).max(16),
+});
+export type FitBody = z.infer<typeof FitBody>;
+
+export const SyncRecipesBody = z.object({
+  ref: z.string().regex(/^[\w][\w./-]{0,199}$/).refine((r) => !r.includes("..")).optional(),
+});
+export type SyncRecipesBody = z.infer<typeof SyncRecipesBody>;
 
 export const StopModelBody = z.object({
   confirm: z.string().min(1),
@@ -22,6 +35,7 @@ export type StopModelBody = z.infer<typeof StopModelBody>;
 export const ExportPrBody = z.object({
   title: z.string().max(200).optional(),
   draft: z.boolean().default(true),
+  dryRun: z.boolean().optional(),
 });
 export type ExportPrBody = z.infer<typeof ExportPrBody>;
 
