@@ -1,3 +1,4 @@
+import { readdirSync, statSync } from "node:fs";
 import type { LaunchPlan, LaunchProgress, RunningModel } from "@local-studio/contracts";
 import { migrate } from "../core/db";
 import { redact } from "../core/log";
@@ -19,6 +20,25 @@ export interface LifecycleDeps {
   setStopping(id: string, on: boolean): void;
 }
 
+const driArgs = (uuids: string[]): string[] => {
+  const out: string[] = [];
+  const gids = new Set<number>();
+  for (const u of uuids) {
+    let names: string[] = [];
+    try {
+      names = readdirSync(`/sys/bus/pci/devices/${u.slice("intel:".length)}/drm`).filter((n) => /^(card|renderD)\d+$/.test(n));
+    } catch {}
+    for (const n of names) {
+      out.push("--device", `/dev/dri/${n}`);
+      try {
+        if (n.startsWith("renderD")) gids.add(statSync(`/dev/dri/${n}`).gid);
+      } catch {}
+    }
+  }
+  for (const g of gids) out.push("--group-add", String(g));
+  return out;
+};
+
 export const dockerArgv = (plan: LaunchPlan, machineId: string): string[] => {
   const own = new Set(["local-studio.managed", "local-studio.recipe", "local-studio.machine"]);
   const argv = [
@@ -35,7 +55,9 @@ export const dockerArgv = (plan: LaunchPlan, machineId: string): string[] => {
     `local-studio.machine=${machineId}`,
   ];
   for (const [k, v] of Object.entries(plan.labels ?? {}).sort()) if (!own.has(k)) argv.push("--label", `${k}=${v}`);
-  if (plan.gpuUuids.length) argv.push("--gpus", `"device=${plan.gpuUuids.join(",")}"`);
+  const nv = plan.gpuUuids.filter((u) => !u.startsWith("intel:"));
+  if (nv.length) argv.push("--gpus", `"device=${nv.join(",")}"`);
+  argv.push(...driArgs(plan.gpuUuids.filter((u) => u.startsWith("intel:"))));
   if (plan.shm) argv.push("--shm-size", plan.shm);
   argv.push(...(plan.dockerOpts ?? []));
   if (plan.entrypoint) argv.push("--entrypoint", plan.entrypoint);
