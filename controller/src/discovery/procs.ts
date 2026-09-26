@@ -26,6 +26,7 @@ const PS_LINE = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+\d+:
 
 export const listProcs = async (ctx: Ctx): Promise<ProcTable> => {
   const r = await ctx.exec(["ps", "-eo", "pid=,ppid=,uid=,rss=,lstart=,args="], { timeoutMs: 5000, env: { LC_ALL: "C", LANG: "C" } });
+  if (r.timedOut || !r.stdout.trim()) throw new Error(r.timedOut ? "ps timed out" : `ps exited ${r.code}`);
   const byPid = new Map<number, Proc>();
   const children = new Map<number, number[]>();
   for (const line of r.stdout.split("\n")) {
@@ -129,10 +130,10 @@ const parseLsof = (out: string): Listener[] => {
 };
 
 export const listListeners = async (ctx: Ctx): Promise<Listener[]> => {
-  const raw =
-    ctx.config.platform === "darwin"
-      ? parseLsof((await ctx.exec(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-FpcnT"], { timeoutMs: 5000 })).stdout)
-      : parseSs((await ctx.exec(["ss", "-ltnpH"], { timeoutMs: 5000 })).stdout);
+  const darwin = ctx.config.platform === "darwin";
+  const r = await ctx.exec(darwin ? ["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-FpcnT"] : ["ss", "-ltnpH"], { timeoutMs: 5000 });
+  if (r.timedOut) throw new Error(`${darwin ? "lsof" : "ss"} timed out`);
+  const raw = darwin ? parseLsof(r.stdout) : parseSs(r.stdout);
   const byPort = new Map<number, Listener>();
   const rank = (l: Listener): number => (l.pid ? 4 : 0) + (l.bind.includes(":") ? 0 : 2) + (l.bind === "0.0.0.0" || l.bind === "127.0.0.1" ? 1 : 0);
   for (const l of raw) {
