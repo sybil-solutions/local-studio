@@ -1,11 +1,11 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { Hono } from "hono";
 import type { AgentLaunchResult, AgentSession, GatewayModel, Harness } from "@local-studio/contracts";
 import { AgentLaunchBody, IssueKeyBody } from "@local-studio/contracts";
 import type { Ctx, Env, Services } from "../context";
 import type { DshManager } from "./dsh";
 import { prepareClaudeDesktop, prepareCodexDesktop } from "./desktop";
-import { PACKAGES, type CliHarness, type HarnessManager } from "./harnesses";
+import { BLOCKED, PACKAGES, type CliHarness, type HarnessManager } from "./harnesses";
 import { ensureClientKey, forgetKeyId } from "./keys";
 import { clientOf, isTerminal } from "./launch-table";
 import { defaultDir, expandDir, forgetSpec, listSpecs, newSessionId, readSpec, writeSpec } from "./sessions";
@@ -20,15 +20,13 @@ export const gatewayUrlFor = (ctx: Ctx): string => {
 
 const gatewayModels = (svc: Services): GatewayModel[] => {
   try {
-    const g = svc.gateway.models();
-    if (g.length > 0) return g;
-  } catch {}
-  try {
-    return svc.peers.models();
+    return svc.gateway.models();
   } catch {
     return [];
   }
 };
+
+const APP_PATH: Record<"codex-desktop" | "claude-desktop", string> = { "codex-desktop": "/Applications/Codex.app", "claude-desktop": "/Applications/Claude.app" };
 
 const isCli = (h: string): h is CliHarness => h in PACKAGES;
 
@@ -129,6 +127,10 @@ export const createAgentRoutes = (ctx: Ctx, svc: Services, deps: { dsh: DshManag
     if (!parsed.success) return bad(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
     const b = parsed.data;
     const harness: Harness = b.harness;
+    if (BLOCKED[harness]) return bad(`${harness}: ${BLOCKED[harness]}`);
+    const models = gatewayModels(svc);
+    const gm = models.find((m) => m.id.toLowerCase() === b.model.toLowerCase() && m.state === "ready") ?? null;
+    if (!gm) return bad(`model ${b.model} is not ready anywhere in the fleet; pick one from /v1/models`);
     const terminalPref = c.req.query("terminal") ?? process.env.LOCAL_STUDIO_AGENT_TERMINAL ?? "auto";
     const dir = b.dir ? expandDir(b.dir) : defaultDir(ctx.config.home, harness);
     try {
@@ -136,11 +138,9 @@ export const createAgentRoutes = (ctx: Ctx, svc: Services, deps: { dsh: DshManag
     } catch (e) {
       return bad(`cannot use folder ${dir}: ${String(e)}`);
     }
-    const models = gatewayModels(svc);
-    const gm = models.find((m) => m.id.toLowerCase() === b.model.toLowerCase()) ?? null;
     const gatewayUrl = gatewayUrlFor(ctx);
     const { keyFile } = ensureClientKey(ctx.db, ctx.keys, ctx.config.home, clientOf(harness));
-    const warn = gm ? "" : ` (model ${b.model} is not in the gateway's model list right now; context window unknown)`;
+    const warn = "";
     const id = newSessionId();
 
     if (isCli(harness)) {
@@ -150,8 +150,7 @@ export const createAgentRoutes = (ctx: Ctx, svc: Services, deps: { dsh: DshManag
       const base = { sessionId: id, harness, bin: found.bin, version: found.version, dir };
 
       if (harness === "dsh") {
-        const list = models.map((m) => ({ id: m.id, contextWindow: m.contextWindow, vision: m.vision }));
-        if (!gm) list.push({ id: b.model, contextWindow: null, vision: null });
+        const list = models.filter((m) => m.state === "ready").map((m) => ({ id: m.id, contextWindow: m.contextWindow, vision: m.vision }));
         const out = await dsh.ensure({ bin: found.bin, path, models: list, defaultModel: b.model, cwd: dir, keyFile, gatewayUrl });
         if (!out.ok) return bad(`dsh: ${out.detail}`, 502, "DSH");
         const s = dsh.status();
@@ -171,8 +170,8 @@ export const createAgentRoutes = (ctx: Ctx, svc: Services, deps: { dsh: DshManag
         dir,
         bin: found.bin,
         path,
-        contextWindow: gm?.contextWindow ?? null,
-        vision: gm?.vision ?? null,
+        contextWindow: gm.contextWindow,
+        vision: gm.vision,
         gatewayUrl,
         safe: b.safe ?? false,
         tmuxSession: name,
@@ -213,11 +212,16 @@ export const createAgentRoutes = (ctx: Ctx, svc: Services, deps: { dsh: DshManag
       return c.json({ ...res, note: `${detail}${warn}` });
     }
 
-    const input = { home: ctx.config.home, dir, model: b.model, contextWindow: gm?.contextWindow ?? null, keyFile, gatewayUrl, sessionId: id };
+    if (harness !== "codex-desktop" && harness !== "claude-desktop") return bad(`${harness} cannot be launched`);
+    const app = APP_PATH[harness];
+    if (process.platform !== "darwin" || !existsSync(app)) return bad(`${app} is not installed on this machine`, 409, "NOT_INSTALLED");
+    const input = { home: ctx.config.home, dir, model: gm.id, contextWindow: gm.contextWindow, keyFile, gatewayUrl, sessionId: id };
     const prep = harness === "codex-desktop" ? prepareCodexDesktop(input) : prepareClaudeDesktop(input);
-    ctx.log.info(`agent ${harness} ${id}: prepared ${prep.files.length} files under ${ctx.config.home}/agents`);
-    const res: AgentLaunchResult = { sessionId: id, harness, how: "app", bin: null, version: null, dir, command: prep.command, url: null, tmuxSession: null, attach: null };
-    return c.json({ ...res, files: prep.files, note: prep.note, verify: "by hand" });
+    const o = await ctx.exec(prep.open, { timeoutMs: 10_000 });
+    const opened = o.code === 0 ? `opened ${app}` : `open failed: ${o.stderr.trim() || `exit ${o.code}`}`;
+    ctx.log.info(`agent ${harness} ${id}: prepared ${prep.files.length} files under ${ctx.config.home}/agents, ${opened}`);
+    const res: AgentLaunchResult = { sessionId: id, harness, how: "app", bin: app, version: null, dir, command: prep.command, url: null, tmuxSession: null, attach: null };
+    return c.json({ ...res, files: prep.files, note: `${opened}. ${prep.note}`, verify: "by hand" });
   });
 
   return r;

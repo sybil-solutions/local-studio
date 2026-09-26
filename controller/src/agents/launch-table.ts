@@ -4,8 +4,8 @@ import type { BuiltLaunch, Client, Harness } from "@local-studio/contracts";
 import { HARNESS_CLIENT } from "@local-studio/contracts";
 import { readSecret } from "./keys";
 
-export type TerminalHarness = "claude" | "codex" | "pi" | "omp";
-export const isTerminal = (h: Harness): h is TerminalHarness => h === "claude" || h === "codex" || h === "pi" || h === "omp";
+export type TerminalHarness = "claude" | "codex" | "pi" | "omp" | "hermes" | "droid";
+export const isTerminal = (h: Harness): h is TerminalHarness => ["claude", "codex", "pi", "omp", "hermes", "droid"].includes(h);
 export const clientOf = (h: Harness): Client => HARNESS_CLIENT[h];
 
 export interface LaunchInput {
@@ -24,11 +24,13 @@ export interface LaunchInput {
 export const YOLO: Partial<Record<Harness, string>> = {
   claude: "--dangerously-skip-permissions",
   codex: "--dangerously-bypass-approvals-and-sandbox",
+  hermes: "--yolo",
 };
 
 export const ENV_UNSET: Partial<Record<Harness, string[]>> = {
   claude: ["ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "ANTHROPIC_SMALL_FAST_MODEL", "MAX_THINKING_TOKENS", "CLAUDE_CODE_MAX_OUTPUT_TOKENS"],
   codex: ["OPENAI_BASE_URL", "OPENAI_API_KEY"],
+  hermes: ["OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENROUTER_API_KEY"],
 };
 
 const tomlString = (s: string) => JSON.stringify(s);
@@ -104,6 +106,26 @@ export const buildLaunch = (i: LaunchInput): BuiltLaunch => {
       const file = { path: join(dir, i.harness === "pi" ? "models.json" : "models.yml"), content: `${JSON.stringify({ providers: { localstudio: provider } }, null, 2)}\n`, mode: 0o600 };
       const argv = [i.harness, "--model", `localstudio/${M}`];
       return { argv, env: { PI_CODING_AGENT_DIR: dir, ...(i.harness === "omp" ? { OMP_SKIP_SETUP: "1" } : {}) }, files: [file], cwd: i.dir };
+    }
+    case "hermes": {
+      const dir = agentDir(i.home, "hermes");
+      const q = JSON.stringify;
+      const config = ["model:", `  default: ${q(M)}`, `  provider: "custom"`, `  base_url: ${q(`${G}/v1`)}`, `  api_key: ${q(readKey(i.keyFile))}`, ...(i.contextWindow ? [`  context_length: ${i.contextWindow}`] : []), ""].join("\n");
+      const argv = ["hermes", ...(i.safe ? [] : [YOLO.hermes!]), "chat"];
+      return { argv, env: { HERMES_HOME: dir }, files: [{ path: join(dir, "config.yaml"), content: config, mode: 0o600 }], cwd: i.dir };
+    }
+    case "droid": {
+      const dir = agentDir(i.home, "droid");
+      const path = join(dir, ".factory", "settings.json");
+      let state: Record<string, unknown> & { trustedFolders?: Record<string, unknown>; sessionDefaultSettings?: Record<string, unknown> } = {};
+      try {
+        state = JSON.parse(readFileSync(path, "utf8")) as typeof state;
+      } catch {}
+      const id = "custom:localstudio-0";
+      state.customModels = [{ model: M, id, index: 0, displayName: "localstudio", baseUrl: `${G}/v1`, apiKey: readKey(i.keyFile), provider: "generic-chat-completion-api", noImageSupport: !i.vision, ...(i.contextWindow ? { maxContextLimit: i.contextWindow } : {}), extraHeaders: { "X-Local-Studio-Client": client, "X-Local-Studio-Workspace": i.sessionId } }];
+      state.sessionDefaultSettings = { ...state.sessionDefaultSettings, model: id };
+      state.trustedFolders = { ...state.trustedFolders, [i.dir]: { trustedAt: new Date().toISOString() } };
+      return { argv: ["droid"], env: { FACTORY_HOME_OVERRIDE: dir }, files: [{ path, content: `${JSON.stringify(state, null, 2)}\n`, mode: 0o600 }], cwd: i.dir };
     }
     default:
       throw new Error(`${i.harness} is not a terminal harness; it is launched by the controller`);

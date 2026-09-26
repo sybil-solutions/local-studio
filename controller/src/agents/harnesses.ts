@@ -6,15 +6,20 @@ import type { Ctx } from "../context";
 import { redact } from "../core/log";
 import { selfArgv } from "./tmux";
 
-export type CliHarness = "dsh" | "claude" | "codex" | "pi" | "omp";
+export type CliHarness = "dsh" | "claude" | "codex" | "pi" | "omp" | "amp" | "hermes" | "droid";
 
-export const PACKAGES: Record<CliHarness, { pkg: string; bin: string; runtime: "node" | "bun" }> = {
+export const PACKAGES: Record<CliHarness, { pkg: string; bin: string; runtime: "node" | "bun" | "uv" }> = {
   dsh: { pkg: "@deepseek-ai/dsh", bin: "dsh", runtime: "node" },
   claude: { pkg: "@anthropic-ai/claude-code", bin: "claude", runtime: "node" },
   codex: { pkg: "@openai/codex", bin: "codex", runtime: "node" },
   pi: { pkg: "@earendil-works/pi-coding-agent", bin: "pi", runtime: "node" },
   omp: { pkg: "@oh-my-pi/pi-coding-agent", bin: "omp", runtime: "bun" },
+  amp: { pkg: "@ampcode/cli", bin: "amp", runtime: "node" },
+  hermes: { pkg: "hermes-agent", bin: "hermes", runtime: "uv" },
+  droid: { pkg: "@factory/cli", bin: "droid", runtime: "node" },
 };
+
+export const BLOCKED: Partial<Record<Harness, string>> = { amp: "Amp only runs models hosted by ampcode.com; it cannot be pointed at a Local Studio model" };
 
 const CLI = Object.keys(PACKAGES) as CliHarness[];
 const APPS: Partial<Record<Harness, string>> = { "codex-desktop": "/Applications/Codex.app", "claude-desktop": "/Applications/Claude.app" };
@@ -117,7 +122,7 @@ export const createHarnessManager = (ctx: Ctx): HarnessManager => {
       key = `${bin}:${statSync(realpathSync(bin)).mtimeMs}`;
     } catch {}
     if (versions.has(key)) return versions.get(key)!;
-    let v = pkgVersion(bin, PACKAGES[h].pkg);
+    let v = PACKAGES[h].runtime === "uv" ? null : pkgVersion(bin, PACKAGES[h].pkg);
     if (!v) {
       const r = await ctx.exec([bin, "--version"], { timeoutMs: 8000, env: { PATH: await searchPath() } });
       v = r.code === 0 ? firstVersion(r.stdout) : null;
@@ -142,8 +147,12 @@ export const createHarnessManager = (ctx: Ctx): HarnessManager => {
     if (c && now - c.at < (c.v ? LATEST_TTL_MS : 300_000)) return c.v;
     let v: string | null = null;
     try {
-      const r = await ctx.fetch(`https://registry.npmjs.org/${PACKAGES[h].pkg}/latest`, { method: "GET", timeoutMs: 10_000 });
-      if (r.ok) v = ((await r.json()) as { version?: string }).version ?? null;
+      const uv = PACKAGES[h].runtime === "uv";
+      const r = await ctx.fetch(uv ? `https://pypi.org/pypi/${PACKAGES[h].pkg}/json` : `https://registry.npmjs.org/${PACKAGES[h].pkg}/latest`, { method: "GET", timeoutMs: 10_000 });
+      if (r.ok) {
+        const j = (await r.json()) as { version?: string; info?: { version?: string } };
+        v = (uv ? j.info?.version : j.version) ?? null;
+      }
       else await r.body?.cancel();
     } catch {}
     latest.set(h, { v: v ?? c?.v ?? null, at: now });
@@ -158,7 +167,8 @@ export const createHarnessManager = (ctx: Ctx): HarnessManager => {
       const r = await ctx.exec(["plutil", "-extract", "CFBundleShortVersionString", "raw", join(path!, "Contents", "Info.plist")], { timeoutMs: 5000 });
       if (r.code === 0) version = r.stdout.trim() || null;
     }
-    return { harness, installed: ok, path: ok ? path : null, version, managed: false, package: null, latest: null, job: null, tier: 2, note: "prepare writes config under the Local Studio home; verify by hand" };
+    const note = harness === "codex-desktop" ? "writes an isolated CODEX_HOME and opens Codex with it" : "writes the gateway config under the Local Studio home and opens Claude; apply it in Claude's third-party inference settings";
+    return { harness, installed: ok, path: ok ? path : null, version, managed: false, package: null, latest: null, job: null, tier: 2, note, blocked: ok ? null : "not installed in /Applications" };
   };
 
   const list = async (): Promise<HarnessInfo[]> => {
@@ -166,7 +176,7 @@ export const createHarnessManager = (ctx: Ctx): HarnessManager => {
       CLI.map(async (h): Promise<HarnessInfo> => {
         const [r, l] = await Promise.all([resolve(h), fetchLatest(h)]);
         const note = r ? (r.managed ? `managed in ${prefix(h)}` : `found at ${r.bin}`) : "not installed";
-        return { harness: h, installed: !!r, path: r?.bin ?? null, version: r?.version ?? null, managed: !!r?.managed, package: PACKAGES[h].pkg, latest: l, job: jobs.get(h) ?? null, tier: 1, note };
+        return { harness: h, installed: !!r, path: r?.bin ?? null, version: r?.version ?? null, managed: !!r?.managed, package: PACKAGES[h].pkg, latest: l, job: jobs.get(h) ?? null, tier: 1, note, blocked: BLOCKED[h] ?? null };
       }),
     );
     last = [...cli, ...(await Promise.all([app("codex-desktop"), app("claude-desktop")]))];
@@ -189,10 +199,16 @@ export const createHarnessManager = (ctx: Ctx): HarnessManager => {
       const { pkg, runtime } = PACKAGES[h];
       const npm = findIn("npm", path);
       const bun = findIn("bun", path);
+      const uv = findIn("uv", path);
       mkdirSync(prefix(h), { recursive: true, mode: 0o700 });
       let argv: string[];
       const env: Record<string, string> = { PATH: path, PWD: prefix(h), npm_config_update_notifier: "false", npm_config_fund: "false", npm_config_audit: "false" };
-      if (runtime === "node" && npm) argv = [npm, "install", "--global", "--prefix", prefix(h), `${pkg}@latest`];
+      if (runtime === "uv") {
+        if (!uv) return finish("failed", "uv not found on the login shell PATH; install uv (https://docs.astral.sh/uv)");
+        argv = [uv, "tool", "install", "--upgrade", pkg];
+        env.UV_TOOL_DIR = join(prefix(h), "tools");
+        env.UV_TOOL_BIN_DIR = join(prefix(h), "bin");
+      } else if (runtime === "node" && npm) argv = [npm, "install", "--global", "--prefix", prefix(h), `${pkg}@latest`];
       else if (bun) {
         argv = [bun, "add", "--global", `${pkg}@latest`];
         env.BUN_INSTALL = prefix(h);

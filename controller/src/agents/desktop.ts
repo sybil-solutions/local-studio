@@ -18,6 +18,7 @@ export interface DesktopInput {
 
 export interface DesktopPrepared {
   files: string[];
+  open: string[];
   command: string;
   note: string;
 }
@@ -53,8 +54,9 @@ export const prepareCodexDesktop = (i: DesktopInput): DesktopPrepared => {
   put(cfg, lines.join("\n"));
   return {
     files: [cfg],
+    open: ["open", "-a", "/Applications/Codex.app", "--env", `CODEX_HOME=${codexHome}`, i.dir],
     command: `open -a Codex --env CODEX_HOME=${shq(codexHome)} ${shq(i.dir)}`,
-    note: "tier 2, verify by hand: quit Codex first if it is running (single instance), then run the command. The key is in the private 0600 config, not on argv. Codex may still ask for ChatGPT sign-in.",
+    note: "If Codex was already running it keeps its old CODEX_HOME: quit it and launch again. The key is in the private 0600 config, not on argv. Codex may still ask for ChatGPT sign-in.",
   };
 };
 
@@ -86,7 +88,8 @@ export const prepareClaudeDesktop = (i: DesktopInput): DesktopPrepared => {
   const target = join(homedir(), "Library", "Application Support", "Claude-3p");
   return {
     files: [entryPath, metaPath, cfgPath],
+    open: ["open", "-a", "/Applications/Claude.app"],
     command: `cp -R ${shq(lib)} ${shq(target)}/ && open -a Claude`,
-    note: `tier 2, verify by hand: Local Studio does not write into Claude's userData. Quit Claude, merge ${cfgPath} and the configLibrary folder into ${target}, then relaunch. Or open Claude, choose third-party inference, and enter gateway base URL ${i.gatewayUrl}, auth scheme bearer, model ${i.model}, API key from ${i.keyFile}.`,
+    note: `Local Studio does not write into Claude's userData. Quit Claude, merge ${cfgPath} and the configLibrary folder into ${target}, then relaunch. Or open Claude, choose third-party inference, and enter gateway base URL ${i.gatewayUrl}, auth scheme bearer, model ${i.model}, API key from ${i.keyFile}.`,
   };
 };

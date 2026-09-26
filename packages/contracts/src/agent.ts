@@ -1,8 +1,8 @@
-export const HARNESSES = ["dsh", "claude", "codex", "pi", "omp", "codex-desktop", "claude-desktop"] as const;
+export const HARNESSES = ["dsh", "claude", "codex", "pi", "omp", "codex-desktop", "claude-desktop", "amp", "hermes", "droid"] as const;
 
 export type Harness = (typeof HARNESSES)[number];
 
-export const CLIENTS = ["dsh", "claude-code", "codex-cli", "codex-desktop", "claude-desktop", "pi", "omp", "ui", "peer", "api"] as const;
+export const CLIENTS = ["dsh", "claude-code", "codex-cli", "codex-desktop", "claude-desktop", "pi", "omp", "ui", "peer", "api", "amp", "hermes", "droid"] as const;
 
 export type Client = (typeof CLIENTS)[number];
 
@@ -14,6 +14,9 @@ export const HARNESS_CLIENT: Record<Harness, Client> = {
   omp: "omp",
   "codex-desktop": "codex-desktop",
   "claude-desktop": "claude-desktop",
+  amp: "amp",
+  hermes: "hermes",
+  droid: "droid",
 };
 
 export interface HarnessJob {
@@ -36,6 +39,7 @@ export interface HarnessInfo {
   job: HarnessJob | null;
   tier: 1 | 2;
   note: string;
+  blocked?: string | null;
 }
 
 export interface AgentSession {
