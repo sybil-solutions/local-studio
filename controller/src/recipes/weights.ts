@@ -95,7 +95,10 @@ export const createWeightIndex = (ctx: Ctx): WeightIndex => {
   const resolve = (w: V2Weights): ResolvedWeight => {
     const base = { repository: w.repository, revision: w.revision, layout: w.layout, mountPath: w.mountPath };
     if (w.hostPath) {
-      const present = existsSync(w.hostPath);
+      let present = false;
+      try {
+        present = readdirSync(w.hostPath).some((f) => /\.(safetensors|gguf|bin|pt)$/.test(f));
+      } catch {}
       return { ...base, hostPath: w.hostPath, present, source: present ? "local" : "missing", hint: present ? null : `${w.hostPath} is missing` };
     }
     if (w.layout === "hub") {
