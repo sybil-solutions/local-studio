@@ -223,19 +223,20 @@ table.tbl { border-collapse: collapse; width: 100%; }
 .mtabs a .n { color: var(--label); border: 1px solid var(--rule); padding: 0 5px; }
 @media (max-width: 768px), (pointer: coarse) { .banner .pages a, .mtabs a { min-height: 40px; } }
 @media (max-width: 560px) { .banner { gap: calc(8px * var(--s)); } .banner .brand .label, .banner .conn > span { display: none; } .banner .pages a { padding: 0 calc(8px * var(--s)); } }
-.panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(320px * var(--s))), 1fr)); gap: var(--group) 0; margin-top: var(--block); }
-.panel { min-width: 0; display: flex; flex-direction: column; }
-.phead { display: flex; align-items: center; gap: calc(8px * var(--s)); padding: 0 var(--gutter); min-height: var(--row); cursor: pointer; }
-.phead:hover .ink { text-decoration: underline; text-underline-offset: 3px; }
-.pmeta { padding: 0 var(--gutter); }
-.panel .surface.run { margin-top: var(--block); }
 .slot { display: flex; align-items: center; justify-content: space-between; gap: var(--gutter); min-height: calc(26px * var(--s)); padding: 0 var(--gutter); margin-top: 2px; background: none; border: 0; color: var(--value); text-align: left; cursor: pointer; width: 100%; }
 .slot:hover { background: var(--card); }
 .slot.static { cursor: default; }
 .slot.static:hover { background: none; }
-.panel .slot:first-of-type { margin-top: var(--block); }
 @media (max-width: 768px), (pointer: coarse) { .slot { min-height: 40px; } }
 .tbl td:first-child { color: var(--ink); }
 .tbl tr.err td:first-child { color: var(--alert); }
 .sec { color: var(--label); letter-spacing: 0.04em; }
 .figs .fig { color: var(--ink); }
+.runs { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, calc(360px * var(--s))), 1fr)); gap: var(--block) 0; }
+.runs > .surface { margin-top: 0; }
+.tbl tr.dim td { color: var(--label); }
+.tbl tr.dim td:first-child { color: var(--value); }
+@media (max-width: 560px) { .ctl .tbl td, .ctl .tbl th { white-space: normal; } .ctl .tbl-wrap { overflow-x: hidden; } }
+.avail { display: flex; flex-direction: column; margin-top: var(--block); }
+.avail .slot { margin-top: 0; border-bottom: 1px solid var(--card); }
+.avail .slot > span:first-child { min-width: 0; flex-wrap: wrap; row-gap: 0; }
