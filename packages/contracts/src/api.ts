@@ -3,7 +3,7 @@ import { HARNESSES } from "./agent";
 
 export const ConnectPeerBody = z.object({
   url: z.string().url(),
-  key: z.string().min(16),
+  key: z.string().min(16).optional(),
   name: z.string().min(1).max(64).optional(),
 });
 export type ConnectPeerBody = z.infer<typeof ConnectPeerBody>;

@@ -6,6 +6,7 @@ import { which } from "../core/exec";
 import { pool } from "../discovery/util";
 
 interface TsNode {
+  UserID?: number;
   HostName?: string;
   DNSName?: string;
   OS?: string;
@@ -21,7 +22,10 @@ interface TsStatus {
 }
 
 const MAC_APP_CLI = "/Applications/Tailscale.app/Contents/MacOS/Tailscale";
-const PROBE_PORT = 8080;
+const PORTS = (process.env.LOCAL_STUDIO_TAILNET_PORTS ?? "8080,18090")
+  .split(",")
+  .map((x) => Number(x.trim()))
+  .filter((x) => Number.isInteger(x) && x > 0 && x < 65536);
 const CONCURRENCY = 8;
 
 export const tailscaleBin = async (): Promise<string | null> => {
@@ -54,30 +58,34 @@ export const discoverTailnet = async (
       (!suffix || p.DNSName.replace(/\.$/, "").endsWith(`.${suffix}`)) &&
       (p.OS === "linux" || p.OS === "macOS"),
   );
+  const me = status.Self?.UserID;
   const candidates = await pool(nodes, CONCURRENCY, async (p): Promise<TailnetCandidate> => {
     const dnsName = (p.DNSName ?? "").replace(/\.$/, "");
-    const url = `http://${dnsName}:${PROBE_PORT}`;
-    let kind: TailnetCandidate["kind"] = "none";
-    let machineId: string | null = null;
-    try {
-      const res = await ctx.fetch(`${url}/health`, { method: "GET", timeoutMs: 2000 });
-      const text = await res.text();
-      if (res.ok) {
+    let found: { url: string; kind: TailnetCandidate["kind"]; machineId: string | null } | null = null;
+    for (const port of PORTS) {
+      const url = `http://${dnsName}:${port}`;
+      try {
+        const res = await ctx.fetch(`${url}/health`, { method: "GET", timeoutMs: 2000 });
+        const text = await res.text();
+        if (!res.ok) continue;
         const body = JSON.parse(text) as { status?: string; service?: string; machineId?: string };
         if (body.service === SERVICE && body.machineId) {
-          kind = "local-studio";
-          machineId = body.machineId;
-        } else if (body.status === "ok") kind = "legacy-controller";
-      }
-    } catch {}
+          found = { url, kind: "local-studio", machineId: body.machineId };
+          break;
+        }
+        if (body.status === "ok" && !found) found = { url, kind: "legacy-controller", machineId: null };
+      } catch {}
+    }
+    const machineId = found?.machineId ?? null;
     return {
       dnsName,
       hostName: p.HostName ?? dnsName.split(".")[0] ?? dnsName,
       os: p.OS ?? "",
-      url,
-      kind,
+      url: found?.url ?? `http://${dnsName}:${PORTS[0] ?? 8080}`,
+      kind: found?.kind ?? "none",
       machineId,
       alreadyConnected: (machineId !== null && known.machineIds.has(machineId)) || known.hosts.has(dnsName.toLowerCase()),
+      mine: me !== undefined && p.UserID === me,
     };
   });
   return { candidates, error: null };

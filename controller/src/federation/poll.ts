@@ -59,15 +59,14 @@ export const createPoller = (ctx: Ctx, store: PeerStore): Poller => {
     inflight.add(id);
     const before = { online: s.online, error: s.error, version: s.version };
     try {
-      if (!key) throw new Error("no stored key for this peer");
       const res = await ctx.fetch(`${s.row.base_url}/api/snapshot`, {
         method: "GET",
-        headers: { authorization: `Bearer ${key}`, "x-local-studio-via": ctx.identity.machineId },
+        headers: { ...(key ? { authorization: `Bearer ${key}` } : {}), "x-local-studio-via": ctx.identity.machineId },
         timeoutMs: TIMEOUT_MS,
       });
       if (!res.ok) {
         await res.body?.cancel();
-        throw new Error(res.status === 401 || res.status === 403 ? `peer rejected the stored key (HTTP ${res.status})` : `HTTP ${res.status}`);
+        throw new Error(res.status === 401 || res.status === 403 ? key ? `peer rejected the stored key (HTTP ${res.status})` : `peer does not trust this machine over Tailscale (HTTP ${res.status})` : `HTTP ${res.status}`);
       }
       const snap = normalizeSnapshot((await res.json()) as Snapshot);
       if (!snap) throw new Error("peer snapshot is malformed");

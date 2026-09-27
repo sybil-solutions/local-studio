@@ -70,12 +70,12 @@ export const upstreamFetch = async (
 
 export const proxyToPeer = async (
   ctx: Ctx,
-  peer: { baseUrl: string; key: string },
+  peer: { baseUrl: string; key: string | null },
   rest: string,
   req: Request,
 ): Promise<Response> => {
   const headers = cleanRequestHeaders(req.headers);
-  headers.set("authorization", `Bearer ${peer.key}`);
+  if (peer.key) headers.set("authorization", `Bearer ${peer.key}`);
   headers.set("x-local-studio-via", ctx.identity.machineId);
   const method = req.method.toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : req.body ?? undefined;

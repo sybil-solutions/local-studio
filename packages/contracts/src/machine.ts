@@ -55,6 +55,7 @@ export interface TailnetCandidate {
   kind: "local-studio" | "legacy-controller" | "none";
   machineId: MachineId | null;
   alreadyConnected: boolean;
+  mine: boolean;
 }
 
 export interface HostCpu {

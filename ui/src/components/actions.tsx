@@ -301,57 +301,101 @@ export const KeyPrompt = () => {
   );
 };
 
+type TailnetInfo = { signedIn: boolean; login: string | null; tailnet: string | null; trust: boolean; auto: boolean };
+
 export const ConnectDialog = ({ onClose }: { onClose: () => void }) => {
+  const [info, setInfo] = useState<TailnetInfo | null>(null);
   const [cands, setCands] = useState<TailnetCandidate[] | null>(null);
+  const [manual, setManual] = useState(false);
   const [url, setUrl] = useState("");
   const [key, setKey] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const scan = () => void get<TailnetCandidate[]>("/api/machines/discover").then((r) => setCands(r.ok && Array.isArray(r.data) ? r.data.filter((c) => c.kind !== "none") : []));
   useEffect(() => {
-    void get<TailnetCandidate[]>("/api/machines/discover").then((r) => setCands(r.ok && Array.isArray(r.data) ? r.data.filter((c) => c.kind === "local-studio" && !c.alreadyConnected) : []));
+    void get<TailnetInfo>("/api/tailnet").then((r) => setInfo(r.ok ? r.data : null));
+    scan();
   }, []);
-  const connect = async () => {
-    setBusy(true);
+  const connect = async (u: string, k?: string) => {
+    setBusy(u);
     setErr(null);
-    const r = await post<Peer>("/api/machines", { url: url.trim(), key: key.trim() });
-    setBusy(false);
+    const r = await post<Peer>("/api/machines", k ? { url: u.trim(), key: k.trim() } : { url: u.trim() });
+    setBusy(null);
     setKey("");
     if (!r.ok) return setErr(r.error);
-    setMsg(r.data?.name ?? url);
-    setUrl("");
+    setMsg(`connected ${r.data?.name ?? u}`);
     void loadAll();
+    scan();
   };
   return (
     <Dialog title="connect" onClose={onClose}>
-      <form
-        className="blk form"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void connect();
-        }}
-      >
-        <label htmlFor="cu">url</label>
-        <input id="cu" className="input" value={url} onChange={(e) => setUrl(e.target.value)} spellCheck={false} />
-        <label htmlFor="ck">key</label>
-        <input id="ck" className="input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
-      </form>
-      {cands && cands.length > 0 && (
-        <div className="blk btns">
+      <div className="blk">
+        {info === null ? (
+          <span className="label">checking tailscale</span>
+        ) : info.signedIn ? (
+          <span>
+            <span className="ink">{`tailscale · ${info.login}`}</span>
+            <span className="label">{info.auto ? " · your machines connect automatically" : ""}</span>
+          </span>
+        ) : (
+          <span className="label">tailscale is not running here; install it and sign in, or connect with a key</span>
+        )}
+      </div>
+      {cands === null ? (
+        <div className="blk label">scanning tailnet</div>
+      ) : (
+        <div className="blk">
           {cands.map((c) => (
-            <Btn key={c.dnsName} onClick={() => setUrl(c.url)}>
-              {c.hostName}
-            </Btn>
+            <div key={c.dnsName} className="p-row">
+              <span className="ink">{c.hostName}</span>
+              <span className="label ellipsis">{c.kind === "legacy-controller" ? "old controller" : c.mine ? c.url.replace(/^https?:\/\//, "") : "another account"}</span>
+              <span className="p-go">
+                {c.alreadyConnected ? (
+                  <span className="label">connected</span>
+                ) : c.kind === "local-studio" ? (
+                  <Btn kind={c.mine ? "primary" : "secondary"} onClick={() => (c.mine ? void connect(c.url) : (setManual(true), setUrl(c.url)))} disabled={busy === c.url}>
+                    {busy === c.url ? "Connecting" : c.mine ? "Connect ›" : "Use key ›"}
+                  </Btn>
+                ) : (
+                  <span className="label">update to connect</span>
+                )}
+              </span>
+            </div>
           ))}
+          {cands.length === 0 && <span className="label">no other machines on this tailnet run Local Studio</span>}
         </div>
       )}
-      <div className="blk btns">
-        <Btn kind="primary" onClick={() => void connect()} disabled={busy || !url || key.length < 16}>
-          {busy ? "Connecting" : "Connect ›"}
-        </Btn>
+      {manual ? (
+        <form
+          className="blk form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void connect(url, key);
+          }}
+        >
+          <label htmlFor="cu">url</label>
+          <input id="cu" className="input" value={url} onChange={(e) => setUrl(e.target.value)} spellCheck={false} />
+          <label htmlFor="ck">key</label>
+          <input id="ck" className="input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
+          <span />
+          <span>
+            <Btn kind="primary" onClick={() => void connect(url, key)} disabled={!!busy || !url || key.length < 16}>
+              Connect ›
+            </Btn>
+          </span>
+        </form>
+      ) : (
+        <div className="blk">
+          <button type="button" className="p-link" onClick={() => setManual(true)}>
+            connect by url and key ›
+          </button>
+        </div>
+      )}
+      <div className="blk">
         {msg && <span className="ink">{msg}</span>}
+        <Err>{err}</Err>
       </div>
-      <Err>{err}</Err>
     </Dialog>
   );
 };

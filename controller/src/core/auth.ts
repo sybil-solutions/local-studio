@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from "hono";
 import { getConnInfo } from "hono/bun";
 import type { Config } from "./config";
+import { isTailnetIp, type TailId } from "../federation/tailid";
 import type { KeyIdentity, KeyStore } from "./keys";
 
 export interface AuthVars {
@@ -68,7 +69,7 @@ const clientFromUa = (ua: string | undefined): string => {
   return "api";
 };
 
-export const authMiddleware = (config: Config, keys: KeyStore): MiddlewareHandler<{ Variables: AuthVars }> => {
+export const authMiddleware = (config: Config, keys: KeyStore, tail: TailId): MiddlewareHandler<{ Variables: AuthVars }> => {
   const origins = ownOrigins(config);
   return async (c, next) => {
     const path = c.req.path;
@@ -93,14 +94,15 @@ export const authMiddleware = (config: Config, keys: KeyStore): MiddlewareHandle
     const proxied = PROXY_HEADERS.some((h) => c.req.header(h) !== undefined);
     const loopbackTrusted = LOOPBACK.has(remote) && LOOPBACK_HOST.test(c.req.header("host") ?? "") && !foreignOrigin && !proxied;
     const isApi = path.startsWith("/api/") || path.startsWith("/v1/") || path === "/metrics";
-    if (isApi && !id && !loopbackTrusted) return c.json({ error: { code: "AUTH", message: "missing or invalid API key" } }, 401);
+    const owner = isApi && !id && !loopbackTrusted && !proxied && !foreignOrigin && isTailnetIp(remote) ? await tail.owns(remote) : false;
+    if (isApi && !id && !loopbackTrusted && !owner) return c.json({ error: { code: "AUTH", message: "missing or invalid API key" } }, 401);
     if (path.startsWith("/api/") && id && id.scope === "client") return c.json({ error: { code: "AUTH", message: "client keys may only call /v1/*" } }, 403);
     if (path.startsWith("/api/") && id && id.scope === "federation" && !federationAllows(id, c.req.method, path))
       return c.json({ error: { code: "AUTH", message: `federation keys may not call ${c.req.method} ${path}` } }, 403);
     if (config.readOnly && c.req.method !== "GET" && READ_ONLY_DENY.some((r) => r.test(path)))
       return c.json({ error: { code: "READ_ONLY", message: "this controller runs with --read-only" } }, 403);
     const headerClient = normaliseClient(c.req.header("x-local-studio-client"));
-    c.set("admin", id ? id.admin : loopbackTrusted);
+    c.set("admin", id ? id.admin : loopbackTrusted || owner);
     c.set("keyId", id?.id ?? null);
     c.set("client", id && id.scope === "client" ? id.client : headerClient ?? (path.startsWith("/v1/") ? clientFromUa(c.req.header("user-agent")) : "ui"));
     return next();

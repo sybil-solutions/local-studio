@@ -1,3 +1,4 @@
+import type { TailId } from "./federation/tailid";
 import type { Database } from "bun:sqlite";
 import type { Hono } from "hono";
 import type {
@@ -45,6 +46,7 @@ export interface Ctx {
   identity: Identity;
   exec: typeof exec;
   fetch: typeof fetchWithTimeout;
+  tail: TailId;
 }
 
 export type Env = { Variables: AuthVars };

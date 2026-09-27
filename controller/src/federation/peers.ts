@@ -49,8 +49,9 @@ export const toPeer = (s: PeerState): Peer => ({
 export interface PeerStore {
   all(): PeerRow[];
   keyFor(id: string): string | null;
-  connect(body: { url: string; key: string; name?: string }): Promise<{ row: PeerRow; snapshot: Snapshot; health: Health; adminKey: boolean }>;
+  connect(body: { url: string; key?: string; name?: string }): Promise<{ row: PeerRow; snapshot: Snapshot; health: Health; adminKey: boolean }>;
   remove(id: string): boolean;
+  ignored(machineId: string): boolean;
   touch(id: string, at: number): void;
 }
 
@@ -59,6 +60,7 @@ export const createPeerStore = (ctx: Ctx): PeerStore => {
     `CREATE TABLE peers (
       id TEXT PRIMARY KEY, machine_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL, base_url TEXT NOT NULL,
       added_at INTEGER NOT NULL, last_seen_at INTEGER)`,
+    `CREATE TABLE peers_ignored (machine_id TEXT PRIMARY KEY, at INTEGER NOT NULL)`,
   ]);
   const keysDir = join(ctx.config.home, "keys");
   const keyPath = (id: string) => join(keysDir, `peer-${id}.key`);
@@ -108,10 +110,16 @@ export const createPeerStore = (ctx: Ctx): PeerStore => {
       if (health.machineId === ctx.identity.machineId) throw new HttpError(400, "SELF", "that URL is this controller");
       let snapshot: Snapshot;
       try {
-        const res = await ctx.fetch(`${baseUrl}/api/snapshot`, { method: "GET", headers: { authorization: `Bearer ${key}` }, timeoutMs: 10_000 });
+        const res = await ctx.fetch(`${baseUrl}/api/snapshot`, { method: "GET", headers: key ? { authorization: `Bearer ${key}` } : {}, timeoutMs: 10_000 });
         if (res.status === 401 || res.status === 403) {
           await res.body?.cancel();
-          throw new HttpError(401, "PEER_AUTH", `peer ${health.name} rejected the key (HTTP ${res.status}); nothing was stored`);
+          throw new HttpError(
+            401,
+            "PEER_AUTH",
+            key
+              ? `peer ${health.name} rejected the key (HTTP ${res.status}); nothing was stored`
+              : `peer ${health.name} does not trust this machine over Tailscale; both must be signed in to the same Tailscale account and run a current Local Studio, or connect with a key`,
+          );
         }
         const body = normalizeSnapshot((await readJson(res)) as Snapshot | null);
         if (!res.ok || !body) throw new HttpError(502, "PEER_SNAPSHOT", `peer snapshot answered ${res.status}`);
@@ -120,7 +128,9 @@ export const createPeerStore = (ctx: Ctx): PeerStore => {
         if (e instanceof HttpError) throw e;
         throw new HttpError(502, "PEER_UNREACHABLE", `${baseUrl}/api/snapshot: ${e instanceof Error ? e.message : String(e)}`);
       }
-      const adminKey = await ctx
+      const adminKey = !key
+        ? false
+        : await ctx
         .fetch(`${baseUrl}/api/keys`, { method: "GET", headers: { authorization: `Bearer ${key}` }, timeoutMs: 5000 })
         .then(async (r) => {
           await r.body?.cancel();
@@ -138,14 +148,20 @@ export const createPeerStore = (ctx: Ctx): PeerStore => {
         added_at: existing?.added_at ?? now,
         last_seen_at: now,
       };
-      writeKey(id, key);
-      keyCache.set(id, key);
+      if (key) {
+        writeKey(id, key);
+        keyCache.set(id, key);
+      }
+      ctx.db.query("DELETE FROM peers_ignored WHERE machine_id = ?").run(health.machineId);
       ctx.db
         .query("INSERT OR REPLACE INTO peers (id, machine_id, name, base_url, added_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)")
         .run(row.id, row.machine_id, row.name, row.base_url, row.added_at, row.last_seen_at);
       return { row, snapshot, health, adminKey };
     },
+    ignored: (machineId) => !!ctx.db.query("SELECT 1 FROM peers_ignored WHERE machine_id = ?").get(machineId),
     remove(id) {
+      const row = ctx.db.query<PeerRow, [string]>("SELECT * FROM peers WHERE id = ?").get(id);
+      if (row) ctx.db.query("INSERT OR REPLACE INTO peers_ignored (machine_id, at) VALUES (?, ?)").run(row.machine_id, Date.now());
       const n = ctx.db.query("DELETE FROM peers WHERE id = ?").run(id).changes;
       keyCache.delete(id);
       if (n > 0 && /^peer_[0-9a-f]{8}$/.test(id) && existsSync(keyPath(id))) unlinkSync(keyPath(id));

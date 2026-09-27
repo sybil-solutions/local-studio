@@ -18,6 +18,7 @@ import { buildSnapshot, snapshotKey } from "./core/snapshot";
 import { createSse } from "./core/sse";
 import { createDiscovery } from "./discovery";
 import { createFederation } from "./federation";
+import { createTailId, type TailId } from "./federation/tailid";
 import { createGateway } from "./gateway";
 import { createMetrics } from "./metrics";
 import { createRecipes } from "./recipes";
@@ -47,7 +48,9 @@ export const createApp = (config: Config): App => {
     identity: loadIdentity(config),
     exec,
     fetch: fetchWithTimeout,
+    tail: undefined as unknown as TailId,
   };
+  ctx.tail = createTailId(ctx);
   const svc = {} as Services;
   const discovery = createDiscovery(ctx, svc);
   svc.runtime = discovery.service.runtime;
@@ -73,7 +76,7 @@ export const createApp = (config: Config): App => {
     return c.json({ error: { code: "INTERNAL", message: err.message } }, 500);
   });
   hono.get("/health", (c) => c.json(ctx.identity.health()));
-  hono.use("*", authMiddleware(config, ctx.keys));
+  hono.use("*", authMiddleware(config, ctx.keys, ctx.tail));
   hono.get("/metrics", (c) => c.text(obs.prom(), 200, { "content-type": "text/plain; version=0.0.4" }));
   hono.get("/api/health/detail", (c) => c.json(obs.health()));
   hono.get("/api/snapshot", (c) => c.json(buildSnapshot(svc)));
