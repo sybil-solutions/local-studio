@@ -257,3 +257,81 @@ table.tbl { border-collapse: collapse; width: 100%; }
 .vrow .btn { height: calc(var(--text) * 1.4 + 4px); padding: 0 calc(8px * var(--s)); }
 .vrow.line { flex-direction: row; align-items: center; gap: var(--block); min-height: calc(26px * var(--s)); }
 .vrow.line .btn { height: calc(var(--text) * 1.4 + 6px); }
+.p-shell { max-width: calc(800px * var(--s)); margin: 0 auto; padding: calc(22px * var(--s)) 16px calc(60px * var(--s)); }
+.p-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: calc(6px * var(--s)) calc(18px * var(--s)); padding-bottom: calc(14px * var(--s)); border-bottom: 1px solid var(--rule); }
+.p-top nav { display: flex; gap: calc(16px * var(--s)); margin-left: auto; }
+.p-top nav a, .p-link { color: var(--label); background: none; border: 0; padding: 0; cursor: pointer; font: inherit; }
+.p-top nav a.on, .p-top nav a:hover, .p-link:hover { color: var(--ink); }
+.panel { display: flex; flex-direction: column; }
+.p-sum { display: flex; flex-wrap: wrap; gap: calc(10px * var(--s)) calc(26px * var(--s)); padding: calc(14px * var(--s)) 0; border-bottom: 1px solid var(--rule); }
+.p-sum span { display: flex; flex-direction: column; }
+.p-sum b { color: var(--ink); font-weight: 400; font-size: var(--name); }
+.p-h { display: flex; align-items: center; gap: var(--block); margin: calc(28px * var(--s)) 0 calc(8px * var(--s)); font-size: var(--text); font-weight: 400; color: var(--label); text-transform: uppercase; letter-spacing: 0.05em; }
+.p-h .p-aside { margin-left: auto; text-transform: none; letter-spacing: 0; text-align: right; }
+.p-h .ink, .p-h .label { text-transform: none; letter-spacing: 0; }
+.p-row { display: flex; align-items: center; gap: calc(12px * var(--s)); min-height: calc(34px * var(--s)); padding: 0 4px; border-bottom: 1px solid #151515; min-width: 0; }
+.p-row.click { cursor: pointer; }
+.p-row.click:hover, .p-row.click:focus-visible { background: var(--card); outline: none; }
+.p-row > span:not(.p-go) { flex: none; }
+.p-row > span.ellipsis { flex: 0 1 auto; min-width: 0; }
+.p-go { margin-left: auto; white-space: nowrap; }
+.p-k { width: calc(120px * var(--s)); }
+.p-back { color: var(--label); margin-top: calc(20px * var(--s)); align-self: flex-start; }
+.p-back:hover { color: var(--ink); }
+.panel .surface.p-card { margin: 0 0 calc(10px * var(--s)); padding: calc(16px * var(--s)); min-height: 0; gap: calc(10px * var(--s)); color: inherit; cursor: pointer; }
+.panel .surface.p-card:hover { outline: 1px solid var(--rule); }
+.panel .surface.p-card.tall { margin-top: calc(14px * var(--s)); min-height: calc(190px * var(--s)); cursor: default; }
+.panel .surface.p-card.tall:hover { outline: 0; }
+.p-figs { display: flex; flex-wrap: wrap; gap: calc(8px * var(--s)) calc(34px * var(--s)); }
+.p-figs span { display: flex; flex-direction: column; }
+.p-figs b { color: var(--ink); font-weight: 400; font-size: var(--name); }
+.panel > .btns { margin-top: 2px; }
+.p-line { display: block; width: 100%; height: calc(22px * var(--s)); color: var(--value); margin-top: 4px; }
+.p-bar { display: block; height: 4px; background: var(--rule); min-width: 40px; }
+.p-bar > i { display: block; height: 4px; background: var(--value); }
+.p-tabs { display: inline-flex; gap: calc(14px * var(--s)); }
+.p-tabs button { background: none; border: 0; border-bottom: 1px solid transparent; padding: 0; color: var(--label); cursor: pointer; font: inherit; }
+.p-tabs button.on { color: var(--ink); border-bottom-color: var(--ink); }
+.p-win { margin-top: calc(18px * var(--s)); }
+.p-mets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: #1a1a1a; border: 1px solid #1a1a1a; }
+.p-mets.idle { opacity: 0.55; }
+.p-met { background: var(--bg); padding: calc(10px * var(--s)) calc(12px * var(--s)) calc(8px * var(--s)); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.p-met b { color: var(--ink); font-weight: 400; font-size: var(--name); }
+.p-grow, .p-rq, .p-gpu, .p-brow { display: grid; gap: calc(10px * var(--s)); align-items: center; min-height: calc(30px * var(--s)); border-bottom: 1px solid #111; min-width: 0; }
+.p-grow { grid-template-columns: 1fr 1.3fr 1.4fr 44px 1fr 56px; }
+.p-rq { grid-template-columns: 70px 1fr 56px 56px 60px 52px 64px; }
+.p-gpu { grid-template-columns: 1.2fr 1.4fr 44px 56px 1.4fr; }
+.p-gpu > span:nth-child(2) { display: flex; flex-direction: column; gap: 3px; }
+.p-brow { grid-template-columns: 1.4fr 1.6fr 70px 80px 80px; min-height: calc(32px * var(--s)); }
+.p-rq.new { animation: flash 1.2s ease-out; }
+.p-rq.err .ink { color: var(--alert); }
+.n { text-align: right; }
+.p-stack { display: block; width: 100%; height: calc(150px * var(--s)); }
+.p-stack .s0 { fill: rgba(var(--fg-rgb), 0.95); }
+.p-stack .s1 { fill: rgba(var(--fg-rgb), 0.3); }
+.p-stack .s2 { fill: rgba(var(--fg-rgb), 0.6); }
+.p-stack .hit { fill: transparent; }
+.p-stack .hit:hover { fill: rgba(var(--fg-rgb), 0.06); }
+.p-axis { display: flex; justify-content: space-between; margin-top: 4px; }
+.p-legend { display: flex; gap: calc(16px * var(--s)); margin-top: 4px; }
+.p-legend i { display: inline-block; width: 9px; height: 9px; margin-right: 6px; }
+.p-legend i.s0 { background: rgba(var(--fg-rgb), 0.95); }
+.p-legend i.s1 { background: rgba(var(--fg-rgb), 0.3); }
+.p-legend i.s2 { background: rgba(var(--fg-rgb), 0.6); }
+.panel .life { padding: 0; max-width: none; }
+.panel .tbl-wrap { margin: 0; }
+.panel .err { padding: 0; }
+.panel .progress { margin-top: 0; }
+@media (max-width: 699px) {
+  .p-mets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .p-grow { grid-template-columns: 1fr 1fr 44px 56px; }
+  .p-grow > :nth-child(2), .p-grow > :nth-child(5) { display: none; }
+  .p-rq { grid-template-columns: 1fr 54px 52px 60px; }
+  .p-rq > :nth-child(1), .p-rq > :nth-child(4), .p-rq > :nth-child(7) { display: none; }
+  .p-gpu { grid-template-columns: 1fr 1.2fr 44px; }
+  .p-gpu > :nth-child(4), .p-gpu > :nth-child(5) { display: none; }
+  .p-brow { grid-template-columns: 1fr 56px 64px 64px; }
+  .p-brow > :nth-child(2) { display: none; }
+  .p-row { min-height: 44px; }
+  .p-row .p-go { max-width: 55%; overflow: hidden; text-overflow: ellipsis; }
+}

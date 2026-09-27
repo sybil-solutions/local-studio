@@ -85,7 +85,7 @@ const remember = (d: string) => {
   } catch {}
 };
 
-export const AgentsSection = ({ model, only }: { model: string | null; only: "launch" | "sessions" }) => {
+export const AgentsSection = ({ model, only, bare }: { model: string | null; only: "launch" | "sessions"; bare?: boolean }) => {
   const now = useStore((s) => s.now);
   const readOnly = useStore((s) => s.fleet?.machines.find((m) => m.peerId === null)?.snapshot?.machine.readOnly ?? false);
   const [infos, setInfos] = useState<HarnessInfo[]>([]);
@@ -331,7 +331,7 @@ export const AgentsSection = ({ model, only }: { model: string | null; only: "la
         )}
       </div>}
       {only === "sessions" && sessions.length > 0 && <div>
-        <SectionHeading aside={<span className="label">{`${sessions.length} running`}</span>}>agents</SectionHeading>
+        {!bare && <SectionHeading aside={<span className="label">{`${sessions.length} running`}</span>}>agents</SectionHeading>}
         <Table<AgentSession>
           cols={[
             { h: "harness", c: (s) => label(s.harness) },

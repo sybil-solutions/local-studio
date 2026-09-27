@@ -1,10 +1,9 @@
-import { StrictMode, useMemo, useSyncExternalStore } from "react";
+import { StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import "./theme.css";
 import { getKey, setKey } from "./api";
 import { KeyPrompt } from "./components/actions";
-import { BarMark, Boundary } from "./components/basics";
-import { machines } from "./model/view";
+import { Boundary } from "./components/basics";
 import { restart, start, useStore } from "./store";
 import { ControlPage } from "./views/control";
 import { LivePage } from "./views/live";
@@ -17,68 +16,39 @@ const onHash = (f: () => void) => {
   return () => window.removeEventListener("hashchange", f);
 };
 
-const Filter = ({ tab, on }: { tab: string; on: string | null }) => {
-  const fleet = useStore((s) => s.fleet);
-  const launches = useStore((s) => s.launches);
-  const ms = useMemo(() => machines(fleet, launches), [fleet, launches]);
-  if (ms.length < 2) return null;
-  return (
-    <nav className="mtabs">
-      <a href={`#/${tab}`} className={on ? "" : "on"}>
-        <span>all machines</span>
-        <span className="n">{ms.filter((m) => m.online).length}</span>
-      </a>
-      {ms.map((m) => (
-        <a key={m.id} href={`#/${tab}/${encodeURIComponent(m.id)}`} className={`${on === m.id ? "on" : ""}${m.online ? "" : " off"}`} title={m.gpuSummary}>
-          <BarMark mark={m.online ? m.mark : "failed"} />
-          <span>{m.name}</span>
-        </a>
-      ))}
-    </nav>
-  );
-};
-
 const App = () => {
   const hash = useSyncExternalStore(onHash, () => location.hash);
   const [path = "", query = ""] = hash.replace(/^#\/?/, "").split("?");
-  const [tab, arg] = path.split("/").map(decodeURIComponent);
+  const [tab, ...sub] = path.split("/").map(decodeURIComponent);
   const view = TABS.find((t) => t === tab) ?? "control";
   const needKey = useStore((s) => s.needKey);
   const conn = useStore((s) => s.conn);
   const retry = useStore((s) => s.retryMs);
-  const version = useStore((s) => s.fleet?.machines.find((m) => m.peerId === null)?.snapshot?.machine.version ?? "");
-  const machine = arg || null;
+  const count = useStore((s) => s.fleet?.machines.length ?? 0);
+  const online = useStore((s) => s.fleet?.machines.filter((m) => m.online).length ?? 0);
   return (
-    <div className="shell">
-      <div className="banner">
-        <a className="brand" href="#/control">
-          LOCAL STUDIO <span className="label">{version}</span>
+    <div className="p-shell">
+      <div className="p-top">
+        <a className="ink" href="#/control">
+          LOCAL STUDIO
         </a>
-        <nav className="pages">
+        <span className="label">{`${online} / ${count} machines`}</span>
+        {conn !== "live" && <span className={conn === "retrying" ? "alert" : "label"}>{conn === "retrying" && retry ? `retry ${Math.round(retry / 1000)}s` : conn}</span>}
+        <nav>
           {TABS.map((t) => (
             <a key={t} href={`#/${t}`} className={view === t ? "on" : ""}>
               {t}
             </a>
           ))}
-        </nav>
-        <span className="conn">
-          <span className={conn === "retrying" ? "alert" : "label"}>{conn === "retrying" && retry ? `retry ${Math.round(retry / 1000)}s` : conn}</span>
           {getKey() && (
-            <button type="button" className="btn" onClick={() => (setKey(null), void restart())}>
-              Sign out
+            <button type="button" className="p-link" onClick={() => (setKey(null), void restart())}>
+              sign out
             </button>
           )}
-        </span>
+        </nav>
       </div>
-      <Filter tab={view} on={machine} />
       <Boundary key={view} name={view}>
-        {view === "usage" ? (
-          <UsagePage machineId={machine} />
-        ) : view === "live" ? (
-          <LivePage machineId={machine} />
-        ) : (
-          <ControlPage machineId={tab === "agents" ? null : machine} model={new URLSearchParams(query).get("model")} />
-        )}
+        {view === "usage" ? <UsagePage /> : view === "live" ? <LivePage /> : <ControlPage sub={tab === "control" ? sub : []} model={new URLSearchParams(query).get("model")} />}
       </Boundary>
       {needKey && <KeyPrompt />}
     </div>

@@ -26,8 +26,11 @@ export interface State {
   needKey: boolean;
   error: string | null;
   hist: Record<string, number[]>;
+  ehist: Record<string, EngineHist>;
   now: number;
 }
+
+export type EngineHist = Record<"dec" | "pre" | "ttft" | "kv" | "hit" | "spec", (number | null)[]>;
 
 let state: State = {
   fleet: null,
@@ -42,6 +45,7 @@ let state: State = {
   needKey: false,
   error: null,
   hist: {},
+  ehist: {},
   now: Date.now(),
 };
 const subs = new Set<() => void>();
@@ -79,6 +83,27 @@ const track = (hist: Record<string, number[]>, f: FleetSnapshot): Record<string,
   return next;
 };
 
+const EHIST = 60;
+const pick = (e: EngineRates): Record<keyof EngineHist, number | null> => ({
+  dec: e.decodeTps ?? e.generationTpsWall,
+  pre: e.prefillTps ?? e.promptTpsWall,
+  ttft: e.meanTtftMs,
+  kv: e.kvCacheUsage === null ? null : e.kvCacheUsage * 100,
+  hit: e.prefixHitRate === null ? null : e.prefixHitRate * 100,
+  spec: e.specAcceptLength,
+});
+const trackEngines = (h: Record<string, EngineHist>, rows: { machineId: string; e: EngineRates }[]): Record<string, EngineHist> => {
+  const next = { ...h };
+  for (const { machineId, e } of rows) {
+    const k = `${machineId}/${e.modelId}`;
+    const v = pick(e);
+    const prev = next[k];
+    next[k] = Object.fromEntries((Object.keys(v) as (keyof EngineHist)[]).map((f) => [f, [...(prev?.[f] ?? []), v[f]].slice(-EHIST)])) as EngineHist;
+  }
+  return next;
+};
+const enginesOf = (f: FleetSnapshot) => f.machines.flatMap((m) => (m.snapshot?.engines ?? []).map((e) => ({ machineId: m.machineId, e })));
+
 export const applySnapshot = (raw: Snapshot): void =>
   setState((st) => {
     const s = safe(raw);
@@ -90,7 +115,7 @@ export const applySnapshot = (raw: Snapshot): void =>
     const entry = { machineId: self, peerId: null, online: true, error: null, snapshot: s };
     const machines = has ? f.machines.map((m) => (m.machineId === self ? { ...m, ...entry } : m)) : [entry, ...f.machines];
     const fleet = { ...f, self, machines, at: Math.max(f.at, s.at) };
-    return { fleet, hist: track(st.hist, { ...fleet, machines: [entry] }) };
+    return { fleet, hist: track(st.hist, { ...fleet, machines: [entry] }), ehist: trackEngines(st.ehist, enginesOf({ ...fleet, machines: [entry] })) };
   });
 
 export const applyFleet = (raw: FleetSnapshot): void =>
@@ -99,7 +124,8 @@ export const applyFleet = (raw: FleetSnapshot): void =>
     const prevSelf = st.fleet?.machines.find((m) => m.machineId === f.self && m.peerId === null);
     const has = f.machines.some((m) => m.machineId === f.self);
     const machines = has || !prevSelf ? f.machines : [prevSelf, ...f.machines];
-    return { fleet: { ...f, machines }, hist: track(st.hist, { ...f, machines: f.machines.filter((m) => m.peerId !== null) }) };
+    const peers = { ...f, machines: f.machines.filter((m) => m.peerId !== null) };
+    return { fleet: { ...f, machines }, hist: track(st.hist, peers), ehist: trackEngines(st.ehist, enginesOf(peers)) };
   });
 
 const onEvent = (e: ControllerEvent): void => {
