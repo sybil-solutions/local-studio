@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { type AgentLaunchResult, fmt, type RecipeRow } from "@local-studio/contracts/client";
 import { call, post, via } from "../api";
 import { cancelLaunch, ConnectDialog, ExportDialog, RecipeDialog, StopDialog, type Target } from "../components/actions";
-import { BarMark, Btn, Chips, Err, Logo, SectionHeading, Table } from "../components/basics";
+import { BarMark, Btn, Chips, Dialog, Err, Logo, SectionHeading, Table } from "../components/basics";
 import { FigureGrid, TokenLine } from "../components/cards";
 import { aggOf, type CardView, fmtFormat, homeCards, type MachineView, machines, mergeRecipes, type RecipeView, resOf, resText, sumRes } from "../model/view";
 import { loadRecipes, useStore } from "../store";
@@ -30,7 +30,10 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   const recipes = useStore((s) => s.recipes);
   const engines = useStore((s) => s.engines);
   const error = useStore((s) => s.error);
-  const [dlg, setDlg] = useState<{ k: "stop" | "export"; c: CardView } | { k: "recipe"; id: string } | { k: "connect" } | null>(null);
+  const [dlg, setDlg] = useState<{ k: "stop" | "export"; c: CardView } | { k: "recipe"; id: string } | { k: "connect" } | { k: "run" } | { k: "agent" } | null>(null);
+  useEffect(() => {
+    if (model) setDlg({ k: "agent" });
+  }, [model]);
   const [show, setShow] = useState<Show | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
@@ -106,6 +109,11 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
         ]}
         className="one"
       />
+      <div className="toolbar">
+        <Btn kind="primary" onClick={() => setDlg({ k: "run" })}>Run model ›</Btn>
+        <Btn kind="primary" onClick={() => setDlg({ k: "agent" })}>New agent ›</Btn>
+        <Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>
+      </div>
       <SectionHeading aside={<span className="label">{`${chat.length} running`}</span>}>running</SectionHeading>
       {chat.length === 0 && <div className="note">–</div>}
       <div className="runs">
@@ -168,7 +176,10 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
           />
         </>
       )}
-      <SectionHeading aside={<Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>}>available</SectionHeading>
+      <AgentsSection model={model} only="sessions" />
+      {dlg?.k === "run" && (
+        <Dialog title="Run model" onClose={() => setDlg(null)} wide>
+          <SectionHeading>where</SectionHeading>
       <div className="avail">
         {avail.map((x) =>
           x.slot ? (
@@ -192,7 +203,7 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
           ),
         )}
       </div>
-      <AgentsSection model={model} />
+          <div className="page">
       <SectionHeading
         aside={
           cfg && <span className="tabs">
@@ -211,7 +222,7 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
       </SectionHeading>
       {!cfg && (
         <div className="gut">
-          <Btn onClick={() => setCfg(true)}>{`Show ${shown.length} configs ›`}</Btn>
+          <Btn onClick={() => setCfg(true)}>{`All ${shown.length} configs ›`}</Btn>
         </div>
       )}
       <Err>{msg}</Err>
@@ -229,6 +240,16 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
         keyOf={(v) => v.id}
         onRow={(v) => setDlg({ k: "recipe", id: v.id })}
       />}
+          </div>
+        </Dialog>
+      )}
+      {dlg?.k === "agent" && (
+        <Dialog title="New agent" onClose={() => setDlg(null)} wide>
+          <div className="page">
+            <AgentsSection model={model} only="launch" />
+          </div>
+        </Dialog>
+      )}
       {dlg?.k === "stop" && dlg.c.modelId && <StopDialog t={target(dlg.c)} modelId={dlg.c.modelId} name={dlg.c.name} watchdog={dlg.c.watchdog} blocked={dlg.c.stopBlocked} onClose={() => setDlg(null)} />}
       {dlg?.k === "export" && dlg.c.modelId && <ExportDialog t={target(dlg.c)} modelId={dlg.c.modelId} onClose={() => setDlg(null)} />}
       {open && <RecipeDialog v={open} onClose={() => setDlg(null)} />}

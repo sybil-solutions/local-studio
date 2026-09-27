@@ -240,3 +240,4 @@ table.tbl { border-collapse: collapse; width: 100%; }
 .avail { display: flex; flex-direction: column; margin-top: var(--block); }
 .avail .slot { margin-top: 0; border-bottom: 1px solid var(--card); }
 .avail .slot > span:first-child { min-width: 0; flex-wrap: wrap; row-gap: 0; }
+.toolbar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--block); padding: 0 var(--gutter); margin-top: var(--top); }

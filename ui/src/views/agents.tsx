@@ -85,7 +85,7 @@ const remember = (d: string) => {
   } catch {}
 };
 
-export const AgentsSection = ({ model }: { model: string | null }) => {
+export const AgentsSection = ({ model, only }: { model: string | null; only: "launch" | "sessions" }) => {
   const now = useStore((s) => s.now);
   const readOnly = useStore((s) => s.fleet?.machines.find((m) => m.peerId === null)?.snapshot?.machine.readOnly ?? false);
   const [infos, setInfos] = useState<HarnessInfo[]>([]);
@@ -201,7 +201,7 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
 
   return (
     <>
-      <div ref={top} className="half">
+      {only === "launch" && <div ref={top}>
         <SectionHeading
           aside={
             <span className="btns">
@@ -210,7 +210,7 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
             </span>
           }
         >
-          agents
+          harness
         </SectionHeading>
         {!full && (
           <div className="gut label">
@@ -329,9 +329,9 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
             {res.attach && <Copy text={res.attach} />}
           </div>
         )}
-      </div>
-      {sessions.length > 0 && <div className="half">
-        <SectionHeading>sessions</SectionHeading>
+      </div>}
+      {only === "sessions" && sessions.length > 0 && <div>
+        <SectionHeading aside={<span className="label">{`${sessions.length} running`}</span>}>agents</SectionHeading>
         <Table<AgentSession>
           cols={[
             { h: "harness", c: (s) => label(s.harness) },
