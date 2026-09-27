@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import type { AgentLaunchResult, AgentSession, Harness, HarnessInfo, HarnessJob } from "@local-studio/contracts/client";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { AgentDefault, AgentLaunchResult, AgentSession, AgentTestResult, AgentTestRun, Harness, HarnessInfo, HarnessJob } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
 import { call, get, post } from "../api";
 import { Btn, Copy, Err, SectionHeading, Table } from "../components/basics";
@@ -41,6 +41,35 @@ const newer = (a: string | null, b: string | null): boolean => {
   return a.localeCompare(b, undefined, { numeric: true }) > 0 && !(b.includes("-") === false && a.includes("-"));
 };
 
+const DEFAULT_KEY = "ls.defaultHarness";
+let defaultHarness: string | null = (() => {
+  try {
+    return localStorage.getItem(DEFAULT_KEY);
+  } catch {
+    return null;
+  }
+})();
+let defaultLoaded = false;
+const defaultSubs = new Set<() => void>();
+const putDefault = (h: string | null) => {
+  defaultHarness = h;
+  try {
+    if (h) localStorage.setItem(DEFAULT_KEY, h);
+  } catch {}
+  defaultSubs.forEach((f) => f());
+};
+const loadDefault = () => void get<AgentDefault>("/api/agents/default").then((r) => r.ok && putDefault(r.data.harness));
+const subscribeDefault = (f: () => void) => {
+  defaultSubs.add(f);
+  if (!defaultLoaded) {
+    defaultLoaded = true;
+    loadDefault();
+  }
+  return () => void defaultSubs.delete(f);
+};
+
+export const useDefaultHarness = (): string | null => useSyncExternalStore(subscribeDefault, () => defaultHarness);
+
 const recent = (): string[] => {
   try {
     const v = JSON.parse(localStorage.getItem(RECENT) ?? "[]") as unknown;
@@ -69,6 +98,9 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
   const [res, setRes] = useState<AgentLaunchResult | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const def = useDefaultHarness();
+  const [tests, setTests] = useState<Partial<Record<string, AgentTestResult>>>({});
+  const [testing, setTesting] = useState(false);
   const top = useRef<HTMLDivElement>(null);
 
   const loadInfos = () => void call<HarnessInfo[]>("GET", "/api/agents", undefined, 60_000).then((r) => r.ok && Array.isArray(r.data) && setInfos(r.data));
@@ -113,6 +145,28 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
     loadSessions();
     if (DESKTOP && r.data.url) window.open(r.data.url);
   };
+  const makeDefault = async (h: Harness) => {
+    const r = await call<AgentDefault>("PUT", "/api/agents/default", { harness: h });
+    if (!r.ok) return setErr(r.error);
+    putDefault(r.data.harness);
+  };
+  const testModel = pick && models.some((m) => m.id === pick) ? pick : (models[0]?.id ?? "");
+  const testAll = async () => {
+    if (!testModel) return;
+    setTesting(true);
+    setErr(null);
+    setTests({});
+    const r = await call<AgentTestRun>("POST", "/api/agents/test", { model: testModel }, 300_000);
+    setTesting(false);
+    if (!r.ok) return setErr(r.error);
+    setTests(Object.fromEntries(r.data.results.map((x) => [x.harness, x])));
+  };
+  const testCell = (h: Harness) => {
+    const t = tests[h];
+    if (!t) return <span className="label">{testing && info(h)?.installed ? "running" : "–"}</span>;
+    const text = t.status === "ok" ? (h.endsWith("-desktop") ? "opens" : "ok") : t.status === "failed" ? "failed" : (t.reason ?? "skipped");
+    return <span className={t.status === "failed" ? "alert" : t.status === "ok" ? "ink" : "label"} title={`${t.reason ?? ""}${t.ms ? ` · ${(t.ms / 1000).toFixed(1)} s` : ""}`}>{text}</span>;
+  };
   const choose = async () => {
     const d = await bridge()?.pickFolder?.();
     if (d) setDir(d);
@@ -145,13 +199,26 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
   return (
     <>
       <div ref={top} className="half">
-        <SectionHeading>agents</SectionHeading>
+        <SectionHeading aside={<Btn onClick={() => void testAll()} disabled={!testModel || testing || readOnly}>{testing ? "Testing" : "Test all ›"}</Btn>}>agents</SectionHeading>
         <Table<(typeof AGENTS)[number]>
           cols={[
             { h: "", c: ([h]) => <span className="ink">{agent === h ? "✓" : ""}</span> },
             { h: "harness", c: ([h, l]) => <span className={agent === h ? "ink" : ""}>{l}</span> },
             { h: "installed", c: ([h]) => ver(info(h) ? (info(h)!.installed ? (info(h)!.version ?? "?") : "–") : "") },
             { h: "latest", c: ([h]) => ver(info(h) ? (info(h)!.latest ?? "–") : "") },
+            {
+              h: "default",
+              c: ([h]) => {
+                const i = info(h);
+                const can = !!i?.installed && !i.blocked;
+                return (
+                  <span className={def === h ? "ink" : "label"} title={can ? "make default" : undefined} onClick={(e) => (e.stopPropagation(), can && !readOnly && void makeDefault(h))}>
+                    {def === h ? "●" : can ? "○" : ""}
+                  </span>
+                );
+              },
+            },
+            { h: "test", c: ([h]) => testCell(h) },
             { h: "status", c: ([h]) => { const [t, c] = status(info(h)); return <span className={c}>{t}</span>; } },
             {
               h: " ",
