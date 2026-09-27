@@ -2,9 +2,9 @@ import { useMemo } from "react";
 import type { EngineRates } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
 import { SectionHeading, Table } from "../components/basics";
-import { GpuCharts, GpuTable } from "../components/cards";
+import { FigureGrid, GpuCharts, GpuTable } from "../components/cards";
 import { RequestsTable } from "../components/requests";
-import { machines } from "../model/view";
+import { machines, resFig } from "../model/view";
 import { useStore } from "../store";
 
 const num = (x: number | null, d = 2) => (x === null ? "–" : x.toFixed(d));
@@ -41,6 +41,7 @@ export const LivePage = ({ machineId }: { machineId: string | null }) => {
   const timings = [...new Set(hs.flatMap(({ h }) => Object.keys(h.timings ?? {})))].sort();
   return (
     <div className="page">
+      <FigureGrid cells={[resFig(ms, "vram"), resFig(ms, "ram")]} className="one" />
       <SectionHeading aside={<span className="label">{`${running} running · ${waiting} waiting`}</span>}>engines</SectionHeading>
       <Table
         cols={[

@@ -4,7 +4,7 @@ import { call, post, via } from "../api";
 import { cancelLaunch, ConnectDialog, ExportDialog, RecipeDialog, StopDialog, type Target } from "../components/actions";
 import { BarMark, Btn, Chips, Dialog, Err, Logo, SectionHeading, Table } from "../components/basics";
 import { FigureGrid, TokenLine } from "../components/cards";
-import { aggOf, type CardView, fmtFormat, homeCards, type MachineView, machines, mergeRecipes, type RecipeView, resOf, resText, sumRes } from "../model/view";
+import { aggOf, type CardView, fmtFormat, homeCards, type MachineView, machines, mergeRecipes, type RecipeView, resFig } from "../model/view";
 import { loadRecipes, useStore } from "../store";
 import { AgentsSection, useDefaultHarness } from "./agents";
 
@@ -47,11 +47,6 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   const dh = useDefaultHarness();
   if (!fleet) return <Err>{error ?? "connecting"}</Err>;
   const a = aggOf(ms, engines);
-  const res = ms.map(resOf);
-  const fig = (k: "vram" | "ram" | "disk") => {
-    const t = sumRes(res.map((r) => r[k]));
-    return { v: resText(t), k: `${k} free${t.known < t.of ? ` · ${t.known}/${t.of}` : ""}` };
-  };
   const anyAssigned = rvs.some((v) => v.per.some((p) => p.row.assigned));
   const mode: Show = show ?? (anyAssigned ? "assigned" : "fits");
   const shown = rvs
@@ -105,7 +100,8 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
           { v: String(shownCards.filter((c) => c.ready).length), k: "models running" },
           { v: fmt.tps(a.tps), k: "tok/s now" },
           { v: a.powerW === null ? "–" : `${Math.round(a.powerW)} W`, k: "power now" },
-          fig("vram"),
+          resFig(ms, "vram"),
+          resFig(ms, "ram"),
         ]}
         className="one"
       />

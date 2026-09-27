@@ -183,12 +183,19 @@ export const life = (a: Activity): LifeView => {
   };
 };
 
-const memLine = (cards: Gpu[]): string => {
+/** Used VRAM in MiB. Unknown usage on a GPU that nothing holds (no process, no model, not foreign) counts as 0. */
+export const usedMiB = (g: Gpu, s: Snapshot | null): number | null => {
+  if (g.memUsedMiB !== null) return g.memUsedMiB;
+  const gr = s?.groups.find((x) => x.gpuKeys.includes(g.key));
+  return !g.unified && g.processes.length === 0 && (!gr || gr.state === "available") ? 0 : null;
+};
+
+const memLine = (cards: Gpu[], s: Snapshot): string => {
   if (!cards.length) return "";
   const total = cards.reduce((t, g) => t + g.memTotalMiB, 0);
-  const known = cards.every((g) => g.memUsedMiB !== null);
-  const used = cards.reduce((t, g) => t + (g.memUsedMiB ?? 0), 0);
-  return `${known ? `${Math.round(used / 1024)} / ` : ""}${fmt.gb(total)}`;
+  const used = cards.map((g) => usedMiB(g, s));
+  const known = used.every((x) => x !== null);
+  return `${known ? (used.reduce<number>((t, x) => t + (x ?? 0), 0) / 1024).toFixed(1) : "?"} / ${fmt.gb(total)}`;
 };
 
 const gpuLine = (cards: Gpu[]): string => (cards.length > 1 ? `${cards.length} × ${shortGpu(cards[0]!)}` : cards[0] ? shortGpu(cards[0]) : "GPU");
@@ -233,7 +240,7 @@ export const resOf = (m: MachineView): MachineRes => {
   const dis = gs.filter((g) => !g.unified);
   const uni = gs.filter((g) => g.unified);
   const h = s?.host ?? null;
-  const known = dis.filter((g) => g.memUsedMiB !== null);
+  const known = dis.filter((g) => usedMiB(g, s) !== null);
   const u = uni[0];
   const ram: Res = h
     ? { total: h.mem.totalMiB, free: on && h.mem.usedMiB !== null ? h.mem.totalMiB - h.mem.usedMiB : null }
@@ -241,7 +248,7 @@ export const resOf = (m: MachineView): MachineRes => {
       ? { total: u.memTotalMiB, free: on && u.memUsedMiB !== null ? u.memTotalMiB - u.memUsedMiB : null }
       : { total: null, free: null };
   return {
-    vram: dis.length ? { total: dis.reduce((t, g) => t + g.memTotalMiB, 0), free: on && known.length ? known.reduce((t, g) => t + g.memTotalMiB - (g.memUsedMiB ?? 0), 0) : null } : null,
+    vram: dis.length ? { total: dis.reduce((t, g) => t + g.memTotalMiB, 0), free: on && known.length ? known.reduce((t, g) => t + g.memTotalMiB - (usedMiB(g, s) ?? 0), 0) : null } : null,
     unified: uni.length ? ram : null,
     ram,
     disk: { total: h?.storage?.totalMiB ?? null, free: on && h?.storage ? h.storage.totalMiB - h.storage.usedMiB : null },
@@ -260,6 +267,12 @@ export const resText = (r: Res | null): string => {
   const u = (x: number) => (tb ? x / 1024 / 1024 : x / 1024);
   const n = (x: number) => (tb || u(x) < 10 ? u(x).toFixed(1) : String(Math.round(u(x))));
   return `${r.free === null ? "–" : n(r.free)} / ${n(r.total)} ${tb ? "TB" : "GB"}`;
+};
+
+/** Headline "free / total" figure for VRAM, RAM or disk across machines. */
+export const resFig = (ms: MachineView[], k: keyof MachineRes): { v: string; k: string } => {
+  const t = sumRes(ms.map((m) => resOf(m)[k]));
+  return { v: resText(t), k: `${k} free${t.known < t.of ? ` · ${t.known}/${t.of}` : ""}` };
 };
 
 export const cardOf = (mv: MachineView, s: Snapshot, m: RunningModel, launch: LaunchProgress | null, engine: EngineRates | null = null): CardView => {
@@ -287,7 +300,7 @@ export const cardOf = (mv: MachineView, s: Snapshot, m: RunningModel, launch: La
     name: m.primaryModel || m.id,
     family: family(m.primaryModel),
     gpu: cards.length ? gpuLine(cards) : `${m.engine} · :${m.port}`,
-    mem: ready || m.state === "unhealthy" ? memLine(cards) : "",
+    mem: ready || m.state === "unhealthy" ? memLine(cards, s) : "",
     line: st?.line ?? [],
     chips: !ready
       ? []
@@ -370,7 +383,8 @@ export interface GpuRowView {
 }
 
 export const gpuRow = (g: Gpu, s: Snapshot | null): GpuRowView => {
-  const used = g.memUsedMiB !== null ? g.memUsedMiB / 1024 : null;
+  const u = usedMiB(g, s);
+  const used = u !== null ? u / 1024 : null;
   const total = g.memTotalMiB;
   const mem = total <= 0 ? "–" : `${used !== null ? used.toFixed(1) : "?"} / ${fmt.gb(total)}`;
   const temp = g.tempC !== null ? `${Math.round(g.tempC)}°` : "";
@@ -382,7 +396,7 @@ export const gpuRow = (g: Gpu, s: Snapshot | null): GpuRowView => {
   return {
     key: g.key,
     name: shortGpu(g),
-    pct: g.memUsedMiB !== null && total > 0 ? Math.min(100, (g.memUsedMiB / total) * 100) : null,
+    pct: u !== null && total > 0 ? Math.min(100, (u / total) * 100) : null,
     mem,
     temp,
     status,
