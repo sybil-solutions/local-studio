@@ -6,7 +6,7 @@ import { BarMark, Btn, Err, SectionHeading, Table } from "../components/basics";
 import { FigureGrid } from "../components/cards";
 import { aggOf, type CardView, fmtFormat, homeCards, type MachineView, machines, mergeRecipes, type RecipeView, resOf, resText, sumRes } from "../model/view";
 import { loadRecipes, useStore } from "../store";
-import { AgentsSection } from "./agents";
+import { AgentsSection, useDefaultHarness } from "./agents";
 
 type Show = "assigned" | "fits" | "all";
 
@@ -26,6 +26,7 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   const ms = all.filter((m) => !machineId || m.id === machineId);
   const cards = useMemo(() => homeCards(ms, live, fleet?.self ?? null, recipes, engines), [ms, live, fleet, recipes, engines]);
   const rvs = useMemo(() => mergeRecipes(ms, recipes), [ms, recipes]);
+  const dh = useDefaultHarness();
   if (!fleet) return <Err>{error ?? "connecting"}</Err>;
   const sums = ms.map((m) => stats[m.id]?.sum).filter((s) => !!s);
   const tot = (k: "requests" | "errors" | "inputUncached" | "cacheRead" | "output") => sums.reduce((t, s) => t + (s[k] ?? 0), 0);
@@ -51,13 +52,6 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   const target = (c: CardView): Target => ({ machineId: c.machineId, peerId: c.peerId, readOnly: c.readOnly });
   const open = dlg?.k === "recipe" ? rvs.find((v) => v.id === dlg.id) : undefined;
   const tpsOf = (c: CardView) => c.chips.find((x) => x.icon === "speed")?.text.replace(/\s*tok\/s.*$/, "") ?? "–";
-  const dh = (() => {
-    try {
-      return localStorage.getItem("ls.defaultHarness") || "omp";
-    } catch {
-      return "omp";
-    }
-  })();
   const open1 = async (c: CardView) => {
     setOpening(c.key);
     const r = await call<AgentLaunchResult>("POST", `/api/agents/launch?terminal=${/Electron/.test(navigator.userAgent) ? "auto" : "none"}`, { harness: dh, model: c.servedModel ?? c.name }, 90_000);
