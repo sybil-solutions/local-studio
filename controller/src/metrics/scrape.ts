@@ -49,6 +49,19 @@ export interface Scraper {
 
 export const createScraper = (ctx: Ctx): Scraper => {
   const ring = new Map<string, EngineSample[]>();
+  const KEEP = ["prefixHitRate", "prefillTps", "decodeTps", "meanTtftMs", "meanQueueMs", "specAcceptLength"] as const;
+  const memo = new Map<string, { at: number; v: Partial<Record<(typeof KEEP)[number], number>> }>();
+  const remember = (r: EngineRates, now: number): EngineRates => {
+    const m = memo.get(r.modelId) ?? { at: 0, v: {} };
+    const active = r.decodeTps !== null || r.prefillTps !== null;
+    for (const k of KEEP) if (r[k] !== null) m.v[k] = r[k]!;
+    if (active) m.at = now;
+    memo.set(r.modelId, m);
+    if (active) return { ...r, lastActiveAt: now };
+    const out = { ...r, lastActiveAt: m.at || null };
+    for (const k of KEEP) if (out[k] === null && m.v[k] !== undefined) out[k] = m.v[k]!;
+    return out;
+  };
 
   const push = (s: EngineSample) => {
     let list = ring.get(s.modelId) ?? [];
@@ -92,7 +105,7 @@ export const createScraper = (ctx: Ctx): Scraper => {
     const acc = div(x.specAccepted, x.specDrafts);
     const ttft = div(x.ttftSum, x.ttftCount);
     const queue = div(x.queueSum, x.queueCount);
-    return {
+    return remember({
       modelId,
       windowMs: last.ts - first.ts,
       prefixHitRate: div(x.prefixCacheHits, x.prefixCacheQueries) ?? (last.gauges.sglangCacheHitRate ?? null),
@@ -107,13 +120,13 @@ export const createScraper = (ctx: Ctx): Scraper => {
       running: last.gauges.running,
       waiting: last.gauges.waiting,
       finishedByReason: finished,
-    };
+    }, last.ts);
   };
 
   const tick = async (models: RunningModel[]) => {
     const live = models.filter((m) => m.state === "ready" && m.metricsUrl);
     const ids = new Set(live.map((m) => m.id));
-    for (const id of ring.keys()) if (!ids.has(id)) ring.delete(id);
+    for (const id of ring.keys()) if (!ids.has(id)) (ring.delete(id), memo.delete(id));
     await Promise.all(
       live.map(async (m) => {
         if (!(await scrape(m, 2000, true))) return;

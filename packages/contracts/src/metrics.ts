@@ -124,6 +124,7 @@ export interface EngineRates {
   running: number | null;
   waiting: number | null;
   finishedByReason: Record<string, number>;
+  lastActiveAt?: number | null;
 }
 
 export type Window = "1h" | "24h" | "7d" | "30d" | "all";

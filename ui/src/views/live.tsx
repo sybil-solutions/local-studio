@@ -9,6 +9,11 @@ import { useStore } from "../store";
 
 const num = (x: number | null, d = 2) => (x === null ? "–" : x.toFixed(d));
 
+const dim = (v: number | null, fb: number | null, f: (n: number | null) => string, idle: boolean) => {
+  const x = v ?? fb;
+  return <span className={idle || v === null ? "label" : ""} title={v === null && fb !== null ? "average over gateway requests" : idle ? "last measured" : undefined}>{f(x)}</span>;
+};
+
 export const LivePage = ({ machineId }: { machineId: string | null }) => {
   const fleet = useStore((s) => s.fleet);
   const live = useStore((s) => s.launches);
@@ -23,7 +28,9 @@ export const LivePage = ({ machineId }: { machineId: string | null }) => {
   const engines = ms.flatMap((m) =>
     m.snap!.engines.map((e) => {
       const rates: EngineRates = (m.self ? liveEngines[e.modelId] : undefined) ?? e;
-      return { m, e: rates, model: m.snap!.models.find((x) => x.id === e.modelId) ?? null };
+      const card = m.snap!.cards.find((c) => c.modelId === e.modelId) ?? null;
+      const idle = !rates.running && !(rates.generationTpsWall && rates.generationTpsWall > 0);
+      return { m, e: rates, card, idle, model: m.snap!.models.find((x) => x.id === e.modelId) ?? null };
     }),
   );
   const reqs = [...local.filter((r) => r.via !== "peer" && names[r.machineId]), ...ms.flatMap((m) => (m.peerId ? (stats[m.id]?.reqs ?? []) : []))].sort((a, b) => b.tsStart - a.tsStart).slice(0, 80);
@@ -39,16 +46,16 @@ export const LivePage = ({ machineId }: { machineId: string | null }) => {
         cols={[
           ...(multi ? [{ h: "machine", c: (x: (typeof engines)[number]) => x.m.name }] : []),
           { h: "model", c: (x) => <span className="cut">{x.model?.primaryModel ?? x.e.modelId}</span> },
-          { h: "state", c: (x) => <span className={x.model?.state === "unhealthy" ? "alert" : ""}>{x.model ? `${x.model.engine} ${x.model.state}` : "–"}</span> },
+          { h: "state", c: (x) => <span className={x.model?.state === "unhealthy" ? "alert" : ""}>{x.model ? `${x.model.engine} ${x.model.state}${x.idle ? ` · idle${x.e.lastActiveAt ? ` ${fmt.ago(x.e.lastActiveAt, Date.now())}` : ""}` : ""}` : "–"}</span> },
           { h: "run", n: true, c: (x) => String(x.e.running ?? "–") },
           { h: "wait", n: true, c: (x) => String(x.e.waiting ?? "–") },
           { h: "kv", n: true, c: (x) => fmt.pct(x.e.kvCacheUsage) },
-          { h: "prefix hit", n: true, c: (x) => fmt.pct(x.e.prefixHitRate) },
-          { h: "spec accept", n: true, c: (x) => num(x.e.specAcceptLength) },
-          { h: "decode", n: true, c: (x) => fmt.tps(x.e.decodeTps) },
-          { h: "prefill", n: true, c: (x) => fmt.tps(x.e.prefillTps) },
+          { h: "prefix hit", n: true, c: (x) => dim(x.e.prefixHitRate, x.card?.cacheHit ?? null, fmt.pct, x.idle) },
+          { h: "spec accept", n: true, c: (x) => dim(x.e.specAcceptLength, null, num, x.idle) },
+          { h: "decode", n: true, c: (x) => dim(x.e.decodeTps, x.card?.decodeTps ?? null, fmt.tps, x.idle) },
+          { h: "prefill", n: true, c: (x) => dim(x.e.prefillTps, x.card?.prefillTps ?? null, fmt.tps, x.idle) },
           { h: "gen wall", n: true, c: (x) => fmt.tps(x.e.generationTpsWall) },
-          { h: "ttft", n: true, c: (x) => fmt.ms(x.e.meanTtftMs) },
+          { h: "ttft", n: true, c: (x) => dim(x.e.meanTtftMs, x.card?.meanTtftMs ?? null, fmt.ms, x.idle) },
           { h: "queue", n: true, c: (x) => fmt.ms(x.e.meanQueueMs) },
         ]}
         rows={engines}

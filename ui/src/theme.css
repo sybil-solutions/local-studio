@@ -2,11 +2,11 @@
 
 :root {
   --bg: #000000;
-  --card: #0f0f0f;
+  --card: #111111;
   --ink: #ffffff;
-  --value: #d4d4d4;
-  --label: #b2b2b2;
-  --rule: #535353;
+  --value: #bdbdbd;
+  --label: #7c7c7c;
+  --rule: #3d3d3d;
   --alert: #d1a8a8;
   --alert-rule: #a55555;
   --fg-rgb: 255, 255, 255;
@@ -235,3 +235,7 @@ table.tbl { border-collapse: collapse; width: 100%; }
 .slot.static:hover { background: none; }
 .panel .slot:first-of-type { margin-top: var(--block); }
 @media (max-width: 768px), (pointer: coarse) { .slot { min-height: 40px; } }
+.tbl td:first-child { color: var(--ink); }
+.tbl tr.err td:first-child { color: var(--alert); }
+.sec { color: var(--label); letter-spacing: 0.04em; }
+.figs .fig { color: var(--ink); }
