@@ -88,3 +88,21 @@ export interface ApiKeyInfo {
   scope: "admin" | "client" | "federation";
   actions: boolean;
 }
+
+export interface AgentDefault {
+  harness: Harness | null;
+  stored: boolean;
+}
+
+export interface AgentTestResult {
+  harness: Harness;
+  status: "ok" | "failed" | "skipped";
+  ms: number;
+  reason: string | null;
+}
+
+export interface AgentTestRun {
+  model: string;
+  startedAt: number;
+  results: AgentTestResult[];
+}

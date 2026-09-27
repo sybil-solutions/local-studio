@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, relative } from "node:path";
 import type { BuiltLaunch, Client, Harness } from "@local-studio/contracts";
 import { HARNESS_CLIENT } from "@local-studio/contracts";
 import { readSecret } from "./keys";
@@ -105,7 +106,7 @@ export const buildLaunch = (i: LaunchInput): BuiltLaunch => {
       const provider = { baseUrl: `${G}/v1`, api: "openai-completions", apiKey: `!cat '${i.keyFile.replace(/'/g, `'\\''`)}'`, models: [model] };
       const file = { path: join(dir, i.harness === "pi" ? "models.json" : "models.yml"), content: `${JSON.stringify({ providers: { localstudio: provider } }, null, 2)}\n`, mode: 0o600 };
       const argv = [i.harness, "--model", `localstudio/${M}`];
-      return { argv, env: { PI_CODING_AGENT_DIR: dir, ...(i.harness === "omp" ? { OMP_SKIP_SETUP: "1" } : {}) }, files: [file], cwd: i.dir };
+      return { argv, env: { PI_CODING_AGENT_DIR: dir, ...(i.harness === "omp" ? { OMP_SKIP_SETUP: "1", PI_CONFIG_DIR: relative(homedir(), dir) } : {}) }, files: [file], cwd: i.dir };
     }
     case "hermes": {
       const dir = agentDir(i.home, "hermes");

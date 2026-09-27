@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { Hono } from "hono";
-import type { AgentLaunchResult, AgentSession, GatewayModel, Harness } from "@local-studio/contracts";
-import { AgentLaunchBody, IssueKeyBody } from "@local-studio/contracts";
+import type { AgentDefault, AgentLaunchResult, AgentSession, AgentTestRun, GatewayModel, Harness } from "@local-studio/contracts";
+import { AgentLaunchBody, HARNESSES, IssueKeyBody } from "@local-studio/contracts";
+import { migrate } from "../core/db";
 import type { Ctx, Env, Services } from "../context";
 import type { DshManager } from "./dsh";
 import { prepareClaudeDesktop, prepareCodexDesktop } from "./desktop";
@@ -10,6 +11,7 @@ import { ensureClientKey, forgetKeyId } from "./keys";
 import { clientOf, isTerminal } from "./launch-table";
 import { defaultDir, expandDir, forgetSpec, listSpecs, newSessionId, readSpec, writeSpec } from "./sessions";
 import { hasGui, openTerminal, resolveTerminal } from "./terminals";
+import { testHarness } from "./test";
 import { agentRunCommand, attachCommand, capture, childArgs, killSession, panes, sessionName, startSession, tmuxBin } from "./tmux";
 
 export const gatewayUrlFor = (ctx: Ctx): string => {
@@ -72,6 +74,45 @@ export const createAgentRoutes = (ctx: Ctx, svc: Services, deps: { dsh: DshManag
   };
 
   r.get("/api/agents", async (c) => c.json(await harnesses.list()));
+
+  migrate(ctx.db, "agent_prefs", ["CREATE TABLE agent_prefs (key TEXT PRIMARY KEY, value TEXT NOT NULL)"]);
+  const getDefault = async (): Promise<AgentDefault> => {
+    const row = ctx.db.query<{ value: string }, [string]>("SELECT value FROM agent_prefs WHERE key = ?").get("default_harness");
+    if (row && (HARNESSES as readonly string[]).includes(row.value)) return { harness: row.value as Harness, stored: true };
+    const infos = harnesses.cached().length ? harnesses.cached() : await harnesses.list();
+    const ok = infos.filter((i) => i.installed && !i.blocked && isCli(i.harness));
+    return { harness: (ok.find((i) => i.harness === "omp") ?? ok[0])?.harness ?? null, stored: false };
+  };
+  r.get("/api/agents/default", async (c) => c.json(await getDefault()));
+  r.put("/api/agents/default", async (c) => {
+    const h = ((await body(c)) as { harness?: unknown } | undefined)?.harness;
+    if (typeof h !== "string" || !(HARNESSES as readonly string[]).includes(h)) return bad(`harness must be one of ${HARNESSES.join(", ")}`);
+    if (BLOCKED[h as Harness]) return bad(`${h}: ${BLOCKED[h as Harness]}`);
+    ctx.db.query("INSERT OR REPLACE INTO agent_prefs (key, value) VALUES (?, ?)").run("default_harness", h);
+    ctx.log.info(`agents: default harness set to ${h}`);
+    return c.json(await getDefault());
+  });
+
+  let testing: Promise<AgentTestRun> | null = null;
+  r.post("/api/agents/test", async (c) => {
+    const m = ((await body(c)) as { model?: unknown } | undefined)?.model;
+    if (typeof m !== "string" || !m) return bad("model is required");
+    const ready = gatewayModels(svc).filter((x) => x.state === "ready");
+    const gm = ready.find((x) => x.id.toLowerCase() === m.toLowerCase());
+    if (!gm) return bad(`model ${m} is not ready anywhere in the fleet; pick one from /v1/models`);
+    if (!testing) {
+      const run = async (): Promise<AgentTestRun> => {
+        const startedAt = Date.now();
+        const infos = (await harnesses.list()).filter((i) => i.installed);
+        const input = { gm, ready, gatewayUrl: gatewayUrlFor(ctx), path: await harnesses.searchPath() };
+        const results = await Promise.all(infos.map((i) => testHarness(ctx, harnesses, i, input)));
+        ctx.log.info(`agents: test on ${gm.id}: ${results.map((x) => `${x.harness}=${x.status}`).join(" ")}`);
+        return { model: gm.id, startedAt, results };
+      };
+      testing = run().finally(() => (testing = null));
+    }
+    return c.json(await testing);
+  });
 
   r.post("/api/agents/:harness/install", (c) => {
     const h = c.req.param("harness");
