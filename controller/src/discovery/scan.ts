@@ -7,7 +7,7 @@ import { computeGroups } from "./groups";
 import { type ComputeApp, containerDrm, drmClients, type HardwareList, intelClients, intelMemUsed, resolveGpuRefs, scanGpus, setIntelApps, sumClients } from "./gpus";
 import { type Fingerprint, fingerprint, get, type Health, healthCheck, type ModelEntry, PROBE_CONCURRENCY, PROBE_MAX, type ProbeCache } from "./probe";
 import { ancestors, cmdline, descendants, type Listener, listListeners, listProcs, type ProcTable, probeHost } from "./procs";
-import { ENGINE_RE, embeddingArgv, engineFromArgs, envMap, flag, flagList, hasFlag, num, parseJson, pool, portArg, promLabels } from "./util";
+import { ENGINE_RE, embeddingArgv, modalityOf, engineFromArgs, envMap, flag, flagList, hasFlag, num, parseJson, pool, portArg, promLabels } from "./util";
 import { findWatchdogs } from "./watchdogs";
 
 export const shortName = (s: string): string => (s.startsWith("/") ? (s.split("/").filter(Boolean).pop() ?? s).replace(/\.(gguf|safetensors|bin)$/i, "") : s);
@@ -432,6 +432,7 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
       error: track.state === "unhealthy" ? track.note || "unhealthy" : null,
       stopBlocked: c.stopBlocked,
       embedding: embeddingArgv(c.argv),
+      modality: modalityOf(c.argv, servedModels),
       quant: q.label,
       quantFrom: q.from,
     });

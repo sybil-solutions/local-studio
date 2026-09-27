@@ -112,13 +112,19 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
                     {c.mem && <span>{c.mem}</span>}
                   </div>
                   <div className="label ellipsis" title={c.stackFrom ?? undefined}>{c.stack}</div>
+                  {c.modality !== "chat" && (
+                    <div className="row-flex">
+                      <span className="badge">{c.modality === "stt" ? "speech to text" : c.modality === "tts" ? "text to speech" : "embedding"}</span>
+                      <span className="label ellipsis">{c.endpoint ?? "–"}</span>
+                    </div>
+                  )}
                   {!c.ready && <div className={c.subAlert ? "alert" : ""}>{c.sub}</div>}
                   <div className="foot row-flex">
                     <span className="btns grow">
-                      {c.ready && !c.embedding && dh && <Btn kind="primary" onClick={() => void open1(c)} disabled={opening === c.key}>{opening === c.key ? "Opening" : `Open ${dh} ›`}</Btn>}
+                      {c.ready && c.modality === "chat" && dh && <Btn kind="primary" onClick={() => void open1(c)} disabled={opening === c.key}>{opening === c.key ? "Opening" : `Open ${dh} ›`}</Btn>}
                       {more === c.key ? (
                         <>
-                          {c.ready && !c.embedding && <Btn href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>Agent ›</Btn>}
+                          {c.ready && c.modality === "chat" && <Btn href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>Agent ›</Btn>}
                           {c.modelId && <Btn onClick={() => setDlg({ k: "export", c })}>Save</Btn>}
                           {(c.modelId || c.launchId) && (
                             <Btn kind="danger" onClick={() => (c.modelId ? setDlg({ k: "stop", c }) : c.launchId && void cancelLaunch(target(c), c.launchId).then(setMsg))} disabled={c.readOnly || !!c.stopBlocked}>Stop</Btn>

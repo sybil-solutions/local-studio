@@ -36,6 +36,8 @@ export interface SpecDecodeInfo {
   numSpeculativeTokens: number | null;
 }
 
+export type ModelModality = "chat" | "embedding" | "stt" | "tts";
+
 export interface RunningModel {
   id: string;
   machineId: MachineId;
@@ -64,6 +66,7 @@ export interface RunningModel {
   error: string | null;
   stopBlocked: string | null;
   embedding: boolean;
+  modality?: ModelModality;
   quant?: string | null;
   quantFrom?: QuantFrom | null;
 }

@@ -50,7 +50,7 @@ export const resolveModel = (svc: Services, name: string): Route => {
 export const gatewayModels = (ctx: Ctx, svc: Services): GatewayModel[] => {
   const machineName = ctx.identity.name;
   const local: GatewayModel[] = svc.runtime.models()
-    .filter((m) => (m.state === "ready" || m.state === "loading") && !m.embedding)
+    .filter((m) => (m.state === "ready" || m.state === "loading") && !m.embedding && (m.modality ?? "chat") === "chat")
     .flatMap((m) =>
       m.servedModels.map((id) => ({
         id: listedName(m, id),

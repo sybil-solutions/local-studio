@@ -31,6 +31,8 @@ export interface CardView {
   modelId: string | null;
   launchId: string | null;
   embedding: boolean;
+  modality: "chat" | "embedding" | "stt" | "tts";
+  endpoint: string | null;
   stopBlocked: string | null;
   name: string;
   family: Family;
@@ -279,6 +281,8 @@ export const cardOf = (mv: MachineView, s: Snapshot, m: RunningModel, launch: La
     modelId: m.id,
     launchId: launch?.launchId ?? null,
     embedding: m.embedding,
+    modality: m.modality ?? (m.embedding ? "embedding" : "chat"),
+    endpoint: m.baseUrl ?? null,
     stopBlocked: m.stopBlocked,
     name: m.primaryModel || m.id,
     family: family(m.primaryModel),
@@ -312,6 +316,8 @@ const launchCard = (mv: MachineView, s: Snapshot, l: LaunchProgress, recipes: Re
     modelId: null,
     launchId: l.launchId,
     embedding: false,
+    modality: "chat",
+    endpoint: null,
     stopBlocked: null,
     name: r?.name ?? l.recipeId,
     family: family(r?.family ?? r?.name ?? l.recipeId),

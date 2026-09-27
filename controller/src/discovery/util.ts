@@ -15,6 +15,17 @@ export const embeddingArgv = (argv: string[]): boolean =>
   (argv.includes("--task") && argv[argv.indexOf("--task") + 1] === "embed") ||
   (argv.includes("--runner") && argv[argv.indexOf("--runner") + 1] === "pooling");
 
+const STT = /(^|[^a-z])(asr|stt|whisper|parakeet|canary|transcri)/i;
+const TTS = /(^|[^a-z])(tts|s2-pro|fish[-_]?speech|kokoro|orpheus|csm|sesame|voxtral-tts)/i;
+
+export const modalityOf = (argv: string[], names: string[]): "chat" | "embedding" | "stt" | "tts" => {
+  if (embeddingArgv(argv)) return "embedding";
+  const hay = [...names, ...argv.filter((a) => a.includes("/") || !a.startsWith("-"))].join(" ");
+  if (TTS.test(hay) || (argv.some((a) => a.endsWith("vllm-omni")) && /fish|tts|s2/i.test(hay))) return "tts";
+  if (STT.test(hay)) return "stt";
+  return "chat";
+};
+
 const PORT_ARG = /(?:^|\s)--port(?:=|\s+)(\d+)(?:\s|$)/;
 
 export const portArg = (args: string): number | null => {
