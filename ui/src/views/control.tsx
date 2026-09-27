@@ -1,14 +1,26 @@
 import { useMemo, useState } from "react";
-import { type AgentLaunchResult, fmt } from "@local-studio/contracts/client";
+import { type AgentLaunchResult, fmt, type RecipeRow } from "@local-studio/contracts/client";
 import { call, post, via } from "../api";
 import { cancelLaunch, ConnectDialog, ExportDialog, RecipeDialog, StopDialog, type Target } from "../components/actions";
-import { BarMark, Btn, Err, SectionHeading, Table } from "../components/basics";
-import { FigureGrid } from "../components/cards";
+import { BarMark, Btn, Chips, Err, Logo, SectionHeading, Table } from "../components/basics";
+import { FigureGrid, TokenLine } from "../components/cards";
 import { aggOf, type CardView, fmtFormat, homeCards, type MachineView, machines, mergeRecipes, type RecipeView, resOf, resText, sumRes } from "../model/view";
 import { loadRecipes, useStore } from "../store";
 import { AgentsSection, useDefaultHarness } from "./agents";
 
 type Show = "assigned" | "fits" | "all";
+
+type Slot = { key: string; n: number; gpu: string; recipe: RecipeRow };
+const freeSlots = (m: MachineView, rows: RecipeRow[]): Slot[] => {
+  const fit = rows.filter((r) => r.fit === "fits" && r.freeGroups.length > 0);
+  const byN = new Map<number, RecipeRow>();
+  for (const r of fit) {
+    const cur = byN.get(r.cards);
+    const score = (x: RecipeRow) => (x.assigned ? 4 : 0) + (x.recommended ? 2 : 0);
+    if (!cur || score(r) > score(cur)) byN.set(r.cards, r);
+  }
+  return [...byN.entries()].sort((x, y) => x[0] - y[0]).map(([n, r]) => ({ key: `${m.id}:${n}:${r.id}`, n, gpu: r.freeGroups[0]![0]!, recipe: r }));
+};
 
 export const ControlPage = ({ machineId, model }: { machineId: string | null; model: string | null }) => {
   const fleet = useStore((s) => s.fleet);
@@ -50,7 +62,6 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   const target = (c: CardView): Target => ({ machineId: c.machineId, peerId: c.peerId, readOnly: c.readOnly });
   const open = dlg?.k === "recipe" ? rvs.find((v) => v.id === dlg.id) : undefined;
   const shownCards = cards.filter((c) => c.ready || c.launchId || !/not answering/.test(c.sub));
-  const tpsOf = (c: CardView) => c.chips.find((x) => x.icon === "speed")?.text.replace(/\s*tok\/s.*$/, "") ?? "–";
   const open1 = async (c: CardView) => {
     setOpening(c.key);
     const r = await call<AgentLaunchResult>("POST", `/api/agents/launch?terminal=${/Electron/.test(navigator.userAgent) ? "auto" : "none"}`, { harness: dh, model: c.servedModel ?? c.name }, 90_000);
@@ -59,7 +70,6 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
     if (r.data.url) window.open(r.data.url);
     setOmsg(r.data.attach && !/Electron/.test(navigator.userAgent) ? `${dh} on ${c.servedModel ?? c.name}: ${r.data.attach}` : null);
   };
-  const status = (c: CardView) => (c.ready ? "ready" : c.sub || "loading");
   return (
     <div className="page ctl">
       <FigureGrid
@@ -73,60 +83,72 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
         className="one"
       />
       <SectionHeading aside={<Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>}>machines</SectionHeading>
-      <Table
-        cols={[
-          { h: "machine", c: (m: MachineView) => (
-            <span className="row-flex">
-              <BarMark mark={m.online ? m.mark : "failed"} />
-              <span className={m.id === machineId ? "ink" : ""}>{m.name}</span>
-              {!m.online && <span className="badge alert">offline</span>}
-            </span>
-          ) },
-          { h: "hardware", c: (m) => <span className="cut label">{m.online ? m.gpuSummary : (m.error ?? "–")}</span> },
-          { h: "util", n: true, c: (m) => { const g = aggOf([m], engines); return g.util === null ? "–" : `${Math.round(g.util)}%`; } },
-          { h: "power", n: true, c: (m) => { const g = aggOf([m], engines); return g.powerW === null ? "–" : `${Math.round(g.powerW)} W`; } },
-          { h: "memory free", n: true, c: (m) => { const r = resOf(m); return r.vram ? resText(r.vram) : `${resText(r.ram)} unified`; } },
-          { h: "running", c: (m) => <span className="cut">{aggOf([m], engines).models.join(", ") || "–"}</span> },
-        ]}
-        rows={ms}
-        keyOf={(m) => m.id}
-        rowClass={(m) => (m.id === machineId ? "hl" : "")}
-        onRow={(m) => (location.hash = m.id === machineId ? "#/control" : `#/control/${encodeURIComponent(m.id)}`)}
-      />
-      <SectionHeading>models</SectionHeading>
-      <Table
-        cols={[
-          { h: "model", c: (c: CardView) => <span className="ink">{c.name}</span> },
-          { h: "machine", c: (c) => c.machine },
-          { h: "engine · quant", c: (c) => <span title={c.stackFrom ?? undefined}>{c.stack || "–"}</span> },
-          { h: "tok/s", n: true, c: (c) => tpsOf(c) },
-          { h: "state", c: (c) => <span className={c.subAlert ? "alert" : c.ready ? "" : "label"}>{status(c)}</span> },
-          {
-            h: " ",
-            c: (c) => (
-              <span className="btns" onClick={(e) => e.stopPropagation()}>
-                {c.ready && !c.embedding && dh && <Btn kind="primary" onClick={() => void open1(c)} disabled={opening === c.key}>{opening === c.key ? "Opening" : `Open ${dh} ›`}</Btn>}
-                {more === c.key ? (
-                  <>
-                    {c.ready && !c.embedding && <Btn href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>Agent ›</Btn>}
-                    {c.modelId && <Btn onClick={() => setDlg({ k: "export", c })}>Save</Btn>}
-                    {c.modelId ? (
-                      <Btn kind="danger" onClick={() => setDlg({ k: "stop", c })} disabled={c.readOnly || !!c.stopBlocked}>Stop</Btn>
-                    ) : c.launchId ? (
-                      <Btn kind="danger" onClick={() => c.launchId && void cancelLaunch(target(c), c.launchId).then(setMsg)} disabled={c.readOnly}>Stop</Btn>
-                    ) : null}
-                    <Btn onClick={() => setMore(null)}>×</Btn>
-                  </>
-                ) : (
-                  <Btn onClick={() => setMore(c.key)} title="more">⋯</Btn>
-                )}
-              </span>
-            ),
-          },
-        ]}
-        rows={shownCards}
-        keyOf={(c) => c.key}
-      />
+      <div className="panels">
+        {ms.map((m) => {
+          const r = resOf(m);
+          const g = aggOf([m], engines);
+          const mine = shownCards.filter((c) => c.machineId === m.id);
+          const slots = freeSlots(m, recipes[m.id] ?? []);
+          const held = (m.snap?.groups ?? []).filter((x) => x.state === "foreign");
+          const gname = (k: string) => m.snap?.gpus.find((x) => x.key === k)?.name ?? k;
+          return (
+            <section key={m.id} className="panel">
+              <a className="phead" href={m.id === machineId ? "#/control" : `#/control/${encodeURIComponent(m.id)}`}>
+                <BarMark mark={m.online ? m.mark : "failed"} />
+                <span className="ink">{m.name}</span>
+                <span className="label ellipsis grow">{m.online ? m.gpuSummary : "offline"}</span>
+                <span className="label">{g.powerW === null ? "" : `${Math.round(g.powerW)} W`}</span>
+              </a>
+              <div className="pmeta label">{r.vram ? `${resText(r.vram)} vram free` : `${resText(r.ram)} unified free`}</div>
+              {mine.map((c) => (
+                <div key={c.key} className="surface run glow">
+                  <TokenLine values={c.line} h={156} />
+                  <div className="name">
+                    <Logo family={c.family} />
+                    <span className="ellipsis">{c.name}</span>
+                  </div>
+                  <div className="row-flex label">
+                    <span className="ellipsis">{c.gpu}</span>
+                    {c.mem && <span>{c.mem}</span>}
+                  </div>
+                  <div className="label ellipsis" title={c.stackFrom ?? undefined}>{c.stack}</div>
+                  {!c.ready && <div className={c.subAlert ? "alert" : ""}>{c.sub}</div>}
+                  <div className="foot row-flex">
+                    <span className="btns grow">
+                      {c.ready && !c.embedding && dh && <Btn kind="primary" onClick={() => void open1(c)} disabled={opening === c.key}>{opening === c.key ? "Opening" : `Open ${dh} ›`}</Btn>}
+                      {more === c.key ? (
+                        <>
+                          {c.ready && !c.embedding && <Btn href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>Agent ›</Btn>}
+                          {c.modelId && <Btn onClick={() => setDlg({ k: "export", c })}>Save</Btn>}
+                          {(c.modelId || c.launchId) && (
+                            <Btn kind="danger" onClick={() => (c.modelId ? setDlg({ k: "stop", c }) : c.launchId && void cancelLaunch(target(c), c.launchId).then(setMsg))} disabled={c.readOnly || !!c.stopBlocked}>Stop</Btn>
+                          )}
+                        </>
+                      ) : (
+                        <Btn onClick={() => setMore(c.key)}>More</Btn>
+                      )}
+                    </span>
+                    <Chips chips={c.chips} className="label" />
+                  </div>
+                </div>
+              ))}
+              {slots.map((sl) => (
+                <button type="button" key={sl.key} className="slot" onClick={() => setDlg({ k: "recipe", id: sl.recipe.id })}>
+                  <span>{sl.n > 1 ? `${sl.n} × ${gname(sl.gpu)}` : gname(sl.gpu)}</span>
+                  <span className="ink ellipsis">{`run ${sl.recipe.name} ›`}</span>
+                </button>
+              ))}
+              {held.map((h) => (
+                <div key={h.id} className="slot static">
+                  <span>{h.gpuKeys.length > 1 ? `${h.gpuKeys.length} × ${gname(h.gpuKeys[0]!)}` : gname(h.gpuKeys[0]!)}</span>
+                  <span className="label">in use by another program</span>
+                </div>
+              ))}
+              {!mine.length && !slots.length && !held.length && <div className="slot static label"><span>{(m.snap?.gpus.length ?? 0) === 0 ? "no gpu" : "no config fits"}</span></div>}
+            </section>
+          );
+        })}
+      </div>
       <Err>{omsg}</Err>
       <AgentsSection model={model} />
       <SectionHeading

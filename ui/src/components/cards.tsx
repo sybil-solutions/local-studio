@@ -5,6 +5,19 @@ import type { BreakBy, LifeView, MachineView } from "../model/view";
 import { gpuRow, hourBuckets } from "../model/view";
 import { Table } from "./basics";
 
+export const TokenLine = ({ values, h }: { values: number[]; h: number }) => {
+  const n = values.length;
+  const top = Math.max(1, ...values);
+  if (n < 2 || top <= 1) return null;
+  const pts = values.map((v, i) => `${((i / (n - 1)) * 100).toFixed(2)},${(h - 4 - (v / top) * (h * 0.8)).toFixed(2)}`);
+  return (
+    <svg className="line" viewBox={`0 0 100 ${h}`} preserveAspectRatio="none" aria-hidden="true">
+      <polygon points={`${pts.join(" ")} 100,${h} 0,${h}`} fill="rgba(var(--fg-rgb),0.06)" />
+      <polyline points={pts.join(" ")} fill="none" stroke="rgba(var(--fg-rgb),0.25)" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+};
+
 export const Spark = ({ v }: { v: number[] }) =>
   v.length < 2 ? null : (
     <svg className="spark" viewBox="0 0 90 14" preserveAspectRatio="none" aria-hidden="true">
