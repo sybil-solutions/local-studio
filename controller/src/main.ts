@@ -25,7 +25,14 @@ const serve = async (argv: string[]): Promise<number> => {
   process.on("uncaughtException", (e) => log.error(`uncaught exception: ${errText(e)}`, "uncaughtException"));
   const t0 = performance.now();
   await app.start();
-  const server = Bun.serve({ hostname: config.host, port: config.port, idleTimeout: 255, fetch: app.hono.fetch, maxRequestBodySize: 64 * 1024 * 1024 });
+  let server: ReturnType<typeof Bun.serve>;
+  try {
+    server = Bun.serve({ hostname: config.host, port: config.port, idleTimeout: 255, fetch: app.hono.fetch, maxRequestBodySize: 64 * 1024 * 1024 });
+  } catch (e) {
+    log.error(`cannot listen on ${config.host}:${config.port}: ${errText(e)}`, "serve");
+    await app.stop().catch(() => {});
+    return 1;
+  }
   const servers = [server];
   const bin = config.tailnet && config.host !== "0.0.0.0" ? await tailscaleBin() : null;
   const ts = bin ? await app.ctx.exec([bin, "ip", "-4"], { timeoutMs: 5000 }) : null;
