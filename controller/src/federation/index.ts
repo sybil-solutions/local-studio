@@ -83,7 +83,7 @@ export const createFederation = (ctx: Ctx, svc: Services): Module<PeerService> =
     for (const s of poller.states.values()) {
       if (!s.online || !s.snapshot) continue;
       for (const m of s.snapshot.models ?? []) {
-        if (m.state !== "ready") continue;
+        if (m.state !== "ready" || m.embedding || (m.modality ?? "chat") !== "chat") continue;
         const names = m.servedModels.length > 0 ? m.servedModels.map((s) => (s.startsWith("/") ? m.primaryModel : s)) : [m.primaryModel];
         for (const served of names) {
           const clash = taken.has(served.toLowerCase());
