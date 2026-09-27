@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { fmt } from "@local-studio/contracts/client";
-import { post, via } from "../api";
+import { type AgentLaunchResult, fmt } from "@local-studio/contracts/client";
+import { call, post, via } from "../api";
 import { cancelLaunch, ConnectDialog, ExportDialog, RecipeDialog, StopDialog, type Target } from "../components/actions";
 import { BarMark, Btn, Err, SectionHeading, Table } from "../components/basics";
 import { FigureGrid } from "../components/cards";
@@ -20,6 +20,8 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   const [dlg, setDlg] = useState<{ k: "stop" | "export"; c: CardView } | { k: "recipe"; id: string } | { k: "connect" } | null>(null);
   const [show, setShow] = useState<Show | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  const [omsg, setOmsg] = useState<string | null>(null);
   const all = useMemo(() => machines(fleet, live), [fleet, live]);
   const ms = all.filter((m) => !machineId || m.id === machineId);
   const cards = useMemo(() => homeCards(ms, live, fleet?.self ?? null, recipes, engines), [ms, live, fleet, recipes, engines]);
@@ -49,6 +51,21 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   const target = (c: CardView): Target => ({ machineId: c.machineId, peerId: c.peerId, readOnly: c.readOnly });
   const open = dlg?.k === "recipe" ? rvs.find((v) => v.id === dlg.id) : undefined;
   const tpsOf = (c: CardView) => c.chips.find((x) => x.icon === "speed")?.text.replace(/\s*tok\/s.*$/, "") ?? "–";
+  const dh = (() => {
+    try {
+      return localStorage.getItem("ls.defaultHarness") || "omp";
+    } catch {
+      return "omp";
+    }
+  })();
+  const open1 = async (c: CardView) => {
+    setOpening(c.key);
+    const r = await call<AgentLaunchResult>("POST", `/api/agents/launch?terminal=${/Electron/.test(navigator.userAgent) ? "auto" : "none"}`, { harness: dh, model: c.servedModel ?? c.name }, 90_000);
+    setOpening(null);
+    if (!r.ok) return setOmsg(`${dh}: ${r.error}`);
+    if (r.data.url) window.open(r.data.url);
+    setOmsg(r.data.attach && !/Electron/.test(navigator.userAgent) ? `${dh} on ${c.servedModel ?? c.name}: ${r.data.attach}` : null);
+  };
   const status = (c: CardView) => (c.ready ? "ready" : c.sub || "loading");
   return (
     <div className="page ctl">
@@ -102,7 +119,8 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
             h: " ",
             c: (c) => (
               <span className="btns" onClick={(e) => e.stopPropagation()}>
-                {c.ready && !c.embedding && <Btn kind="primary" href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>Agent ›</Btn>}
+                {c.ready && !c.embedding && dh && <Btn kind="primary" onClick={() => void open1(c)} disabled={opening === c.key}>{opening === c.key ? "Opening" : `Open ${dh} ›`}</Btn>}
+                {c.ready && !c.embedding && <Btn href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>Agent ›</Btn>}
                 {c.modelId && <Btn onClick={() => setDlg({ k: "export", c })}>Save</Btn>}
                 {c.modelId ? (
                   <Btn kind="danger" onClick={() => setDlg({ k: "stop", c })} disabled={c.readOnly || !!c.stopBlocked}>Stop</Btn>
@@ -116,6 +134,7 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
         rows={cards}
         keyOf={(c) => c.key}
       />
+      <Err>{omsg}</Err>
       <AgentsSection model={model} />
       <SectionHeading
         aside={

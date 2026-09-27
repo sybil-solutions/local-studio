@@ -207,3 +207,19 @@ table.tbl { border-collapse: collapse; width: 100%; }
 .ctl .tbl td { padding-top: calc(5px * var(--s)); padding-bottom: calc(5px * var(--s)); }
 .ctl .tbl .btn { height: calc(var(--text) * 1.4); padding: 0 calc(8px * var(--s)); }
 .tbl .btns { flex-wrap: nowrap; }
+.shell { padding-top: 0; }
+.banner { display: flex; align-items: stretch; gap: var(--gutter); padding: 0 var(--gutter); min-height: calc(44px * var(--s)); background: var(--card); border-bottom: 1px solid var(--rule); }
+.banner .brand { display: inline-flex; align-items: center; gap: 1ch; color: var(--ink); white-space: nowrap; }
+.banner .pages { display: flex; align-items: stretch; }
+.banner .pages a { display: inline-flex; align-items: center; padding: 0 calc(12px * var(--s)); color: var(--label); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.banner .pages a:hover { color: var(--ink); }
+.banner .pages a.on { color: var(--ink); border-bottom-color: var(--ink); }
+.banner .conn { display: flex; align-items: center; }
+.mtabs { display: flex; overflow-x: auto; scrollbar-width: none; padding: 0 var(--edge); margin-top: var(--top); border-bottom: 1px solid var(--rule); }
+.mtabs a { display: inline-flex; align-items: center; gap: calc(7px * var(--s)); padding: calc(8px * var(--s)) calc(14px * var(--s)); color: var(--label); border: 1px solid transparent; border-bottom: 0; margin-bottom: -1px; white-space: nowrap; cursor: pointer; }
+.mtabs a:hover { color: var(--ink); background: var(--card); }
+.mtabs a.on { color: var(--ink); background: var(--bg); border-color: var(--rule); box-shadow: 0 1px 0 var(--bg); }
+.mtabs a.off { color: var(--alert); }
+.mtabs a .n { color: var(--label); border: 1px solid var(--rule); padding: 0 5px; }
+@media (max-width: 768px), (pointer: coarse) { .banner .pages a, .mtabs a { min-height: 40px; } }
+@media (max-width: 560px) { .banner { gap: calc(8px * var(--s)); } .banner .brand .label, .banner .conn > span { display: none; } .banner .pages a { padding: 0 calc(8px * var(--s)); } }

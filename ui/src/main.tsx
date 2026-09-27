@@ -1,9 +1,10 @@
-import { StrictMode, useSyncExternalStore } from "react";
+import { StrictMode, useMemo, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import "./theme.css";
 import { getKey, setKey } from "./api";
 import { KeyPrompt } from "./components/actions";
-import { Boundary } from "./components/basics";
+import { BarMark, Boundary } from "./components/basics";
+import { machines } from "./model/view";
 import { restart, start, useStore } from "./store";
 import { ControlPage } from "./views/control";
 import { LivePage } from "./views/live";
@@ -16,19 +17,21 @@ const onHash = (f: () => void) => {
   return () => window.removeEventListener("hashchange", f);
 };
 
-const NONE: never[] = [];
-
 const Filter = ({ tab, on }: { tab: string; on: string | null }) => {
-  const ms = useStore((s) => s.fleet?.machines ?? NONE);
+  const fleet = useStore((s) => s.fleet);
+  const launches = useStore((s) => s.launches);
+  const ms = useMemo(() => machines(fleet, launches), [fleet, launches]);
   if (ms.length < 2) return null;
   return (
-    <nav className="top tabs filter">
+    <nav className="mtabs">
       <a href={`#/${tab}`} className={on ? "" : "on"}>
-        all
+        <span>all machines</span>
+        <span className="n">{ms.filter((m) => m.online).length}</span>
       </a>
       {ms.map((m) => (
-        <a key={m.machineId} href={`#/${tab}/${encodeURIComponent(m.machineId)}`} className={`${on === m.machineId ? "on" : ""}${m.online ? "" : " alert"}`}>
-          {m.snapshot?.machine.name ?? m.machineId.slice(0, 8)}
+        <a key={m.id} href={`#/${tab}/${encodeURIComponent(m.id)}`} className={`${on === m.id ? "on" : ""}${m.online ? "" : " off"}`} title={m.gpuSummary}>
+          <BarMark mark={m.online ? m.mark : "failed"} />
+          <span>{m.name}</span>
         </a>
       ))}
     </nav>
@@ -47,14 +50,11 @@ const App = () => {
   const machine = arg || null;
   return (
     <div className="shell">
-      <div className="top">
-        <span className="row-flex">
-          <a className="label" href="#/control">
-            LOCAL STUDIO
-          </a>
-          <span className="label">{version}</span>
-        </span>
-        <nav className="tabs">
+      <div className="banner">
+        <a className="brand" href="#/control">
+          LOCAL STUDIO <span className="label">{version}</span>
+        </a>
+        <nav className="pages">
           {TABS.map((t) => (
             <a key={t} href={`#/${t}`} className={view === t ? "on" : ""}>
               {t}
