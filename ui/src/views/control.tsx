@@ -86,7 +86,10 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
     const held = [...taken].map((k) => ({ id: `${m.id}:held:${k}`, gpuKeys: [k] }));
     const slots = freeSlots(m, (recipes[m.id] ?? []).map((r) => ({ ...r, freeGroups: r.freeGroups.filter((g) => !g.some((k) => taken.has(k))) })));
     const free = [...new Set((m.snap?.groups ?? []).filter((x) => x.state === "available").flatMap((g) => g.gpuKeys))].filter((k) => !taken.has(k)).map((k) => ({ gpuKeys: [k] }));
-    const rows: Avail[] = slots.map((sl) => ({ key: sl.key, m, name: m.name, gpus: sl.n > 1 ? `${sl.n} × ${gname(sl.gpu)}` : gname(sl.gpu), state: "free", slot: sl }));
+    const mine = (m.snap?.models ?? []).filter((x) => x.gpuKeys.length > 0);
+    const busy = [...new Set(mine.flatMap((x) => x.gpuKeys))];
+    const rows: Avail[] = busy.length ? [{ key: `${m.id}:busy`, m, name: m.name, gpus: n(busy), state: "all running", slot: null }] : [];
+    rows.push(...slots.map((sl) => ({ key: sl.key, m, name: m.name, gpus: sl.n > 1 ? `${sl.n} × ${gname(sl.gpu)}` : gname(sl.gpu), state: "free", slot: sl })));
     if (!slots.length && free.length) rows.push({ key: `${m.id}:free`, m, name: m.name, gpus: n(free.flatMap((g) => g.gpuKeys)), state: "free · no config fits", slot: null });
     for (const h of held) rows.push({ key: h.id, m, name: m.name, gpus: n(h.gpuKeys), state: "in use by another program", slot: null });
     if (!rows.length) rows.push({ key: `${m.id}:none`, m, name: m.name, gpus: (m.snap?.gpus.length ?? 0) === 0 ? "no gpu" : m.gpuSummary, state: (m.snap?.gpus.length ?? 0) === 0 ? "–" : "all running", slot: null });
@@ -94,13 +97,14 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   });
   type Device = { key: string; name: string; mark: MachineView["mark"]; self: boolean; sub: string; rows: Avail[] };
   const isSpark = (m: MachineView) => /^spark-/.test(m.name);
-  const busyHere = (m: MachineView) => chat.some((c) => c.machineId === m.id) || apis.some((c) => c.machineId === m.id);
-  const devOf = (m: MachineView): Device => ({ key: m.id, name: m.name, mark: m.online ? m.mark : "failed", self: m.self, sub: m.gpuSummary || "–", rows: avail.filter((x) => x.m.id === m.id && !(x.state === "all running" && busyHere(m))) });
+  const devOf = (m: MachineView): Device => ({ key: m.id, name: m.name, mark: m.online ? m.mark : "failed", self: m.self, sub: m.gpuSummary || "–", rows: avail.filter((x) => x.m.id === m.id) });
   const sparks = ms.filter(isSpark);
+  type Row = { d: Device; a: Avail; first: boolean };
+  const stateText = (x: Row) => (x.a.state === "all running" ? [...chat, ...apis].filter((c) => c.machineId === x.a.m.id).map((c) => c.name).join(", ") || "all running" : x.a.slot ? "free" : x.d.self && /no config|^–$/.test(x.a.state) ? "hub" : x.a.state === "free · no config fits" ? "free · no config fits" : x.a.state === "in use by another program" ? "in use by another program" : x.a.state);
   const devices: Device[] = [
     ...ms.filter((m) => !isSpark(m)).map(devOf).filter((d) => d.rows.length > 0),
     ...(sparks.length > 1
-      ? [{ key: "pod:sparks", name: "sparks", mark: sparks.some((m) => m.online) ? sparks[0]!.mark : "failed", self: false, sub: `${sparks.length} × ${sparks[0]!.gpuSummary.replace(/^\d+ × /, "")}`, rows: sparks.flatMap((m) => avail.filter((x) => x.m.id === m.id).map((x) => ({ ...x, gpus: m.name }))) } as Device]
+      ? [{ key: "pod:sparks", name: "sparks", mark: sparks.some((m) => m.online) ? sparks[0]!.mark : "failed", self: false, sub: `${sparks.length} × ${sparks[0]!.gpuSummary.replace(/^\d+ × /, "")}`, rows: sparks.flatMap((m) => avail.filter((x) => x.m.id === m.id).map((x) => ({ ...x, gpus: `${m.name} · ${x.gpus}` }))) } as Device]
       : sparks.map(devOf)),
   ];
   return (
@@ -120,7 +124,7 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
         <Btn kind="primary" onClick={() => setDlg({ k: "run" })}>Run model ›</Btn>
         <Btn kind="primary" onClick={() => setDlg({ k: "agent" })}>New agent ›</Btn>
       </div>
-      <SectionHeading aside={<span className="label">{`${chat.length} running · ${devices.length} ${devices.length === 1 ? "machine" : "machines"}`}</span>}>fleet</SectionHeading>
+      <SectionHeading aside={<span className="label">{`${chat.length} running`}</span>}>running</SectionHeading>
       <div className="runs">
         {chat.map((c) => (
           <div key={c.key} className="surface run glow">
@@ -155,33 +159,6 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
             </div>
           </div>
         ))}
-        {devices.map((d) => (
-          <div key={d.key} className="surface run dev">
-            <div className="name">
-              <BarMark mark={d.mark} />
-              <span className="ellipsis grow">{d.name}</span>
-              {!(d.rows.length === 1 && d.rows[0]!.gpus === d.sub) && <span className="label">{d.sub}</span>}
-            </div>
-            <div className="vrows">
-              {d.rows.map((x) => (
-                <div key={x.key} className="vrow line">
-                  <span className="ellipsis grow">{x.gpus}</span>
-                  {x.slot ? (
-                    <Btn kind="primary" onClick={() => setDlg({ k: "recipe", id: x.slot!.recipe.id })}>{`Run ${x.slot.recipe.name} ›`}</Btn>
-                  ) : (
-                    <span className={x.state === "offline" ? "alert" : "label"}>{d.self && /no config|^–$/.test(x.state) ? "hub" : x.state === "free · no config fits" ? "free" : x.state === "in use by another program" ? "in use" : x.state}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-            {(d.self || d.rows.some((x) => x.slot)) && (
-              <div className="foot btns">
-                {d.rows.some((x) => x.slot) && <Btn onClick={() => setDlg({ k: "run" })}>Configs ›</Btn>}
-                {d.self && <Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>}
-              </div>
-            )}
-          </div>
-        ))}
         {apis.length > 0 && (
           <div className="surface run dev">
             <div className="name">
@@ -209,6 +186,26 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
         )}
       </div>
       <Err>{omsg}</Err>
+      <SectionHeading aside={<span className="label">{`${devices.length} ${devices.length === 1 ? "machine" : "machines"}`}</span>}>machines</SectionHeading>
+      <Table
+        cols={[
+          { h: "machine", c: (x: Row) => (x.first ? <span className="row-flex"><BarMark mark={x.d.mark} /><span>{x.d.name}</span></span> : "") },
+          { h: "gpus", c: (x) => x.a.gpus },
+          { h: "state", c: (x) => <span className={x.a.state === "offline" ? "alert" : ""}>{stateText(x)}</span> },
+          {
+            h: " ",
+            c: (x) => (
+              <span className="btns">
+                {x.a.slot && <Btn kind="primary" onClick={() => setDlg({ k: "recipe", id: x.a.slot!.recipe.id })}>{`Run ${x.a.slot.recipe.name} ›`}</Btn>}
+                {x.first && x.d.rows.some((r) => r.slot) && <Btn onClick={() => setDlg({ k: "run" })}>Configs ›</Btn>}
+                {x.first && x.d.self && <Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>}
+              </span>
+            ),
+          },
+        ]}
+        rows={devices.flatMap((d) => d.rows.map((a, i) => ({ d, a, first: i === 0 })))}
+        keyOf={(x) => x.a.key}
+      />
       <AgentsSection model={model} only="sessions" />
       {dlg?.k === "run" && (
         <Dialog title="Run model" onClose={() => setDlg(null)} wide>
