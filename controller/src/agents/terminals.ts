@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Ctx } from "../context";
@@ -25,14 +25,28 @@ const slug = (name: string) =>
     .replace(/^-|-$/g, "");
 const commandFile = (s: Session) => join(tmpdir(), `local-studio-${slug(s.name)}.command`);
 const writeCommand = (s: Session) => writeFileSync(commandFile(s), `#!/bin/bash\ncd '${s.dir.replace(/'/g, `'\\''`)}' && exec ${s.command}\n`, { mode: 0o700 });
+const warpDir = () => join(homedir(), ".warp", "tab_configs");
+const writeWarpTab = ({ command, dir, name }: Session) => {
+  mkdirSync(warpDir(), { recursive: true });
+  writeFileSync(
+    join(warpDir(), `local-studio-${slug(name)}.toml`),
+    `name = ${JSON.stringify(name)}\ntitle = ${JSON.stringify(name)}\n\n[[panes]]\nid = "main"\ntype = "terminal"\ndirectory = ${JSON.stringify(dir || homedir())}\ncommands = [${JSON.stringify(command)}]\nis_focused = true\n`,
+  );
+};
 
 const macOS: Terminal[] = [
   {
-    id: "terminal",
-    label: "Terminal",
-    probe: "/System/Applications/Utilities/Terminal.app",
-    prepare: writeCommand,
-    command: (s) => ["open", "-a", "Terminal", commandFile(s)],
+    id: "warp",
+    label: "Warp",
+    probe: "/Applications/Warp.app",
+    prepare: writeWarpTab,
+    command: (s) => ["open", `warp://tab_config/local-studio-${slug(s.name)}`],
+  },
+  {
+    id: "ghostty",
+    label: "Ghostty",
+    probe: "/Applications/Ghostty.app",
+    command: (s) => ["open", "-na", "Ghostty", "--args", "-e", "/bin/bash", "-lc", s.command],
   },
   {
     id: "iterm",
@@ -42,10 +56,11 @@ const macOS: Terminal[] = [
     command: (s) => ["open", "-a", "iTerm", commandFile(s)],
   },
   {
-    id: "ghostty",
-    label: "Ghostty",
-    probe: "/Applications/Ghostty.app",
-    command: (s) => ["open", "-na", "Ghostty", "--args", "-e", "/bin/bash", "-lc", s.command],
+    id: "terminal",
+    label: "Terminal",
+    probe: "/System/Applications/Utilities/Terminal.app",
+    prepare: writeCommand,
+    command: (s) => ["open", "-a", "Terminal", commandFile(s)],
   },
 ];
 
