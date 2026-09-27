@@ -101,6 +101,7 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
   const def = useDefaultHarness();
   const [tests, setTests] = useState<Partial<Record<string, AgentTestResult>>>({});
   const [testing, setTesting] = useState(false);
+  const [full, setFull] = useState(false);
   const top = useRef<HTMLDivElement>(null);
 
   const loadInfos = () => void call<HarnessInfo[]>("GET", "/api/agents", undefined, 60_000).then((r) => r.ok && Array.isArray(r.data) && setInfos(r.data));
@@ -132,6 +133,7 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
     setInfos((xs) => xs.map((x) => (x.harness === h ? { ...x, job: r.data } : x)));
   };
   const launch = async () => {
+    const agent = chosen;
     if (!agent || !pick) return;
     setBusy(true);
     setErr(null);
@@ -182,10 +184,11 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
     if (!r.ok) setErr(r.error);
   };
   const info = (h: string) => infos.find((x) => x.harness === h);
-  const sel = agent ? info(agent) : undefined;
+  const chosen = (agent ?? (def as Harness | null)) || null;
+  const sel = chosen ? info(chosen) : undefined;
   const blocked = sel ? (sel.blocked ?? (sel.installed ? null : `${label(sel.harness)} is not installed`)) : null;
   const machines = [...new Set(models.map((m) => m.owned_by ?? ""))];
-  const ready = !!agent && !!pick && models.some((m) => m.id === pick);
+  const ready = !!chosen && !!pick && models.some((m) => m.id === pick);
 
   const status = (i: HarnessInfo | undefined): [string, string] => {
     if (!i) return ["", "label"];
@@ -199,8 +202,22 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
   return (
     <>
       <div ref={top} className="half">
-        <SectionHeading aside={<Btn onClick={() => void testAll()} disabled={!testModel || testing || readOnly}>{testing ? "Testing" : "Test all ›"}</Btn>}>agents</SectionHeading>
-        <Table<(typeof AGENTS)[number]>
+        <SectionHeading
+          aside={
+            <span className="btns">
+              <Btn onClick={() => setFull((x) => !x)}>{full ? "Hide harnesses" : "Harnesses ›"}</Btn>
+              <Btn onClick={() => void testAll()} disabled={!testModel || testing || readOnly}>{testing ? "Testing" : "Test all ›"}</Btn>
+            </span>
+          }
+        >
+          agents
+        </SectionHeading>
+        {!full && (
+          <div className="gut label">
+            {`default ${def ?? "–"} · ${infos.filter((i) => i.installed).length} of ${AGENTS.length} installed · ${infos.filter((i) => i.installed && newer(i.latest, i.version)).length} updates${Object.keys(tests).length ? ` · test ${Object.values(tests).filter((t) => t?.status === "ok").length} ok, ${Object.values(tests).filter((t) => t?.status === "failed").length} failed` : ""}`}
+          </div>
+        )}
+        {full && <Table<(typeof AGENTS)[number]>
           cols={[
             { h: "", c: ([h]) => <span className="ink">{agent === h ? "✓" : ""}</span> },
             { h: "harness", c: ([h, l]) => <span className={agent === h ? "ink" : ""}>{l}</span> },
@@ -237,13 +254,24 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
           keyOf={([h]) => h}
           rowClass={([h]) => (agent === h ? "hl" : "")}
           onRow={([h]) => (setAgent(h), setRes(null))}
-        />
+        />}
         {infos
           .filter((i) => i.job?.state === "failed")
           .map((i) => (
             <Err key={i.harness}>{`${label(i.harness)}: ${jobText(i.job)}`}</Err>
           ))}
         <div className="form">
+          <label htmlFor="agent-harness">harness</label>
+          <select id="agent-harness" className="input" value={agent ?? def ?? ""} onChange={(e) => (setAgent(e.target.value as Harness), setRes(null))}>
+            <option value="" disabled>
+              choose a harness
+            </option>
+            {AGENTS.filter(([h]) => info(h)?.installed && !info(h)?.blocked).map(([h, l]) => (
+              <option key={h} value={h}>
+                {`${l}${def === h ? " · default" : ""}`}
+              </option>
+            ))}
+          </select>
           <label htmlFor="agent-model">model</label>
           <select id="agent-model" className="input" value={pick} required onChange={(e) => setPick(e.target.value)}>
             <option value="" disabled>
@@ -279,9 +307,9 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
         </div>
         <div className="btns gut" style={{ marginTop: "var(--group)" }}>
           <Btn kind="primary" onClick={() => void launch()} disabled={!ready || !!blocked || busy || readOnly}>
-            {busy ? "Starting" : `Launch ${agent ? label(agent) : "harness"} on ${pick || "model"} ›`}
+            {busy ? "Starting" : `Launch ${chosen ? label(chosen) : "harness"} on ${pick || "model"} ›`}
           </Btn>
-          {sel && <span className={blocked ? "alert" : "label"}>{blocked ?? sel.note}</span>}
+          {blocked && <span className="alert">{blocked}</span>}
         </div>
         <Err>{err}</Err>
         {res && (
@@ -302,7 +330,7 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
           </div>
         )}
       </div>
-      <div className="half">
+      {sessions.length > 0 && <div className="half">
         <SectionHeading>sessions</SectionHeading>
         <Table<AgentSession>
           cols={[
@@ -325,7 +353,7 @@ export const AgentsSection = ({ model }: { model: string | null }) => {
           rows={sessions}
           keyOf={(s) => s.id}
         />
-      </div>
+      </div>}
     </>
   );
 };

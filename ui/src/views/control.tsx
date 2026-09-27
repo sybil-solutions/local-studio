@@ -15,28 +15,26 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   const live = useStore((s) => s.launches);
   const recipes = useStore((s) => s.recipes);
   const engines = useStore((s) => s.engines);
-  const stats = useStore((s) => s.stats);
   const error = useStore((s) => s.error);
   const [dlg, setDlg] = useState<{ k: "stop" | "export"; c: CardView } | { k: "recipe"; id: string } | { k: "connect" } | null>(null);
   const [show, setShow] = useState<Show | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [omsg, setOmsg] = useState<string | null>(null);
+  const [more, setMore] = useState<string | null>(null);
+  const [cfg, setCfg] = useState(false);
   const all = useMemo(() => machines(fleet, live), [fleet, live]);
   const ms = all.filter((m) => !machineId || m.id === machineId);
   const cards = useMemo(() => homeCards(ms, live, fleet?.self ?? null, recipes, engines), [ms, live, fleet, recipes, engines]);
   const rvs = useMemo(() => mergeRecipes(ms, recipes), [ms, recipes]);
   const dh = useDefaultHarness();
   if (!fleet) return <Err>{error ?? "connecting"}</Err>;
-  const sums = ms.map((m) => stats[m.id]?.sum).filter((s) => !!s);
-  const tot = (k: "requests" | "errors" | "inputUncached" | "cacheRead" | "output") => sums.reduce((t, s) => t + (s[k] ?? 0), 0);
   const a = aggOf(ms, engines);
   const res = ms.map(resOf);
   const fig = (k: "vram" | "ram" | "disk") => {
     const t = sumRes(res.map((r) => r[k]));
     return { v: resText(t), k: `${k} free${t.known < t.of ? ` · ${t.known}/${t.of}` : ""}` };
   };
-  const pair = (x: string, y: string) => `${x} / ${y}`;
   const anyAssigned = rvs.some((v) => v.per.some((p) => p.row.assigned));
   const mode: Show = show ?? (anyAssigned ? "assigned" : "fits");
   const shown = rvs
@@ -51,6 +49,7 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   };
   const target = (c: CardView): Target => ({ machineId: c.machineId, peerId: c.peerId, readOnly: c.readOnly });
   const open = dlg?.k === "recipe" ? rvs.find((v) => v.id === dlg.id) : undefined;
+  const shownCards = cards.filter((c) => c.ready || c.launchId || !/not answering/.test(c.sub));
   const tpsOf = (c: CardView) => c.chips.find((x) => x.icon === "speed")?.text.replace(/\s*tok\/s.*$/, "") ?? "–";
   const open1 = async (c: CardView) => {
     setOpening(c.key);
@@ -66,13 +65,10 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
       <FigureGrid
         cells={[
           { v: `${ms.filter((m) => m.online).length} / ${ms.length}`, k: "machines online" },
-          { v: String(cards.filter((c) => c.ready).length), k: "models running" },
+          { v: String(shownCards.filter((c) => c.ready).length), k: "models running" },
           { v: fmt.tps(a.tps), k: "tok/s now" },
-          { v: pair(fmt.k(tot("requests")), fmt.k(tot("errors"))), k: "requests / errors 24h" },
           { v: a.powerW === null ? "–" : `${Math.round(a.powerW)} W`, k: "power now" },
           fig("vram"),
-          fig("ram"),
-          fig("disk"),
         ]}
         className="one"
       />
@@ -89,9 +85,7 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
           { h: "hardware", c: (m) => <span className="cut label">{m.online ? m.gpuSummary : (m.error ?? "–")}</span> },
           { h: "util", n: true, c: (m) => { const g = aggOf([m], engines); return g.util === null ? "–" : `${Math.round(g.util)}%`; } },
           { h: "power", n: true, c: (m) => { const g = aggOf([m], engines); return g.powerW === null ? "–" : `${Math.round(g.powerW)} W`; } },
-          { h: "vram free", n: true, c: (m) => { const r = resOf(m); return r.vram ? resText(r.vram) : "–"; } },
-          { h: "ram free", n: true, c: (m) => { const r = resOf(m); return `${resText(r.ram)}${r.unified ? " unified" : ""}`; } },
-          { h: "disk free", n: true, c: (m) => resText(resOf(m).disk) },
+          { h: "memory free", n: true, c: (m) => { const r = resOf(m); return r.vram ? resText(r.vram) : `${resText(r.ram)} unified`; } },
           { h: "running", c: (m) => <span className="cut">{aggOf([m], engines).models.join(", ") || "–"}</span> },
         ]}
         rows={ms}
@@ -105,8 +99,6 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
           { h: "model", c: (c: CardView) => <span className="ink">{c.name}</span> },
           { h: "machine", c: (c) => c.machine },
           { h: "engine · quant", c: (c) => <span title={c.stackFrom ?? undefined}>{c.stack || "–"}</span> },
-          { h: "gpus", c: (c) => <span className="cut">{c.gpu}</span> },
-          { h: "memory", n: true, c: (c) => c.mem || "–" },
           { h: "tok/s", n: true, c: (c) => tpsOf(c) },
           { h: "state", c: (c) => <span className={c.subAlert ? "alert" : c.ready ? "" : "label"}>{status(c)}</span> },
           {
@@ -114,25 +106,32 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
             c: (c) => (
               <span className="btns" onClick={(e) => e.stopPropagation()}>
                 {c.ready && !c.embedding && dh && <Btn kind="primary" onClick={() => void open1(c)} disabled={opening === c.key}>{opening === c.key ? "Opening" : `Open ${dh} ›`}</Btn>}
-                {c.ready && !c.embedding && <Btn href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>Agent ›</Btn>}
-                {c.modelId && <Btn onClick={() => setDlg({ k: "export", c })}>Save</Btn>}
-                {c.modelId ? (
-                  <Btn kind="danger" onClick={() => setDlg({ k: "stop", c })} disabled={c.readOnly || !!c.stopBlocked}>Stop</Btn>
-                ) : c.launchId ? (
-                  <Btn kind="danger" onClick={() => c.launchId && void cancelLaunch(target(c), c.launchId).then(setMsg)} disabled={c.readOnly}>Stop</Btn>
-                ) : null}
+                {more === c.key ? (
+                  <>
+                    {c.ready && !c.embedding && <Btn href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>Agent ›</Btn>}
+                    {c.modelId && <Btn onClick={() => setDlg({ k: "export", c })}>Save</Btn>}
+                    {c.modelId ? (
+                      <Btn kind="danger" onClick={() => setDlg({ k: "stop", c })} disabled={c.readOnly || !!c.stopBlocked}>Stop</Btn>
+                    ) : c.launchId ? (
+                      <Btn kind="danger" onClick={() => c.launchId && void cancelLaunch(target(c), c.launchId).then(setMsg)} disabled={c.readOnly}>Stop</Btn>
+                    ) : null}
+                    <Btn onClick={() => setMore(null)}>×</Btn>
+                  </>
+                ) : (
+                  <Btn onClick={() => setMore(c.key)} title="more">⋯</Btn>
+                )}
               </span>
             ),
           },
         ]}
-        rows={cards}
+        rows={shownCards}
         keyOf={(c) => c.key}
       />
       <Err>{omsg}</Err>
       <AgentsSection model={model} />
       <SectionHeading
         aside={
-          <span className="tabs">
+          cfg && <span className="tabs">
             {(["assigned", "fits", "all"] as const).map((x) => (
               <button type="button" key={x} className={mode === x ? "on" : ""} onClick={() => setShow(x)}>
                 {x}
@@ -146,8 +145,13 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
       >
         {`configs ${shown.length}/${rvs.length}`}
       </SectionHeading>
+      {!cfg && (
+        <div className="gut">
+          <Btn onClick={() => setCfg(true)}>{`Show ${shown.length} configs ›`}</Btn>
+        </div>
+      )}
       <Err>{msg}</Err>
-      <Table
+      {cfg && <Table
         cols={[
           { h: "name", c: (v: RecipeView) => <span className="ink">{v.r.name}</span> },
           { h: "engine · quant", c: (v) => `${v.r.engine} ${fmtFormat(v.r.format)}` },
@@ -160,7 +164,7 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
         rows={shown}
         keyOf={(v) => v.id}
         onRow={(v) => setDlg({ k: "recipe", id: v.id })}
-      />
+      />}
       {dlg?.k === "stop" && dlg.c.modelId && <StopDialog t={target(dlg.c)} modelId={dlg.c.modelId} name={dlg.c.name} watchdog={dlg.c.watchdog} blocked={dlg.c.stopBlocked} onClose={() => setDlg(null)} />}
       {dlg?.k === "export" && dlg.c.modelId && <ExportDialog t={target(dlg.c)} modelId={dlg.c.modelId} onClose={() => setDlg(null)} />}
       {open && <RecipeDialog v={open} onClose={() => setDlg(null)} />}
