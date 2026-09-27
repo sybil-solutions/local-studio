@@ -40,6 +40,7 @@ export interface CardView {
   mem: string;
   line: number[];
   chips: Chip[];
+  figs: { total: string; decode: string; prefill: string } | null;
   ready: boolean;
   sub: string;
   subAlert: boolean;
@@ -307,6 +308,13 @@ export const cardOf = (mv: MachineView, s: Snapshot, m: RunningModel, launch: La
       : m.embedding
         ? [{ text: "embedding" }]
         : [...speedChip(st, engine), ...(st?.allTokens ? [{ icon: "tokens", text: fmt.k(st.allTokens) }] : [])],
+    figs: ready
+      ? {
+          total: st?.allTokens ? fmt.k(st.allTokens) : "–",
+          decode: (st?.decodeTps ?? engine?.decodeTps) != null ? fmt.tps((st?.decodeTps ?? engine?.decodeTps)!) : "–",
+          prefill: (st?.prefillTps ?? engine?.prefillTps) != null ? fmt.tps((st?.prefillTps ?? engine?.prefillTps)!) : "–",
+        }
+      : null,
     ready,
     sub: ready ? "" : sub,
     subAlert: m.state === "unhealthy",
@@ -338,6 +346,7 @@ const launchCard = (mv: MachineView, s: Snapshot, l: LaunchProgress, recipes: Re
     mem: "",
     line: [],
     chips: [],
+    figs: null,
     ready: false,
     sub: `${l.phase}${l.detail ? ` · ${l.detail}` : ""}${l.percent !== null ? ` · ${Math.round(l.percent)}%` : ""}`,
     subAlert: false,

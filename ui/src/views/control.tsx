@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { type AgentLaunchResult, fmt, type RecipeRow } from "@local-studio/contracts/client";
 import { call, post, via } from "../api";
 import { cancelLaunch, ConnectDialog, ExportDialog, RecipeDialog, StopDialog, type Target } from "../components/actions";
-import { BarMark, Btn, Chips, Dialog, Err, Logo, SectionHeading, Table } from "../components/basics";
+import { BarMark, Btn, Dialog, Err, Logo, SectionHeading, Table } from "../components/basics";
 import { FigureGrid, TokenLine } from "../components/cards";
 import { aggOf, type CardView, fmtFormat, homeCards, type MachineView, machines, mergeRecipes, type RecipeView, resFig } from "../model/view";
 import { loadRecipes, useStore } from "../store";
@@ -11,7 +11,7 @@ import { AgentsSection, useDefaultHarness } from "./agents";
 type Show = "assigned" | "fits" | "all";
 
 type Slot = { key: string; n: number; gpu: string; recipe: RecipeRow };
-type Avail = { key: string; m: MachineView; gpus: string; state: string; slot: Slot | null };
+type Avail = { key: string; m: MachineView; name: string; gpus: string; state: string; slot: Slot | null };
 const KIND: Record<string, string> = { stt: "speech to text", tts: "text to speech", embedding: "embedding" };
 const freeSlots = (m: MachineView, rows: RecipeRow[]): Slot[] => {
   const fit = rows.filter((r) => r.fit === "fits" && r.freeGroups.length > 0);
@@ -81,17 +81,28 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
   const avail: Avail[] = ms.flatMap((m) => {
     const gname = (k: string) => m.snap?.gpus.find((x) => x.key === k)?.name ?? k;
     const n = (keys: string[]) => (keys.length > 1 ? `${keys.length} × ${gname(keys[0]!)}` : gname(keys[0]!));
-    if (!m.online) return [{ key: m.id, m, gpus: m.gpuSummary || "–", state: "offline", slot: null }];
+    if (!m.online) return [{ key: m.id, m, name: m.name, gpus: m.gpuSummary || "–", state: "offline", slot: null }];
     const taken = new Set((m.snap?.groups ?? []).filter((x) => x.state === "foreign").flatMap((g) => g.gpuKeys));
     const held = [...taken].map((k) => ({ id: `${m.id}:held:${k}`, gpuKeys: [k] }));
     const slots = freeSlots(m, (recipes[m.id] ?? []).map((r) => ({ ...r, freeGroups: r.freeGroups.filter((g) => !g.some((k) => taken.has(k))) })));
     const free = [...new Set((m.snap?.groups ?? []).filter((x) => x.state === "available").flatMap((g) => g.gpuKeys))].filter((k) => !taken.has(k)).map((k) => ({ gpuKeys: [k] }));
-    const rows: Avail[] = slots.map((sl) => ({ key: sl.key, m, gpus: sl.n > 1 ? `${sl.n} × ${gname(sl.gpu)}` : gname(sl.gpu), state: "free", slot: sl }));
-    if (!slots.length && free.length) rows.push({ key: `${m.id}:free`, m, gpus: n(free.flatMap((g) => g.gpuKeys)), state: "free · no config fits", slot: null });
-    for (const h of held) rows.push({ key: h.id, m, gpus: n(h.gpuKeys), state: "in use by another program", slot: null });
-    if (!rows.length) rows.push({ key: `${m.id}:none`, m, gpus: (m.snap?.gpus.length ?? 0) === 0 ? "no gpu" : m.gpuSummary, state: (m.snap?.gpus.length ?? 0) === 0 ? "–" : "all running", slot: null });
+    const rows: Avail[] = slots.map((sl) => ({ key: sl.key, m, name: m.name, gpus: sl.n > 1 ? `${sl.n} × ${gname(sl.gpu)}` : gname(sl.gpu), state: "free", slot: sl }));
+    if (!slots.length && free.length) rows.push({ key: `${m.id}:free`, m, name: m.name, gpus: n(free.flatMap((g) => g.gpuKeys)), state: "free · no config fits", slot: null });
+    for (const h of held) rows.push({ key: h.id, m, name: m.name, gpus: n(h.gpuKeys), state: "in use by another program", slot: null });
+    if (!rows.length) rows.push({ key: `${m.id}:none`, m, name: m.name, gpus: (m.snap?.gpus.length ?? 0) === 0 ? "no gpu" : m.gpuSummary, state: (m.snap?.gpus.length ?? 0) === 0 ? "–" : "all running", slot: null });
     return rows;
   });
+  type Device = { key: string; name: string; mark: MachineView["mark"]; self: boolean; sub: string; rows: Avail[] };
+  const isSpark = (m: MachineView) => /^spark-/.test(m.name);
+  const busyHere = (m: MachineView) => chat.some((c) => c.machineId === m.id) || apis.some((c) => c.machineId === m.id);
+  const devOf = (m: MachineView): Device => ({ key: m.id, name: m.name, mark: m.online ? m.mark : "failed", self: m.self, sub: m.gpuSummary || "–", rows: avail.filter((x) => x.m.id === m.id && !(x.state === "all running" && busyHere(m))) });
+  const sparks = ms.filter(isSpark);
+  const devices: Device[] = [
+    ...ms.filter((m) => !isSpark(m)).map(devOf).filter((d) => d.rows.length > 0),
+    ...(sparks.length > 1
+      ? [{ key: "pod:sparks", name: "sparks", mark: sparks.some((m) => m.online) ? sparks[0]!.mark : "failed", self: false, sub: `${sparks.length} × ${sparks[0]!.gpuSummary.replace(/^\d+ × /, "")}`, rows: sparks.flatMap((m) => avail.filter((x) => x.m.id === m.id).map((x) => ({ ...x, gpus: m.name }))) } as Device]
+      : sparks.map(devOf)),
+  ];
   return (
     <div className="page ctl">
       <FigureGrid
@@ -108,70 +119,96 @@ export const ControlPage = ({ machineId, model }: { machineId: string | null; mo
       <div className="toolbar">
         <Btn kind="primary" onClick={() => setDlg({ k: "run" })}>Run model ›</Btn>
         <Btn kind="primary" onClick={() => setDlg({ k: "agent" })}>New agent ›</Btn>
-        <Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>
       </div>
-      <SectionHeading aside={<span className="label">{`${chat.length} running`}</span>}>running</SectionHeading>
-      {chat.length === 0 && <div className="note">–</div>}
+      <SectionHeading aside={<span className="label">{`${chat.length} running · ${devices.length} ${devices.length === 1 ? "machine" : "machines"}`}</span>}>fleet</SectionHeading>
       <div className="runs">
         {chat.map((c) => (
           <div key={c.key} className="surface run glow">
             <TokenLine values={c.line} h={156} />
             <div className="name">
               <Logo family={c.family} />
-              <span className="ellipsis">{c.name}</span>
+              <span className="ellipsis grow">{c.name}</span>
+              <span className="label">{c.machine}</span>
             </div>
-            <div className="row-flex label">
-              <span className="ink">{c.machine}</span>
-              <span className="ellipsis">{c.gpu}</span>
-              {c.mem && <span>{c.mem}</span>}
-            </div>
-            <div className="label ellipsis" title={c.stackFrom ?? undefined}>{c.stack}</div>
-            {!c.ready && <div className={c.subAlert ? "alert" : ""}>{c.sub}</div>}
-            <div className="foot row-flex">
-              <span className="btns grow">
-                {c.ready && dh && <Btn kind="primary" onClick={() => void open1(c)} disabled={opening === c.key}>{opening === c.key ? "Opening" : `Open ${dh} ›`}</Btn>}
-                {more === c.key ? (
-                  <>
-                    {c.ready && <Btn href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>Agent ›</Btn>}
-                    {c.modelId && <Btn onClick={() => setDlg({ k: "export", c })}>Save</Btn>}
-                    {(c.modelId || c.launchId) && (
-                      <Btn kind="danger" onClick={() => (c.modelId ? setDlg({ k: "stop", c }) : c.launchId && void cancelLaunch(target(c), c.launchId).then(setMsg))} disabled={c.readOnly || !!c.stopBlocked}>Stop</Btn>
-                    )}
-                  </>
-                ) : (
-                  <Btn onClick={() => setMore(c.key)}>More</Btn>
-                )}
-              </span>
-              <Chips chips={c.chips} className="label" />
+            {c.figs ? (
+              <div className="kpis">
+                <span><b>{c.figs.total}</b><i>total</i></span>
+                <span><b>{c.figs.decode}</b><i>decode tok/s</i></span>
+                <span><b>{c.figs.prefill}</b><i>prefill tok/s</i></span>
+              </div>
+            ) : (
+              <div className={c.subAlert ? "alert" : "label"}>{c.sub}</div>
+            )}
+            <div className="foot btns">
+              {c.ready && dh && <Btn kind="primary" onClick={() => void open1(c)} disabled={opening === c.key}>{opening === c.key ? "Opening" : `Open ${dh} ›`}</Btn>}
+              {more === c.key ? (
+                <>
+                  {c.ready && <Btn href={`#/control?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>Agent ›</Btn>}
+                  {c.modelId && <Btn onClick={() => setDlg({ k: "export", c })}>Save</Btn>}
+                  {(c.modelId || c.launchId) && (
+                    <Btn kind="danger" onClick={() => (c.modelId ? setDlg({ k: "stop", c }) : c.launchId && void cancelLaunch(target(c), c.launchId).then(setMsg))} disabled={c.readOnly || !!c.stopBlocked}>Stop</Btn>
+                  )}
+                </>
+              ) : (
+                <Btn onClick={() => setMore(c.key)}>More</Btn>
+              )}
             </div>
           </div>
         ))}
+        {devices.map((d) => (
+          <div key={d.key} className="surface run dev">
+            <div className="name">
+              <BarMark mark={d.mark} />
+              <span className="ellipsis grow">{d.name}</span>
+              {!(d.rows.length === 1 && d.rows[0]!.gpus === d.sub) && <span className="label">{d.sub}</span>}
+            </div>
+            <div className="vrows">
+              {d.rows.map((x) => (
+                <div key={x.key} className="vrow line">
+                  <span className="ellipsis grow">{x.gpus}</span>
+                  {x.slot ? (
+                    <Btn kind="primary" onClick={() => setDlg({ k: "recipe", id: x.slot!.recipe.id })}>{`Run ${x.slot.recipe.name} ›`}</Btn>
+                  ) : (
+                    <span className={x.state === "offline" ? "alert" : "label"}>{d.self && /no config|^–$/.test(x.state) ? "hub" : x.state === "free · no config fits" ? "free" : x.state === "in use by another program" ? "in use" : x.state}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+            {(d.self || d.rows.some((x) => x.slot)) && (
+              <div className="foot btns">
+                {d.rows.some((x) => x.slot) && <Btn onClick={() => setDlg({ k: "run" })}>Configs ›</Btn>}
+                {d.self && <Btn onClick={() => setDlg({ k: "connect" })}>Connect ›</Btn>}
+              </div>
+            )}
+          </div>
+        ))}
+        {apis.length > 0 && (
+          <div className="surface run dev">
+            <div className="name">
+              <span className="ellipsis grow">voice</span>
+              <span className="label">{`${apis.length} endpoints`}</span>
+            </div>
+            <div className="vrows">
+              {apis.map((c) => (
+                <div key={c.key} className="vrow">
+                  <div className="row-flex">
+                    <span className="ink ellipsis grow">{c.name}</span>
+                    <span className="label">{KIND[c.modality] ?? c.modality}</span>
+                  </div>
+                  <div className="row-flex">
+                    <span className="label ellipsis grow">{urlOf(c)}</span>
+                    <span className="btns">
+                      <Btn onClick={() => void navigator.clipboard?.writeText(urlOf(c))}>Copy</Btn>
+                      {c.modelId && <Btn kind="danger" onClick={() => setDlg({ k: "stop", c })} disabled={c.readOnly || !!c.stopBlocked}>Stop</Btn>}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
       <Err>{omsg}</Err>
-      {apis.length > 0 && (
-        <>
-          <SectionHeading>endpoints</SectionHeading>
-          <Table
-            cols={[
-              { h: "model", c: (c: CardView) => c.name },
-              { h: "kind", c: (c) => KIND[c.modality] ?? c.modality },
-              { h: "machine", c: (c) => c.machine },
-              { h: "url", c: (c) => <span className="cut" style={{ maxWidth: "44ch" }}>{urlOf(c)}</span> },
-              {
-                h: " ",
-                c: (c) => (
-                  <span className="btns" onClick={(e) => e.stopPropagation()}>
-                    <Btn onClick={() => void navigator.clipboard?.writeText(urlOf(c))}>Copy</Btn>
-                    {c.modelId && <Btn kind="danger" onClick={() => setDlg({ k: "stop", c })} disabled={c.readOnly || !!c.stopBlocked}>Stop</Btn>}
-                  </span>
-                ),
-              },
-            ]}
-            rows={apis}
-            keyOf={(c) => c.key}
-          />
-        </>
-      )}
       <AgentsSection model={model} only="sessions" />
       {dlg?.k === "run" && (
         <Dialog title="Run model" onClose={() => setDlg(null)} wide>
