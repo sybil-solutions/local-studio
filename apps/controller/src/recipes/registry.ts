@@ -288,6 +288,7 @@ export const createRegistry = (ctx: Ctx): Registry => {
     }
   })();
   let current: LoadedCatalog | null = null;
+  let fetchedOnce = false;
   let inflight: Promise<LoadedCatalog> | null = null;
 
   const git = (args: string[], timeoutMs: number, cwd?: string) => ctx.exec(["git", "-C", cwd ?? dir, ...args], { timeoutMs, env: gitEnv });
@@ -330,7 +331,8 @@ export const createRegistry = (ctx: Ctx): Registry => {
       gone = f.code !== 0 && /couldn't find remote ref|not our ref/i.test(f.stderr);
     };
     let rev = await git(["rev-parse", "--verify", "--quiet", target], 10_000);
-    if (sync || rev.code !== 0 || Date.now() - lastFetchAt() > STALE_MS) {
+    if (sync || rev.code !== 0 || !fetchedOnce || Date.now() - lastFetchAt() > STALE_MS) {
+      fetchedOnce = true;
       await fetch();
       rev = await git(["rev-parse", "--verify", "--quiet", target], 10_000);
     }
