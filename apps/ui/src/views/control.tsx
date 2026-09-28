@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { type AgentLaunchResult, fmt, type RecipeRow } from "@local-studio/contracts/client";
-import { call } from "../api";
+import { call, get, post, via } from "../api";
 import { cancelLaunch, ConnectDialog, ExportDialog, RecipeDialog, StopDialog, type Target } from "../components/actions";
 import { Btn, Dialog, Err, Logo } from "../components/basics";
 import { TokenLine } from "../components/cards";
@@ -187,6 +187,7 @@ export const ControlPage = ({ sub, model }: { sub: string[]; model: string | nul
           {openBtn(c)}
           <Btn onClick={() => setDlg({ k: "agent" })}>New agent ›</Btn>
           {c.modelId && <Btn onClick={() => setDlg({ k: "export", c })}>Save config</Btn>}
+          {c.modelId && <Verify peerId={c.peerId} model={c.modelId} />}
           {stopBtn(c)}
         </div>
         {dialogs}
@@ -360,3 +361,41 @@ const Gone = ({ children }: { children: string }) => (
     </Row>
   </div>
 );
+
+type LabView = { id: string; phase: string; detail: string; gates: Record<string, boolean>; proof: { tps: number; prefill: number | null } | null };
+
+const Verify = ({ peerId, model }: { peerId: string | null; model: string }) => {
+  const [run, setRun] = useState<LabView | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!run || run.phase === "passed" || run.phase === "failed") return;
+    const t = setTimeout(async () => {
+      const r = await get<LabView>(via(peerId, `/api/lab/runs/${run.id}`));
+      if (r.ok) setRun(r.data);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [run, peerId]);
+  const startRun = async () => {
+    setErr(null);
+    const r = await post<LabView>(via(peerId, "/api/lab/verify"), { model });
+    if (r.ok) setRun(r.data);
+    else setErr(r.error);
+  };
+  const busy = !!run && run.phase !== "passed" && run.phase !== "failed";
+  return (
+    <>
+      <Btn onClick={() => void startRun()} disabled={busy}>
+        {busy ? "Verifying" : "Verify ›"}
+      </Btn>
+      {run && (
+        <span className={run.phase === "failed" ? "alert" : "label"}>
+          {Object.entries(run.gates)
+            .map(([g, ok]) => `${g} ${ok ? "✓" : "✗"}`)
+            .join(" · ")}
+          {run.proof ? ` · ${run.proof.tps} tok/s` : busy ? ` · ${run.detail}` : run.phase === "failed" && !Object.keys(run.gates).length ? run.detail : ""}
+        </span>
+      )}
+      <Err>{err}</Err>
+    </>
+  );
+};
