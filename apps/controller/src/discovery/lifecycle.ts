@@ -111,6 +111,7 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
   ]);
   const launches = new Map<string, LaunchProgress & { cancelled?: boolean; containerStarted?: boolean }>();
   const reserved = new Set<string>();
+  const aborts = new Map<string, AbortController>();
 
   const update = (id: string, patch: Partial<LaunchProgress>) => {
     const cur = launches.get(id);
@@ -259,7 +260,22 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
         const hf = await which("hf", [join(process.env.HOME ?? "", ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/Library/Frameworks/Python.framework/Versions/Current/bin"]);
         if (!hf) return fail(`weights ${dl.repository} are not here and the hf command is not installed; run: ${dl.argv.join(" ")}`);
         update(id, { phase: "weights", detail: `downloading ${dl.repository}`, percent: null });
-        const r = await ctx.exec([hf, ...dl.argv.slice(1)], { timeoutMs: 12 * 3600_000, env: { HF_HUB_ENABLE_HF_TRANSFER: "1" } });
+        const abort = new AbortController();
+        aborts.set(id, abort);
+        const watch = setInterval(() => {
+          if (!dl.dir || !dl.bytes) return;
+          void ctx.exec(["du", "-sk", dl.dir], { timeoutMs: 10_000 }).then((d) => {
+            const kb = Number(d.stdout.split(/\s+/)[0]);
+            if (!Number.isFinite(kb) || cur().phase !== "weights") return;
+            const got = kb * 1024;
+            update(id, { detail: `downloading ${dl.repository} · ${(got / 1e9).toFixed(1)} of ${(dl.bytes! / 1e9).toFixed(1)} GB`, percent: Math.min(99, Math.round((got / dl.bytes!) * 100)) });
+          });
+        }, 5000);
+        const r = await ctx.exec([hf, ...dl.argv.slice(1)], { timeoutMs: 12 * 3600_000, env: { HF_HUB_ENABLE_HF_TRANSFER: "1" }, signal: abort.signal }).finally(() => {
+          clearInterval(watch);
+          aborts.delete(id);
+        });
+        if (cur().cancelled) return;
         if (r.code !== 0) return fail(`download of ${dl.repository} failed: ${redact((r.stderr || r.stdout).trim().split("\n").at(-1) ?? "")}`);
       }
       if (cur().cancelled) return;
@@ -362,6 +378,7 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       const l = launches.get(launchId);
       if (!l || TERMINAL.has(l.phase) || ctx.config.readOnly) return false;
       l.cancelled = true;
+      aborts.get(launchId)?.abort();
       update(launchId, { phase: "cancelled", detail: "cancelled", percent: null });
       const pid = hostPids.get(launchId);
       if (pid && alive(pid))

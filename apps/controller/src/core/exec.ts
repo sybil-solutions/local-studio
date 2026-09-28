@@ -12,6 +12,7 @@ export interface ExecOptions {
   env?: Record<string, string | undefined>;
   cwd?: string;
   maxBytes?: number;
+  signal?: AbortSignal;
 }
 
 export const exec = async (cmd: string[], opts: ExecOptions): Promise<ExecResult> => {
@@ -28,6 +29,15 @@ export const exec = async (cmd: string[], opts: ExecOptions): Promise<ExecResult
   } catch (e) {
     return { code: null, stdout: "", stderr: String(e), timedOut: false, ms: 0 };
   }
+  opts.signal?.addEventListener(
+    "abort",
+    () => {
+      try {
+        proc.kill("SIGTERM");
+      } catch {}
+    },
+    { once: true },
+  );
   const max = opts.maxBytes ?? 16 * 1024 * 1024;
   const read = async (s: unknown): Promise<string> => {
     if (!(s instanceof ReadableStream)) return "";

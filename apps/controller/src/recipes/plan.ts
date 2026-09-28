@@ -6,7 +6,7 @@ import { availableKeys, fitFor, hardwareIds } from "./fit";
 import { type LoadedCatalog, normEngine, type V2Recipe } from "./registry";
 import { DEVICE_ENV, DIGEST_PINNED, ENV_KEY, FORBIDDEN_ARG, HttpError, REVISION_40 } from "./util";
 import { dropUnsetSecrets, fillWith, launchVars, unfilled } from "./vars";
-import type { ResolvedWeight, WeightIndex } from "./weights";
+import { hfHome, type ResolvedWeight, type WeightIndex } from "./weights";
 
 export interface PlanResult {
   plan: LaunchPlan;
@@ -125,10 +125,11 @@ export const buildPlan = (
   const addMount = (m: LaunchMount) => {
     if (!mounts.some((x) => x.target === m.target)) mounts.push(m);
   };
-  const downloads: { repository: string; argv: string[] }[] = [];
-  for (const w of weights) {
+  const downloads: NonNullable<LaunchPlan["downloads"]> = [];
+  for (const [i, w] of weights.entries()) {
     if (!w.present) {
-      if (w.hint?.startsWith("hf download ")) downloads.push({ repository: `${w.repository}@${w.revision.slice(0, 12)}`, argv: w.hint.split(" ") });
+      if (w.hint?.startsWith("hf download "))
+        downloads.push({ repository: `${w.repository}@${w.revision.slice(0, 12)}`, argv: w.hint.split(" "), dir: join(hfHome(), "hub", `models--${w.repository.replace("/", "--")}`), bytes: Math.round((raw.weights[i]?.sizeGb || recipe.sizeGb || 0) * 1e9) || undefined });
       else {
         const msg = w.source === "missing" && w.hint?.startsWith("/") ? w.hint : `weights ${w.repository}@${w.revision.slice(0, 12)} are not on this machine; run: ${w.hint}`;
         if (opts.strict) throw new HttpError(409, "WEIGHTS_MISSING", msg);

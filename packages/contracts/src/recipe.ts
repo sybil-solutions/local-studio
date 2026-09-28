@@ -134,7 +134,7 @@ export interface LaunchPlan {
   servedName: string;
   injected: string[];
   host?: HostPlan;
-  downloads?: { repository: string; argv: string[] }[];
+  downloads?: { repository: string; argv: string[]; dir?: string; bytes?: number }[];
   hostNetwork?: boolean;
   worker?: boolean;
 }
