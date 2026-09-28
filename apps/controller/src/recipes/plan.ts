@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import type { LaunchMount, LaunchPlan } from "@local-studio/contracts";
+import type { HostPlan, LaunchMount, LaunchPlan } from "@local-studio/contracts";
+import { withPort } from "../discovery/lifecycle";
 import type { Ctx, RuntimeView } from "../context";
 import { availableKeys, fitFor, hardwareIds } from "./fit";
 import { type LoadedCatalog, normEngine, type V2Recipe } from "./registry";
@@ -14,10 +15,24 @@ export interface PlanResult {
   scratchDir: string | null;
 }
 
+const gateHost = (r: V2Recipe, bad: (msg: string) => never): void => {
+  const h = r.host!;
+  if (!h.command.length || !h.command.every((a) => typeof a === "string")) bad("command must be a list of strings");
+  if (FORBIDDEN_ARG.test([...h.command, ...Object.values(h.env)].join(" "))) bad("enforce-eager / disabled CUDA graphs are not allowed");
+  for (const k of Object.keys(h.env)) if (!ENV_KEY.test(k)) bad(`environment key ${k} is invalid`);
+  for (const w of r.weights) {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(w.repository) || !REVISION_40.test(w.revision)) bad(`weights ${w.repository}@${w.revision} are not pinned`);
+    if (w.mountPath.startsWith("/") || w.mountPath.split("/").includes("..")) bad(`weights path ${w.mountPath} must stay inside the working directory`);
+  }
+  if (h.config && (h.config.at.startsWith("/") || h.config.at.split("/").includes(".."))) bad(`config path ${h.config.at} must stay inside the working directory`);
+  if (!Number.isInteger(h.port) || h.port < 1 || h.port > 65535) bad("port is invalid");
+};
+
 const gate = (r: V2Recipe): void => {
-  const bad = (msg: string) => {
+  const bad = (msg: string): never => {
     throw new HttpError(422, "RECIPE_GATE", `${r.id}: ${msg}`);
   };
+  if (r.host) return gateHost(r, bad);
   if (!r.local && !DIGEST_PINNED.test(r.image)) bad("image is not pinned by digest");
   if (!/^[\w./:@-]+$/.test(r.image)) bad(`image ${r.image} is invalid`);
   if (!(r.cards >= 1 && r.cards <= 8)) bad(`cards ${r.cards} out of range`);
@@ -130,6 +145,41 @@ export const buildPlan = (
     addMount({ source: scratchDir, target: raw.scratch, readOnly: false });
   }
 
+  if (raw.host) {
+    const cwd = join(ctx.config.dataDir, "run", recipeId);
+    const hostPort = hostPortFor(ctx, view);
+    const { argv, env } = withPort(raw.host.command, raw.host.env, raw.host.port, hostPort);
+    const host: HostPlan = {
+      command: argv,
+      cwd,
+      env,
+      pip: raw.host.pip,
+      files: raw.host.config ? [{ path: join(cwd, raw.host.config.at), text: raw.host.config.text }] : [],
+      links: weights.map((w) => ({ path: join(cwd, w.mountPath), target: w.hostPath })),
+      sysctl: raw.host.sysctl ?? {},
+      install: raw.host.install,
+      log: join(ctx.config.dataDir, "logs", `${recipeId}.log`),
+    };
+    const plan: LaunchPlan = {
+      recipeId,
+      containerName: `ls-${recipeId}`.slice(0, 120),
+      image: "",
+      entrypoint: null,
+      args: argv,
+      env,
+      mounts: [],
+      gpuUuids,
+      gpuKeys,
+      hostPort,
+      containerPort: hostPort,
+      shm: null,
+      labels: {},
+      servedName: raw.servedName,
+      injected: [],
+      host,
+    };
+    return { plan, weights, warnings, asset: null, scratchDir: null };
+  }
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(raw.launch.environment ?? {})) {
     if (DEVICE_ENV.has(k)) {

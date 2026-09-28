@@ -90,11 +90,13 @@ export const shlexSplit = (s: string): string[] => {
 
 export const load = (files: Record<string, string> | Map<string, string>): Tree => {
   const all = files instanceof Map ? files : new Map(Object.entries(files));
-  const tree: Tree = { cards: new Map(), engines: new Map(), launches: new Map(), files: new Map(), recipes: new Map(), models: {} };
+  const tree: Tree = { cards: new Map(), engines: new Map(), launches: new Map(), files: new Map(), recipes: new Map(), models: {}, builds: {} };
   for (const [path, text] of all) {
     const m = /^registry\/(cards|engines|launches|recipes)\/(.+)$/.exec(path);
     if (path === "registry/models.json") {
-      tree.models = (JSON.parse(text) as { models?: Record<string, Model> }).models ?? {};
+      const doc = JSON.parse(text) as { models?: Record<string, Model>; builds?: Tree["builds"] };
+      tree.models = doc.models ?? {};
+      tree.builds = doc.builds ?? {};
       continue;
     }
     if (!m) continue;
@@ -206,9 +208,27 @@ export const render = (tree: Tree, recipe: Recipe): Launch => {
     draft_block: s.draft === "mtp" ? "{draft_mode: mtp}" : "{}",
   };
   const sub = (t: string) => substitute(t, values);
-  const args = (p.args ?? []).flatMap((a) => (/^\$\{\w+\}$/.test(a) ? shlexSplit(sub(a)) : [sub(a)]));
+  const expand = (xs: string[]) => xs.flatMap((a) => (/^\$\{\w+\}$/.test(a) ? shlexSplit(sub(a)) : [sub(a)]));
+  const args = expand(p.args ?? []);
   const text = Array.isArray(p.config) && p.config.length ? `${p.config.map(sub).join("\n")}\n` : null;
   const [repo = "", revision = ""] = recipe.weights.split("@");
+  if (p.kind === "host")
+    return {
+      kind: "host",
+      command: expand(p.command ?? fail(`${p.id}: a host profile needs a command`)),
+      install: p.install ?? null,
+      pip: p.pip ?? [],
+      port: p.port,
+      env: Object.fromEntries(Object.entries(p.env ?? {}).map(([k, v]) => [k, sub(v)])),
+      weights: [{ repo, revision, at: sub(p.weights_at ?? fail(`${p.id}: a template profile needs weights_at`)), ...(p.weights_files ? { files: sub(p.weights_files) } : {}) }],
+      config: text !== null ? withSha(p.config_at ?? fail(`${p.id}: a config template needs config_at`), text) : null,
+      ctx,
+      seqs,
+      vision: Boolean(s.vision ?? false),
+      backend: p.backend ?? null,
+      cards: 1,
+      ...(p.wired_limit_reserve_mb !== undefined ? { sysctl: { "iogpu.wired_limit_mb": card(tree, recipe.card).vram_gb * 1024 - p.wired_limit_reserve_mb } } : {}),
+    };
   return {
     kind: "container",
     image: p.image ?? fail(`${p.id}: a template profile needs an image`),

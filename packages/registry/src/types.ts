@@ -41,6 +41,7 @@ export interface Profile {
   min_cuda?: number;
   weights?: Weight[];
   weights_at?: string;
+  weights_files?: string;
   config_at?: string;
   config?: string[] | { at: string; text: string } | { at: string; file: string } | null;
   defaults?: Record<string, Value>;
@@ -51,6 +52,9 @@ export interface Profile {
   install?: string | null;
   pip?: string[];
   wired_limit_reserve_mb?: number;
+  plugin?: { name?: string; family?: string; format?: string; servedName?: string; sizeGb?: number; minDriver?: string; serving?: { kvTokens?: number } };
+  ids?: Record<string, string>;
+  frozen_from?: string[];
 }
 
 export interface Proof {
@@ -135,6 +139,7 @@ export interface Tree {
   files: Map<string, string>;
   recipes: Map<string, Recipe>;
   models: Record<string, Model>;
+  builds: Record<string, { format: string; size_gb: number }>;
 }
 
 export const GATES = ["load", "chat", "reasoning", "tools", "context", "speed"] as const;

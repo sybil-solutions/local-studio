@@ -1,6 +1,10 @@
-import { readdirSync, statSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
 import type { LaunchPlan, LaunchProgress, RunningModel } from "@local-studio/contracts";
 import { migrate } from "../core/db";
+import { which } from "../core/exec";
 import { redact } from "../core/log";
 import type { Ctx, DockerInspect, LifecycleService, RuntimeView, Services } from "../context";
 import { imageInfo, inspectContainers, type Inspect } from "./docker";
@@ -68,6 +72,16 @@ export const dockerArgv = (plan: LaunchPlan, machineId: string): string[] => {
   return argv;
 };
 
+export const withPort = (argv: string[], env: Record<string, string>, from: number, to: number): { argv: string[]; env: Record<string, string> } => {
+  const out = [...argv];
+  for (let i = 0; i < out.length - 1; i++) if (/^--?port$/.test(out[i]!) && out[i + 1] === String(from)) out[i + 1] = String(to);
+  for (let i = 0; i < out.length; i++) {
+    const m = /^(--?port=)(\d+)$/.exec(out[i]!);
+    if (m && m[2] === String(from)) out[i] = `${m[1]}${to}`;
+  }
+  return { argv: out, env: Object.fromEntries(Object.entries(env).map(([k, v]) => [k, /(^|_)PORT$/.test(k) && v === String(from) ? String(to) : v])) };
+};
+
 const redactArgv = (argv: string[]): string =>
   redact(argv.map((a) => (/^[A-Z_][A-Z0-9_]*=/.test(a) && SECRET_KEY.test(a.split("=")[0] ?? "") ? `${a.split("=")[0]}=[redacted]` : a)).join(" "));
 
@@ -128,6 +142,97 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
     await ctx.exec(["docker", "rm", name], { timeoutMs: 15000 });
   };
 
+  const hostPids = new Map<string, number>();
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const tailOf = (path: string, lines: number): string => {
+    try {
+      return redact(readFileSync(path, "utf8").split("\n").slice(-lines).join("\n"));
+    } catch {
+      return "";
+    }
+  };
+
+  const venvFor = async (id: string, pip: string[]): Promise<string | null> => {
+    if (!pip.length) return null;
+    const dir = join(ctx.config.dataDir, "venvs", createHash("sha256").update(pip.join("\n")).digest("hex").slice(0, 12));
+    if (existsSync(join(dir, ".ready"))) return dir;
+    const py = await which("python3", ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]);
+    if (!py) throw new Error("python3 is not installed; the engine's packages need it");
+    update(id, { phase: "pulling", detail: `python3 -m venv (${pip.length} pinned packages)` });
+    const v = await ctx.exec([py, "-m", "venv", dir], { timeoutMs: 180_000 });
+    if (v.code !== 0) throw new Error(`venv failed: ${redact(v.stderr.trim().split("\n").at(-1) ?? "")}`);
+    update(id, { detail: `pip install ${pip.join(" ")}` });
+    const i = await ctx.exec([join(dir, "bin", "pip"), "install", "--disable-pip-version-check", ...pip], { timeoutMs: 60 * 60 * 1000 });
+    if (i.code !== 0) throw new Error(`pip install failed: ${redact((i.stderr || i.stdout).trim().split("\n").at(-1) ?? "")}`);
+    writeFileSync(join(dir, ".ready"), `${pip.join("\n")}\n`);
+    return dir;
+  };
+
+  const runHost = async (id: string, plan: LaunchPlan, t0: number, fail: (msg: string) => void) => {
+    const h = plan.host!;
+    const cur = () => launches.get(id)!;
+    const venv = await venvFor(id, h.pip);
+    if (cur().cancelled) return;
+    mkdirSync(h.cwd, { recursive: true });
+    for (const f of h.files) {
+      mkdirSync(dirname(f.path), { recursive: true });
+      writeFileSync(f.path, f.text);
+    }
+    for (const l of h.links) {
+      mkdirSync(dirname(l.path), { recursive: true });
+      try {
+        if (lstatSync(l.path).isSymbolicLink()) unlinkSync(l.path);
+      } catch {}
+      if (!existsSync(l.path)) symlinkSync(l.target, l.path);
+    }
+    const [head = "", ...rest] = h.command;
+    const bin = venv && /^python3?$/.test(head) ? join(venv, "bin", "python3") : isAbsolute(head) ? head : head.includes("/") ? join(h.cwd, head) : await which(head, [...(venv ? [join(venv, "bin")] : []), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"]);
+    if (!bin || !existsSync(bin)) return fail(`${head} is not installed here${h.install ? `; install: ${h.install}` : ""}`);
+    if (ctx.config.platform === "darwin")
+      for (const [k, want] of Object.entries(h.sysctl)) {
+        const cur = Number((await ctx.exec(["sysctl", "-n", k], { timeoutMs: 3000 })).stdout.trim());
+        if (!(cur >= want)) ctx.log.warn(`launch ${plan.recipeId}: ${k} is ${cur || 0}; the recipe was validated with ${want} (sudo sysctl ${k}=${want})`);
+      }
+    mkdirSync(dirname(h.log), { recursive: true });
+    const fd = openSync(h.log, "a");
+    update(id, { phase: "starting", detail: `${head} ${rest.slice(0, 3).join(" ")}` });
+    ctx.log.info(`launch ${plan.recipeId}: ${redactArgv([bin, ...rest])} (cwd ${h.cwd})`);
+    const env = { ...process.env, ...h.env, ...(venv ? { PATH: `${join(venv, "bin")}:${process.env.PATH ?? ""}`, VIRTUAL_ENV: venv } : {}) };
+    const child = spawn(bin, rest, { cwd: h.cwd, env, detached: true, stdio: ["ignore", fd, fd] });
+    closeSync(fd);
+    child.unref();
+    const pid = child.pid;
+    if (!pid) return fail(`could not start ${head}`);
+    hostPids.set(id, pid);
+    const expected = await expectedSeconds(plan.recipeId);
+    const base = `http://127.0.0.1:${plan.hostPort}`;
+    update(id, { phase: "loading", detail: `waiting for ${base}/v1/models`, percent: 0, modelId: `pid:${pid}` });
+    const deadline = Date.now() + 60 * 60 * 1000;
+    while (Date.now() < deadline) {
+      if (cur().cancelled) return;
+      await Bun.sleep(3000);
+      if (!alive(pid)) return fail(firstErrorLine(tailOf(h.log, 80)));
+      const m = await get(ctx, `${base}/v1/models`);
+      if (m.status === 200 && parseModels(m.body)?.length) {
+        const secs = (Date.now() - t0) / 1000;
+        ctx.db.query("INSERT INTO launch_history (recipe_id, started_at, load_seconds) VALUES (?, ?, ?)").run(plan.recipeId, t0, secs);
+        update(id, { phase: "ready", percent: 100, detail: `ready after ${Math.round(secs)} s` });
+        void d.rescan();
+        return;
+      }
+      const elapsed = (Date.now() - t0) / 1000;
+      update(id, { percent: Math.min(95, Math.round((elapsed / expected) * 100)), detail: `loading ${Math.round(elapsed)} s of ~${Math.round(expected)} s` });
+    }
+    fail("not ready after 60 min");
+  };
+
   const run = async (id: string, plan: LaunchPlan) => {
     const cur = () => launches.get(id)!;
     const fail = (msg: string) => update(id, { phase: "failed", error: msg, detail: msg, percent: null });
@@ -148,6 +253,10 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       if (!hostPort) return fail(`no free port in ${lo}-${hi}`);
       const final: LaunchPlan = { ...plan, gpuUuids: uuids, hostPort };
       if (cur().cancelled) return;
+      if (plan.host) {
+        const moved = hostPort === plan.hostPort ? { argv: plan.host.command, env: plan.host.env } : withPort(plan.host.command, plan.host.env, plan.hostPort, hostPort);
+        return await runHost(id, { ...final, host: { ...plan.host, command: moved.argv, env: moved.env } }, t0, fail);
+      }
       update(id, { phase: "pulling", detail: `checking image ${plan.image}` });
       if (!(await imageInfo(ctx, plan.image))) {
         update(id, { detail: `docker pull ${plan.image}` });
@@ -233,6 +342,11 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       if (!l || TERMINAL.has(l.phase) || ctx.config.readOnly) return false;
       l.cancelled = true;
       update(launchId, { phase: "cancelled", detail: "cancelled", percent: null });
+      const pid = hostPids.get(launchId);
+      if (pid && alive(pid))
+        try {
+          process.kill(-pid, "SIGTERM");
+        } catch {}
       void (async () => {
         const [c] = await inspectContainers(ctx, [l.modelId ?? ""]);
         if (c && c.Config.Labels?.["local-studio.managed"] === "1" && c.Config.Labels["local-studio.machine"] === ctx.identity.machineId)

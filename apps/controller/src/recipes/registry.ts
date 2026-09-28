@@ -1,9 +1,12 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { Engine, Recipe, RecipeCatalog, RecipeProof } from "@local-studio/contracts";
+import { type Card, type HostLaunch, type Launch, load as loadTree, type Profile, profile as profileOf, recipePath, type Recipe as RegRecipe, render as renderLaunch, servedName, type Tree } from "@local-studio/registry";
 import type { Ctx } from "../context";
 import seccompIoUring from "./seccomp-default-plus-io_uring.json";
-import { argValue, HttpError, RECIPE_ID } from "./util";
+import { HttpError, RECIPE_ID } from "./util";
+
+export type { Card, Profile, RegRecipe, Tree };
 
 export interface V2Weights {
   repository: string;
@@ -39,6 +42,7 @@ export interface V2Recipe {
   launch: { entrypoint: string | null; arguments: string[]; environment: Record<string, string>; port: number; shm: string | null; docker?: string[]; mounts?: V2Mount[] };
   serving: { ctxTokens: number; kvTokens: number };
   capabilities: Record<string, boolean | undefined>;
+  host?: HostLaunch;
   hardwareId?: string;
   local?: boolean;
   saved?: boolean;
@@ -48,90 +52,6 @@ export interface V2Recipe {
   machines?: number;
   flags?: string[];
   proof?: RecipeProof | null;
-}
-
-export interface Card {
-  id: string;
-  name: string;
-  vendor: string;
-  backend: string;
-  vram_gb: number;
-  match: { backend: string; name: string; names: string[]; vramGb: number };
-}
-
-export interface ProfileWeight {
-  repo: string;
-  revision: string;
-  at: string;
-  layout?: "dir" | "hub";
-  files?: string | null;
-}
-
-export interface Profile {
-  id: string;
-  kind?: string;
-  engine?: string;
-  about?: string;
-  image?: string;
-  backend?: string | null;
-  port: number;
-  entrypoint?: string | null;
-  args?: string[];
-  env?: Record<string, string>;
-  shm?: string | null;
-  weights?: ProfileWeight[];
-  weights_at?: string;
-  config_at?: string;
-  config?: string[] | { at: string; text: string } | null;
-  defaults?: Record<string, string | number | boolean>;
-  ctx: number;
-  seqs?: number;
-  vision?: boolean;
-  cards?: number;
-  flags?: string[];
-  machines?: number;
-  plugin?: { name: string; family: string; format: string; servedName: string; sizeGb: number; minDriver: string; capabilities: Record<string, boolean>; serving: { kvTokens: number } };
-  ids?: Record<string, string>;
-  frozen_from?: string[];
-}
-
-export interface RegRecipe {
-  model: string;
-  weights: string;
-  engine: string;
-  set: Record<string, string | number | boolean>;
-  card: string;
-  proof: RecipeProof[];
-}
-
-export interface Rendered {
-  image: string;
-  entrypoint: string | null;
-  args: string[];
-  env: Record<string, string>;
-  port: number;
-  shm: string | null;
-  weights: ProfileWeight[];
-  config: { at: string; text: string } | null;
-  ctx: number;
-  seqs: number;
-  vision: boolean;
-  cards: number;
-  machines: number;
-  flags: string[];
-}
-
-interface ModelsDoc {
-  models: Record<string, { name: string; family: string }>;
-  builds: Record<string, { format: string; size_gb: number }>;
-}
-
-export interface Tree {
-  commit: string | null;
-  cards: Map<string, Card>;
-  profiles: Map<string, Profile>;
-  recipes: Map<string, RegRecipe>;
-  models: ModelsDoc;
 }
 
 export interface LoadedCatalog {
@@ -150,38 +70,13 @@ interface CacheFile {
 
 const STALE_MS = 6 * 3600_000;
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-const WANTED = /^(registry\/(models\.json|cards\/[\w.-]+\/[\w.-]+\.json|engines\/[\w.-]+\.json|recipes\/[\w.-]+\/[\w.-]+\/[\w.-]+\.json)|dist\/catalog\.json)$/;
+const WANTED = /^(registry\/(models\.json|cards\/[\w.-]+\/[\w.-]+\.json|(engines|launches)\/[\w.-]+\.[\w]+|recipes\/[\w.-]+\/[\w.-]+\/[\w.-]+\.json)|dist\/catalog\.json)$/;
 const MIN_DRIVER: Record<string, string> = { tabbyapi: "575.0", sglang: "570.0", vllm: "570.0", "llama.cpp": "535.0" };
 export const SECCOMP: Record<string, unknown> = { "seccomp-default-plus-io_uring.json": seccompIoUring };
 
-const ENGINE: Record<string, Engine> = { vllm: "vllm", sglang: "sglang", "llama-cpp": "llamacpp", "llama.cpp": "llamacpp", llamacpp: "llamacpp", tabbyapi: "tabby", tabby: "tabby", mlx: "mlx" };
+const ENGINE: Record<string, Engine> = { vllm: "vllm", sglang: "sglang", "llama-cpp": "llamacpp", "llama.cpp": "llamacpp", llamacpp: "llamacpp", tabbyapi: "tabby", tabby: "tabby", mlx: "mlx", "mlx-vlm": "mlx", "mlx-lm": "mlx" };
 
 export const normEngine = (e: string): Engine | string => ENGINE[e.toLowerCase()] ?? e;
-
-const tpl = (s: string, v: Record<string, string>): string =>
-  s.replace(/\$(?:(\$)|\{(\w+)\}|(\w+))/g, (_m, d: string | undefined, a: string | undefined, b: string | undefined) => {
-    if (d) return "$";
-    const k = a ?? b ?? "";
-    const x = v[k];
-    if (x === undefined) throw new Error(`template value ${k} is missing`);
-    return x;
-  });
-
-export const render = (r: RegRecipe, p: Profile): Rendered => {
-  const common = { image: p.image ?? "", entrypoint: p.entrypoint ?? null, args: p.args ?? [], port: p.port, shm: p.shm ?? null, flags: p.flags ?? [], machines: p.machines ?? 1 };
-  if (!p.defaults) {
-    const config = p.config && !Array.isArray(p.config) ? p.config : null;
-    return { ...common, env: p.env ?? {}, weights: p.weights ?? [], config, ctx: p.ctx, seqs: p.seqs ?? 1, vision: !!p.vision, cards: p.cards ?? 1 };
-  }
-  const s = { ...p.defaults, ...r.set };
-  const [repo = "", rev = ""] = r.weights.split("@");
-  const name = `${repo.split("/")[1] ?? repo}-${rev.slice(0, 8)}`;
-  const ctx = Number(s.ctx);
-  const seqs = Number(s.seqs);
-  const v: Record<string, string> = { ...Object.fromEntries(Object.entries(s).map(([k, x]) => [k, String(x)])), name, cache_tokens: String(ctx * seqs + 1024 * seqs), draft_block: s.draft === "mtp" ? "{draft_mode: mtp}" : "{}" };
-  const text = `${(Array.isArray(p.config) ? p.config : []).map((l) => tpl(l, v)).join("\n")}\n`;
-  return { ...common, env: {}, weights: [{ repo, revision: rev, at: tpl(p.weights_at ?? "", { name }), layout: "dir" }], config: { at: p.config_at ?? "", text }, ctx, seqs, vision: s.vision === true || s.vision === "true", cards: 1 };
-};
 
 export const dockerFlags = (flags: string[], dataDir: string): string[] =>
   flags.map((f) => {
@@ -204,16 +99,17 @@ export const writeSeccomp = (dataDir: string, opts: string[]): void => {
 
 const proofOwner = (p: RecipeProof | undefined, prof: Profile): boolean => p?.on === "owner" || /\bowner'?s?\b/i.test(prof.about ?? "");
 
-export const toV2 = (key: string, r: RegRecipe, p: Profile, models: ModelsDoc, dataDir: string): V2Recipe => {
-  const L = render(r, p);
-  const m = models.models[r.model];
-  const b = models.builds[r.weights];
+export const toV2 = (key: string, r: RegRecipe, L: Launch, p: Profile, tree: Pick<Tree, "models" | "builds">, dataDir: string): V2Recipe => {
+  const m = tree.models[r.model];
+  const b = tree.builds[r.weights];
   const x = p.plugin;
   const stem = key.split("/").pop() ?? key;
   const proof = r.proof[0] ?? null;
   const gates = proof?.gates ?? "";
   const engine = p.engine ?? r.engine.split("@")[0] ?? "";
-  const served = x?.servedName ?? (p.defaults ? basename(L.weights[0]?.at ?? r.model) : argValue(L.args, "--served-model-name") ?? L.env.SERVED_MODEL_NAME ?? argValue(L.args, "--alias") ?? r.model);
+  const served = x?.servedName ?? servedName(L) ?? (p.defaults ? basename(L.weights[0]?.at ?? r.model) : r.model);
+  const size = x?.sizeGb ?? b?.size_gb ?? 0;
+  const entry = L.kind === "container" && Array.isArray(L.entrypoint) ? L.entrypoint : null;
   return {
     id: p.ids?.[r.card] ?? `${stem}.${r.card}`,
     name: x?.name ?? m?.name ?? r.model,
@@ -221,47 +117,31 @@ export const toV2 = (key: string, r: RegRecipe, p: Profile, models: ModelsDoc, d
     format: x?.format ?? b?.format ?? "",
     engine,
     servedName: served,
-    sizeGb: x?.sizeGb ?? b?.size_gb ?? 0,
+    sizeGb: size,
     cards: L.cards,
-    image: L.image,
-    minDriver: x?.minDriver ?? (p.backend === "nvidia" ? MIN_DRIVER[engine] ?? "" : ""),
-    weights: L.weights.map((w, i) => ({ repository: w.repo, revision: w.revision, sizeGb: i === 0 ? x?.sizeGb ?? b?.size_gb ?? 0 : 0, layout: w.layout ?? "dir", mountPath: w.at, dir: "", files: w.files ?? "" })),
+    image: L.kind === "container" ? (L.image ?? "") : "",
+    minDriver: x?.minDriver ?? (L.backend === "nvidia" && L.kind === "container" ? (MIN_DRIVER[engine] ?? "") : ""),
+    weights: L.weights.map((w, i) => ({ repository: w.repo, revision: w.revision, sizeGb: i === 0 ? size : 0, layout: w.layout ?? "dir", mountPath: w.at, dir: "", files: w.files ?? "" })),
     asset: L.config ? { name: basename(L.config.at), mountPath: L.config.at, text: L.config.text } : null,
     scratch: null,
-    launch: { entrypoint: L.entrypoint, arguments: L.args, environment: L.env, port: L.port, shm: L.shm, docker: dockerFlags(L.flags.filter((f) => !/^--network\b/.test(f)), dataDir) },
-    serving: { ctxTokens: L.ctx, kvTokens: x?.serving.kvTokens ?? (p.defaults ? L.ctx * L.seqs + 1024 * L.seqs : 0) },
+    launch:
+      L.kind === "container"
+        ? { entrypoint: entry ? (entry[0] ?? null) : ((L.entrypoint as string | null) ?? null), arguments: entry ? [...entry.slice(1), ...L.args] : L.args, environment: L.env, port: L.port, shm: L.shm, docker: dockerFlags(L.flags.filter((f) => !/^--network\b/.test(f)), dataDir) }
+        : { entrypoint: null, arguments: L.command, environment: L.env, port: L.port, shm: null },
+    serving: { ctxTokens: L.ctx, kvTokens: x?.serving?.kvTokens ?? (p.defaults ? L.ctx * L.seqs + 1024 * L.seqs : 0) },
     capabilities: { chat: true, reasoning: gates.includes("reasoning"), tools: gates.includes("tools"), vision: L.vision },
+    ...(L.kind === "host" ? { host: L } : {}),
     hardwareId: r.card,
     origin: proofOwner(proof ?? undefined, p) ? "yours" : "registry",
     key,
     profile: p.id,
-    machines: L.machines,
-    flags: L.flags,
+    machines: L.kind === "container" ? L.machines : 1,
+    flags: L.kind === "container" ? L.flags : [],
     proof,
   };
 };
 
-export const recipeFile = (r: RegRecipe, p: Profile, card: Card): string => `registry/recipes/${card.vendor}/${r.card}/${r.model}.${p.engine ?? r.engine.split("@")[0]}.${Math.floor(render(r, p).ctx / 1024)}k.json`;
-
-const parseTree = (files: Record<string, string>, commit: string | null): Tree => {
-  const cards = new Map<string, Card>();
-  const profiles = new Map<string, Profile>();
-  const recipes = new Map<string, RegRecipe>();
-  let models: ModelsDoc = { models: {}, builds: {} };
-  for (const [path, text] of Object.entries(files)) {
-    let doc: unknown;
-    try {
-      doc = JSON.parse(text);
-    } catch {
-      continue;
-    }
-    if (path === "registry/models.json") models = { models: {}, builds: {}, ...(doc as Partial<ModelsDoc>) };
-    else if (path.startsWith("registry/cards/")) cards.set((doc as Card).id, doc as Card);
-    else if (path.startsWith("registry/engines/")) profiles.set((doc as Profile).id, doc as Profile);
-    else if (path.startsWith("registry/recipes/")) recipes.set(path.slice("registry/recipes/".length, -".json".length), doc as RegRecipe);
-  }
-  return { commit, cards, profiles, recipes, models };
-};
+export const recipeFile = (tree: Tree, r: RegRecipe): string => recipePath(tree, r, renderLaunch(tree, r));
 
 const picksOf = (files: Record<string, string>): Set<string> => {
   try {
@@ -295,39 +175,49 @@ export const toRecipe = (r: V2Recipe, hardwareId: string, recommended: boolean):
     caps: { chat: caps.chat, reasoning: caps.reasoning, tools: caps.tools, vision: caps.vision, video: caps.video },
     recommended,
     ...(r.local || r.saved ? { source: "local" as const } : {}),
-    origin: r.local || r.saved ? "yours" : r.origin ?? "registry",
+    origin: r.local || r.saved ? "yours" : (r.origin ?? "registry"),
     key: r.key ?? null,
     profile: r.profile ?? null,
     machines: r.machines ?? 1,
     flags: r.flags ?? [],
     proof: r.proof ?? null,
+    runtime: r.host ? "host" : "container",
   };
 };
 
 const build = (ctx: Ctx, cache: CacheFile, source: string): LoadedCatalog => {
-  const tree = parseTree(cache.files, cache.commit);
+  const tree = loadTree(cache.files);
   const picks = picksOf(cache.files);
   const raw = new Map<string, V2Recipe>();
   const recipes: Recipe[] = [];
-  let skipped = 0;
-  for (const [key, r] of [...tree.recipes].sort(([a], [b]) => a.localeCompare(b))) {
-    const p = tree.profiles.get(r.engine?.split("@")[0] ?? "");
-    const digest = r.engine?.split("@")[1] ?? "";
-    if (!p || p.kind === "host" || !tree.cards.has(r.card) || (p.image && digest && !(p.image.split("@sha256:")[1] ?? "").startsWith(digest))) {
-      skipped++;
-      continue;
-    }
+  const skipped = new Map<string, number>();
+  const skip = (why: string) => skipped.set(why, (skipped.get(why) ?? 0) + 1);
+  for (const [path, r] of [...tree.recipes].sort(([a], [b]) => a.localeCompare(b))) {
+    const key = path.slice("registry/recipes/".length, -".json".length);
     try {
-      const v = toV2(key, r, p, tree.models, ctx.config.dataDir);
+      if (!tree.cards.has(r.card)) {
+        skip("unknown card");
+        continue;
+      }
+      const p = profileOf(tree, r.engine);
+      const L = renderLaunch(tree, r);
+      if (L.kind === "container" && !L.image) {
+        skip("image built from source");
+        continue;
+      }
+      if (L.kind === "container" && L.machines > 1) {
+        skip("runs across several machines");
+        continue;
+      }
+      const v = toV2(key, r, L, p, tree, ctx.config.dataDir);
       if (!RECIPE_ID.test(v.id) || raw.has(v.id)) continue;
       raw.set(v.id, v);
-      recipes.push(toRecipe(v, r.card, picks.has(key) && v.cards === 1 && (v.machines ?? 1) === 1));
+      recipes.push(toRecipe(v, r.card, picks.has(key) && v.cards === 1));
     } catch (e) {
-      skipped++;
-      ctx.log.warn(`recipes: ${key}: ${e instanceof Error ? e.message : String(e)}`);
+      skip(e instanceof Error ? e.message.replace(/^[^:]+: /, "") : String(e));
     }
   }
-  if (skipped) ctx.log.info(`recipes: ${skipped} registry recipe(s) are not container launches on a known card and are not listed`);
+  if (skipped.size) ctx.log.info(`recipes: ${recipes.length} listed; skipped ${[...skipped].map(([w, n]) => `${n} (${w})`).join(", ")}`);
   const hardware = [...tree.cards.values()].sort((a, b) => a.id.localeCompare(b.id)).map((c) => ({ hardwareId: c.id, match: c.match }));
   return { catalog: { source, ref: cache.ref, registryCommit: cache.commit, generatedAt: null, fetchedAt: cache.fetchedAt, hardware, recipes }, raw, tree };
 };
@@ -346,7 +236,9 @@ const readLocal = (ctx: Ctx, dir: string): V2Recipe[] => {
     try {
       const doc = JSON.parse(readFileSync(join(dir, n), "utf8")) as V2Recipe | V2Recipe[] | { recipe: RegRecipe; profile: Profile; key: string };
       if (!Array.isArray(doc) && "recipe" in doc && "profile" in doc) {
-        out.push({ ...toV2(doc.key, doc.recipe, doc.profile, { models: {}, builds: {} }, ctx.config.dataDir), saved: true, origin: "yours" });
+        const t = loadTree({});
+        t.launches.set(doc.profile.id, doc.profile);
+        out.push({ ...toV2(doc.key, doc.recipe, renderLaunch(t, { ...doc.recipe, engine: doc.profile.id }), doc.profile, t, ctx.config.dataDir), saved: true, origin: "yours" });
         continue;
       }
       for (const r of Array.isArray(doc) ? doc : [doc as V2Recipe]) {

@@ -66,6 +66,7 @@ export interface Recipe {
   machines?: number;
   flags?: string[];
   proof?: RecipeProof | null;
+  runtime?: "container" | "host";
 }
 
 export interface RecipeCatalog {
@@ -127,6 +128,19 @@ export interface LaunchPlan {
   labels: Record<string, string>;
   servedName: string;
   injected: string[];
+  host?: HostPlan;
+}
+
+export interface HostPlan {
+  command: string[];
+  cwd: string;
+  env: Record<string, string>;
+  pip: string[];
+  files: { path: string; text: string }[];
+  links: { path: string; target: string }[];
+  sysctl: Record<string, number>;
+  install: string | null;
+  log: string;
 }
 
 export type LaunchPhase = "planning" | "weights" | "pulling" | "starting" | "loading" | "ready" | "failed" | "cancelled";

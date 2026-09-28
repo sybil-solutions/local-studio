@@ -3,7 +3,8 @@ import { basename, join } from "node:path";
 import type { RecipeExport, RecipeProof, RunningModel } from "@local-studio/contracts";
 import type { Ctx, DockerInspect, Services } from "../context";
 import { hardwareOf } from "./fit";
-import { type Profile, type ProfileWeight, type Registry, type RegRecipe, recipeFile, SECCOMP } from "./registry";
+import type { Weight as ProfileWeight } from "@local-studio/registry";
+import { type Profile, type Registry, type RegRecipe, recipeFile, SECCOMP } from "./registry";
 import { argValue, DEVICE_ENV, DIGEST_PINNED, FORBIDDEN_ARG, HttpError, REVISION_40, SECRET_ENV, scrubArgv, slug, stableJson } from "./util";
 import { hfRevisionOf, readMap } from "./weights";
 
@@ -157,8 +158,8 @@ export const createExporter = (ctx: Ctx, svc: Services, registry: Registry): Exp
     port ??= Number(argValue(args, "--port")) || m.port;
 
     const engine = ENGINE_NAME[m.engine] ?? m.engine;
-    const model = tree?.models.models[m.primaryModel] ? m.primaryModel : slug(m.primaryModel);
-    if (!tree?.models.models[model]) warnings.push(`${model} is not in registry/models.json; add it there for the catalog to name it`);
+    const model = tree?.models[m.primaryModel] ? m.primaryModel : slug(m.primaryModel);
+    if (!tree?.models[model]) warnings.push(`${model} is not in registry/models.json; add it there for the catalog to name it`);
     const ctxTokens = m.contextWindow ?? (Number(argValue(args, "--max-model-len", "--context-length", "--ctx-size", "-c")) || 0);
     if (!ctxTokens) refusals.push("the context window is not known");
     const cards = gpus.length || 1;
@@ -190,10 +191,10 @@ export const createExporter = (ctx: Ctx, svc: Services, registry: Registry): Exp
       ...(flags.length ? { flags } : {}),
       frozen_from: [`local-studio:${machine}/${m.runtime.containerName.replace(/^\//, "")}`],
     };
-    const same = tree ? [...tree.profiles.values()].find((p) => sameLaunch(p, frozen)) : undefined;
+    const same = tree ? [...tree.launches.values()].find((p) => sameLaunch(p, frozen)) : undefined;
     const base = `${engine}-${model}-${Math.floor(ctxTokens / 1024)}k${cards > 1 ? `-tp${cards}` : ""}`.toLowerCase().replace(/[^a-z0-9.]+/g, "-");
     let name = same?.id ?? base;
-    for (let n = 2; !same && tree?.profiles.has(name); n++) name = `${base}-v${n}`;
+    for (let n = 2; !same && (tree?.launches.has(name) || tree?.engines.has(name)); n++) name = `${base}-v${n}`;
     const profile: Profile = same ?? { ...frozen, id: name };
 
     const today = new Date().toISOString().slice(0, 10);
@@ -202,10 +203,11 @@ export const createExporter = (ctx: Ctx, svc: Services, registry: Registry): Exp
     const recipe: RegRecipe = { model, weights: main ? `${main.repo}@${main.revision}` : "baked-into-image", engine: `${profile.id}@${image.split("@sha256:")[1]?.slice(0, 12) ?? "none"}`, set: {}, card: card?.id ?? cardIds[0] ?? "unknown", proof: [proof] };
     const recipeText = `${JSON.stringify(recipe)}\n`;
     if (recipeText.length > 1024) refusals.push(`the recipe is ${recipeText.length} bytes; the registry allows 1024`);
-    const recipePath = card ? recipeFile(recipe, profile, card) : `registry/recipes/unknown/${recipe.card}/${model}.${engine}.${Math.floor(ctxTokens / 1024)}k.json`;
+    const withProfile = tree ? { ...tree, launches: new Map([...tree.launches, [profile.id, profile]]) } : null;
+    const recipePath = card && withProfile ? recipeFile(withProfile, recipe) : `registry/recipes/unknown/${recipe.card}/${model}.${engine}.${Math.floor(ctxTokens / 1024)}k.json`;
     const files: Record<string, string> = { [recipePath]: recipeText };
-    if (!same) files[`registry/engines/${profile.id}.json`] = `${JSON.stringify(profile, null, 2)}\n`;
-    if (tree?.recipes.has(recipePath.slice("registry/recipes/".length, -".json".length))) warnings.push(`${recipePath} exists in the registry; saving replaces its proof`);
+    if (!same) files[`registry/launches/${profile.id}.json`] = `${JSON.stringify(profile, null, 2)}\n`;
+    if (tree?.recipes.has(recipePath)) warnings.push(`${recipePath} exists in the registry; saving replaces its proof`);
 
     const key = recipePath.slice("registry/recipes/".length, -".json".length);
     const id = `${key.split("/").pop()}.${recipe.card}`;

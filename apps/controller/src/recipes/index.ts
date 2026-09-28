@@ -4,6 +4,7 @@ import type { FitBody, LaunchPreview, RecipeCatalog, SelectionFit } from "@local
 import type { Ctx, Module, RecipeService, Services } from "../context";
 import { migrate } from "../core/db";
 import { createExporter } from "./export";
+import { createLab } from "./lab";
 import { buildRows, fitSelection, hardwareIds, type SelectedMachine, servingModel, stopsFor } from "./fit";
 import { buildPlan } from "./plan";
 import { createPrOpener } from "./pr";
@@ -144,7 +145,7 @@ export const createRecipes = (ctx: Ctx, svc: Services): Module<RecipeService> =>
 
   return {
     service,
-    routes: recipeRoutes(service, internal),
+    routes: recipeRoutes(service, internal).route("/", createLab(ctx, svc).routes),
     start: () => {
       registry.load().catch((e) => ctx.log.warn(`recipes: initial registry load failed: ${e instanceof Error ? e.message : String(e)}`));
     },

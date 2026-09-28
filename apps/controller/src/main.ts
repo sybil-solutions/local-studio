@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { runAgentCli } from "./agents";
+import { CLI_USAGE, runCli } from "./cli";
 import { createApp } from "./app";
 import { loadConfig } from "./core/config";
 import { errText } from "./core/log";
@@ -15,7 +16,8 @@ const USAGE = `local-studio <command>
   agent   run <sessionId> [--print] [--home DIR]
   key     [--home DIR]                       print the admin key
   key     --federation [--actions] [--home DIR]  issue a scoped key for a hub (read + /v1; --actions adds launch/stop/cancel/export)
-  version`;
+  version
+${CLI_USAGE}`;
 
 const serve = async (argv: string[]): Promise<number> => {
   const config = loadConfig(argv);
@@ -84,6 +86,17 @@ const main = async (): Promise<number> => {
       await app.stop();
       return 0;
     }
+    case "probe":
+    case "check":
+    case "render":
+    case "try":
+    case "verify":
+      try {
+        return await runCli(cmd, rest);
+      } catch (e) {
+        console.error(e instanceof Error ? e.message : String(e));
+        return 2;
+      }
     case "version":
       console.log(loadConfig(rest).version);
       return 0;
