@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { type AgentLaunchResult, fmt, type RecipeRow } from "@local-studio/contracts/client";
 import { call, get, post, via } from "../api";
-import { cancelLaunch, ConnectDialog, ExportDialog, RecipeDialog, StopDialog, type Target } from "../components/actions";
-import { Btn, Dialog, Err, Logo } from "../components/basics";
+import { cancelLaunch, ExportDialog, RecipeDialog, StopDialog, type Target } from "../components/actions";
+import { Btn, Err, Logo } from "../components/basics";
 import { TokenLine } from "../components/cards";
-import { H, Meter, Row, Sum } from "../components/panel";
-import { RunDialog } from "../components/run";
+import { H, Item, Meter, Row, Sum } from "../components/panel";
+import { BarMark } from "../components/basics";
 import { aggOf, type CardView, gpuRow, homeCards, type MachineView, machines, mergeRecipes, resFig, resOf, resText } from "../model/view";
 import { useStore } from "../store";
-import { AgentsSection, useDefaultHarness } from "./agents";
+import { useDefaultHarness } from "./agents";
 
 type Slot = { n: number; gpu: string; recipe: RecipeRow };
 type Avail = { key: string; m: MachineView; what: string; state: string; slot: Slot | null };
@@ -45,18 +45,15 @@ const availOf = (m: MachineView, recipes: RecipeRow[]): Avail[] => {
   return rows;
 };
 
-export const ControlPage = ({ sub, model }: { sub: string[]; model: string | null }) => {
+export const ControlPage = ({ sub }: { sub: string[] }) => {
   const fleet = useStore((s) => s.fleet);
   const live = useStore((s) => s.launches);
   const recipes = useStore((s) => s.recipes);
   const engines = useStore((s) => s.engines);
   const error = useStore((s) => s.error);
-  const [dlg, setDlg] = useState<{ k: "stop" | "export"; c: CardView } | { k: "recipe"; id: string } | { k: "connect" } | { k: "agent" } | { k: "run"; initial: Record<string, string[]> } | null>(null);
+  const [dlg, setDlg] = useState<{ k: "stop" | "export"; c: CardView } | { k: "recipe"; id: string } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
-  useEffect(() => {
-    if (model) setDlg({ k: "agent" });
-  }, [model]);
   const ms = useMemo(() => machines(fleet, live), [fleet, live]);
   const cards = useMemo(() => homeCards(ms, live, fleet?.self ?? null, recipes, engines), [ms, live, fleet, recipes, engines]);
   const rvs = useMemo(() => mergeRecipes(ms, recipes), [ms, recipes]);
@@ -79,7 +76,7 @@ export const ControlPage = ({ sub, model }: { sub: string[]; model: string | nul
     setMsg(`copied ${u}`);
   };
   const open1 = async (c: CardView) => {
-    if (!dh) return setDlg({ k: "agent" });
+    if (!dh) return void (location.hash = "#/agents");
     setOpening(c.key);
     const r = await call<AgentLaunchResult>("POST", `/api/agents/launch?terminal=${DESKTOP ? "auto" : "none"}`, { harness: dh, model: c.servedModel ?? c.name }, 90_000);
     setOpening(null);
@@ -135,7 +132,7 @@ export const ControlPage = ({ sub, model }: { sub: string[]; model: string | nul
   ];
 
   const freeKeys = (m: MachineView) => [...new Set((m.snap?.groups ?? []).filter((g) => g.state === "available").flatMap((g) => g.gpuKeys))].sort();
-  const runOn = (m: MachineView | null, keys?: string[]) => setDlg({ k: "run", initial: m ? { [m.id]: keys ?? freeKeys(m) } : {} });
+  const runOn = (m: MachineView | null, keys?: string[]) => (location.hash = m ? `#/run?m=${encodeURIComponent(m.id)}&gpus=${(keys ?? freeKeys(m)).join(",")}` : "#/run");
   const dialogs = (
     <>
       <Err>{msg}</Err>
@@ -145,17 +142,63 @@ export const ControlPage = ({ sub, model }: { sub: string[]; model: string | nul
         const v = rvs.find((x) => x.id === dlg.id);
         return v ? <RecipeDialog v={v} onClose={() => setDlg(null)} /> : null;
       })()}
-      {dlg?.k === "connect" && <ConnectDialog onClose={() => setDlg(null)} />}
-      {dlg?.k === "run" && <RunDialog machines={ms} initial={dlg.initial} onClose={() => setDlg(null)} />}
-      {dlg?.k === "agent" && (
-        <Dialog title="Agents" onClose={() => setDlg(null)} wide>
-          <div className="page">
-            <AgentsSection model={model} only="launch" />
-          </div>
-        </Dialog>
-      )}
     </>
   );
+
+  const machineItem = (m: MachineView, name?: string, members?: MachineView[]) => {
+    const g = members ?? [m];
+    const on = g.filter((x) => x.online).length;
+    return (
+      <Item
+        key={name ?? m.id}
+        lead={<BarMark mark={on ? m.mark : "failed"} />}
+        title={name ?? m.name}
+        sub={g.length > 1 ? `${g.length} × ${m.snap?.gpus[0]?.name ?? "node"} · ${on}/${g.length} online · ${powerOf(g)}` : on ? `${m.gpuSummary} · ${powerOf(g)}` : "offline"}
+        onClick={() => (location.hash = `#/machines/${encodeURIComponent(name ? "sparks" : m.id)}`)}
+        actions={
+          <>
+            {on > 0 && <Btn onClick={() => runOn(g.find((x) => freeKeys(x).length) ?? m)}>Run ›</Btn>}
+            <Btn href={`#/machines/${encodeURIComponent(name ? "sparks" : m.id)}`}>Open ›</Btn>
+          </>
+        }
+      />
+    );
+  };
+
+  if (sub[0] === "machines")
+    return (
+      <div className="panel">
+        <H aside={<Btn href="#/connect">Connect a machine ›</Btn>}>machines</H>
+        {others.map((m) => machineItem(m))}
+        {sparks.length > 1 && machineItem(sparks[0]!, "sparks", sparks)}
+        {dialogs}
+      </div>
+    );
+
+  if (sub[0] === "endpoints")
+    return (
+      <div className="panel">
+        <H aside={String(apis.length)}>endpoints</H>
+          {apis.map((c) => (
+            <Item
+              key={c.key}
+              title={c.name}
+              sub={`${KIND[c.modality] ?? c.modality} · ${c.machine} · ${urlOf(c)}`}
+              actions={
+                <>
+                  <Btn onClick={() => copy(urlOf(c))}>Copy URL</Btn>
+                  {c.modelId && (
+                    <Btn kind="danger" onClick={() => setDlg({ k: "stop", c })} disabled={c.readOnly || !!c.stopBlocked}>
+                      Stop
+                    </Btn>
+                  )}
+                </>
+              }
+            />
+          ))}
+        {dialogs}
+      </div>
+    );
 
   if (sub[0] === "model") {
     const c = shown.find((x) => x.key === sub[1]);
@@ -164,7 +207,6 @@ export const ControlPage = ({ sub, model }: { sub: string[]; model: string | nul
     const rm = ms.find((m) => m.id === c.machineId)?.snap?.models.find((x) => x.id === c.modelId);
     return (
       <div className="panel">
-        <Back />
         <div className="surface run p-card tall">
           <TokenLine values={c.line} h={200} />
           <div className="name">
@@ -189,7 +231,7 @@ export const ControlPage = ({ sub, model }: { sub: string[]; model: string | nul
         <H>actions</H>
         <div className="btns">
           {openBtn(c)}
-          <Btn onClick={() => setDlg({ k: "agent" })}>New agent ›</Btn>
+          <Btn href={`#/agents?model=${encodeURIComponent(c.servedModel ?? c.name)}`}>New agent ›</Btn>
           {c.modelId && <Btn onClick={() => setDlg({ k: "export", c })}>Save config</Btn>}
           {c.modelId && <Verify peerId={c.peerId} model={c.modelId} />}
           {stopBtn(c)}
@@ -204,10 +246,9 @@ export const ControlPage = ({ sub, model }: { sub: string[]; model: string | nul
     if (!group.length) return <Gone>no such machine</Gone>;
     return (
       <div className="panel">
-        <Back />
         <H aside={powerOf(group)}>{sub[1] === "sparks" ? "sparks" : group[0]!.name}</H>
         <div className="btns">
-          <Btn kind="primary" onClick={() => setDlg({ k: "run", initial: Object.fromEntries(group.filter((m) => freeKeys(m).length).slice(0, group.length > 1 ? 1 : undefined).map((m) => [m.id, freeKeys(m)])) })}>
+          <Btn kind="primary" onClick={() => runOn(group.find((m) => freeKeys(m).length) ?? group[0] ?? null)}>
             Run a model ›
           </Btn>
         </div>
@@ -274,7 +315,7 @@ export const ControlPage = ({ sub, model }: { sub: string[]; model: string | nul
       <H aside={String(chat.length)}>running</H>
       {chat.length === 0 && <Row>–</Row>}
       {chat.map((c) => (
-        <a key={c.key} className="surface run p-card" href={`#/control/model/${encodeURIComponent(c.key)}`}>
+        <a key={c.key} className="surface run p-card" href={`#/models/${encodeURIComponent(c.key)}`}>
           <TokenLine values={c.line} h={140} />
           <div className="name">
             <Logo family={c.family} />
@@ -298,76 +339,54 @@ export const ControlPage = ({ sub, model }: { sub: string[]; model: string | nul
         const pod = x.key === "pod:sparks";
         const keys = x.slot ? (x.slot.recipe.freeGroups[0] ?? []) : undefined;
         return (
-          <Row key={x.key} onClick={() => (pod ? setDlg({ k: "run", initial: {} }) : runOn(x.m, keys))} go={<span className={x.slot ? "ink" : x.state === "offline" ? "alert" : "label"}>{x.slot ? `run ${x.slot.recipe.name} or another ›` : `${x.state} · choose ›`}</span>}>
-            <span className={x.slot ? "ink" : ""}>{pod ? "sparks" : x.m.name}</span>
-            <span className="label ellipsis">{x.what}</span>
-          </Row>
+          <Item
+            key={x.key}
+            lead={<BarMark mark={x.state === "offline" ? "failed" : x.m.mark} />}
+            title={pod ? "sparks" : x.m.name}
+            sub={`${x.what} · ${x.state}`}
+            onClick={x.state === "offline" ? undefined : () => (pod ? runOn(null) : runOn(x.m, keys))}
+            actions={
+              x.state === "offline" ? undefined : (
+                <>
+                  {x.slot && <span className="label">{`best: ${x.slot.recipe.name}`}</span>}
+                  <Btn kind={x.slot ? "primary" : "secondary"} onClick={() => (pod ? runOn(null) : runOn(x.m, keys))}>
+                    Run a model ›
+                  </Btn>
+                </>
+              )
+            }
+          />
         );
       })}
       {apis.length > 0 && (
         <>
-          <H>endpoints</H>
+          <H aside={String(apis.length)}>endpoints</H>
           {apis.map((c) => (
-            <Row key={c.key} onClick={() => copy(urlOf(c))} go={<span className="label">{`${urlOf(c)} · copy`}</span>}>
-              <span className="ink">{c.name}</span>
-              <span className="label ellipsis">{KIND[c.modality] ?? c.modality}</span>
-            </Row>
+            <Item
+              key={c.key}
+              title={c.name}
+              sub={`${KIND[c.modality] ?? c.modality} · ${c.machine} · ${urlOf(c)}`}
+              actions={
+                <>
+                  <Btn onClick={() => copy(urlOf(c))}>Copy URL</Btn>
+                  {c.modelId && (
+                    <Btn kind="danger" onClick={() => setDlg({ k: "stop", c })} disabled={c.readOnly || !!c.stopBlocked}>
+                      Stop
+                    </Btn>
+                  )}
+                </>
+              }
+            />
           ))}
         </>
-      )}
-      <H
-        aside={
-          <button type="button" className="p-link" onClick={() => setDlg({ k: "agent" })}>
-            {`${dh ?? "no"} default · harnesses ›`}
-          </button>
-        }
-      >
-        agents
-      </H>
-      <AgentsSection model={null} only="sessions" bare />
-      <Row onClick={() => setDlg({ k: "agent" })}>
-        <span className="label">+ new agent</span>
-      </Row>
-      <H
-        aside={
-          <span className="p-tabs">
-            <button type="button" className="p-link" onClick={() => runOn(null)}>
-              run a model ›
-            </button>
-            <button type="button" className="p-link" onClick={() => setDlg({ k: "connect" })}>
-              connect ›
-            </button>
-          </span>
-        }
-      >
-        machines
-      </H>
-      {others.map((m) => (
-        <Row key={m.id} onClick={() => (location.hash = `#/control/machine/${encodeURIComponent(m.id)}`)} go={<span className="label">{`${powerOf([m])} ›`}</span>}>
-          <span className={m.online ? "ink" : "alert"}>{m.name}</span>
-          <span className="label ellipsis">{m.online ? m.gpuSummary : "offline"}</span>
-        </Row>
-      ))}
-      {sparks.length > 1 && (
-        <Row onClick={() => (location.hash = "#/control/machine/sparks")} go={<span className="label">{`${powerOf(sparks)} ›`}</span>}>
-          <span className="ink">sparks</span>
-          <span className="label ellipsis">{`${sparks.length} × ${sparks[0]!.snap?.gpus[0]?.name ?? "node"} · ${sparks.filter((m) => m.online).length} online`}</span>
-        </Row>
       )}
       {dialogs}
     </div>
   );
 };
 
-const Back = () => (
-  <a className="p-back" href="#/control">
-    ‹ control
-  </a>
-);
-
 const Gone = ({ children }: { children: string }) => (
   <div className="panel">
-    <Back />
     <Row>
       <span className="label">{children}</span>
     </Row>

@@ -52,3 +52,18 @@ export const Tabs = <T extends string>({ items, on, set }: { items: readonly T[]
     ))}
   </span>
 );
+
+export const Item = ({ lead, title, sub, actions, onClick, dim }: { lead?: ReactNode; title: ReactNode; sub?: ReactNode; actions?: ReactNode; onClick?: () => void; dim?: boolean }) => (
+  <div className={`p-row item${onClick ? " click" : ""}${dim ? " dim" : ""}`} onClick={onClick} role={onClick ? "button" : undefined} tabIndex={onClick ? 0 : undefined} onKeyDown={onClick ? (e) => e.key === "Enter" && onClick() : undefined}>
+    {lead && <span className="item-lead">{lead}</span>}
+    <span className="item-main">
+      <span className="ink">{title}</span>
+      {sub !== undefined && <span className="label">{sub}</span>}
+    </span>
+    {actions && (
+      <span className="item-acts" onClick={(e) => e.stopPropagation()}>
+        {actions}
+      </span>
+    )}
+  </div>
+);

@@ -1,15 +1,14 @@
 import { StrictMode, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import "./theme.css";
-import { getKey, setKey } from "./api";
 import { KeyPrompt } from "./components/actions";
 import { Boundary } from "./components/basics";
-import { restart, start, useStore } from "./store";
+import { start, useStore } from "./store";
+import { Nav } from "./components/nav";
+import { AgentsPage, ConnectPage, RunPage } from "./views/pages";
 import { ControlPage } from "./views/control";
 import { LivePage } from "./views/live";
 import { UsagePage } from "./views/usage";
-
-const TABS = ["control", "live", "usage"] as const;
 
 const onHash = (f: () => void) => {
   window.addEventListener("hashchange", f);
@@ -19,37 +18,32 @@ const onHash = (f: () => void) => {
 const App = () => {
   const hash = useSyncExternalStore(onHash, () => location.hash);
   const [path = "", query = ""] = hash.replace(/^#\/?/, "").split("?");
-  const [tab, ...sub] = path.split("/").map(decodeURIComponent);
-  const view = TABS.find((t) => t === tab) ?? "control";
+  const [page = "control", ...rest] = path.split("/").map(decodeURIComponent);
+  const params = new URLSearchParams(query);
   const needKey = useStore((s) => s.needKey);
-  const conn = useStore((s) => s.conn);
-  const retry = useStore((s) => s.retryMs);
-  const count = useStore((s) => s.fleet?.machines.length ?? 0);
-  const online = useStore((s) => s.fleet?.machines.filter((m) => m.online).length ?? 0);
+  const clean = path.split("/").map(decodeURIComponent).join("/");
+  const view =
+    page === "live" ? (
+      <LivePage />
+    ) : page === "usage" ? (
+      <UsagePage />
+    ) : page === "run" ? (
+      <RunPage machine={params.get("m")} gpus={params.get("gpus")} />
+    ) : page === "agents" ? (
+      <AgentsPage model={params.get("model")} />
+    ) : page === "connect" ? (
+      <ConnectPage />
+    ) : (
+      <ControlPage sub={page === "models" ? ["model", rest.join("/")] : page === "machines" ? (rest.length ? ["machine", rest.join("/")] : ["machines"]) : page === "endpoints" ? ["endpoints"] : []} />
+    );
   return (
-    <div className="p-shell">
-      <div className="p-top">
-        <a className="ink" href="#/control">
-          LOCAL STUDIO
-        </a>
-        <span className="label">{`${online} / ${count} machines`}</span>
-        {conn !== "live" && <span className={conn === "retrying" ? "alert" : "label"}>{conn === "retrying" && retry ? `retry ${Math.round(retry / 1000)}s` : conn}</span>}
-        <nav>
-          {TABS.map((t) => (
-            <a key={t} href={`#/${t}`} className={view === t ? "on" : ""}>
-              {t}
-            </a>
-          ))}
-          {getKey() && (
-            <button type="button" className="p-link" onClick={() => (setKey(null), void restart())}>
-              sign out
-            </button>
-          )}
-        </nav>
-      </div>
-      <Boundary key={view} name={view}>
-        {view === "usage" ? <UsagePage /> : view === "live" ? <LivePage /> : <ControlPage sub={tab === "control" ? sub : []} model={new URLSearchParams(query).get("model")} />}
-      </Boundary>
+    <div className="shell2">
+      <Nav path={clean || "control"} />
+      <main className="content">
+        <Boundary key={page} name={page}>
+          {view}
+        </Boundary>
+      </main>
       {needKey && <KeyPrompt />}
     </div>
   );

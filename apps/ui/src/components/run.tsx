@@ -3,7 +3,7 @@ import type { SelectionFit, SelectionRow } from "@local-studio/contracts/client"
 import { fmt } from "@local-studio/contracts/client";
 import { post, via } from "../api";
 import { fmtFormat, type MachineView } from "../model/view";
-import { Btn, Dialog, Err } from "./basics";
+import { Btn, Err } from "./basics";
 
 type Sel = Record<string, string[]>;
 
@@ -25,7 +25,7 @@ const proofText = (r: SelectionRow): string => {
   return `${tps}${n === 6 ? "all 6 checks" : `${n} of 6 checks`} · ${p.on === "vast" ? "rented GPU" : p.on === "legacy" ? "older run" : p.on}`;
 };
 
-export const RunDialog = ({ machines, initial, onClose }: { machines: MachineView[]; initial: Sel; onClose: () => void }) => {
+export const RunPanel = ({ machines, initial, onDone }: { machines: MachineView[]; initial: Sel; onDone: () => void }) => {
   const [sel, setSel] = useState<Sel>(initial);
   const [fit, setFit] = useState<SelectionFit | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export const RunDialog = ({ machines, initial, onClose }: { machines: MachineVie
     const res = await post(via(m.peerId, `/api/recipes/${encodeURIComponent(r.id)}/launch`), { gpuKeys, stop: r.fit === "busy" });
     setBusy(null);
     if (!res.ok) return setErr(res.error);
-    onClose();
+    onDone();
   };
 
   const count = chosen.reduce((t, [, k]) => t + k.length, 0);
@@ -90,8 +90,8 @@ export const RunDialog = ({ machines, initial, onClose }: { machines: MachineVie
     })
     .join(" + ");
   return (
-    <Dialog title="Run a model" onClose={onClose} wide>
-      <div className="run">
+    <>
+      <div className="runsel">
         <div className="run-pick">
           {groups.map((grp) => (
             <div key={grp.name} className="run-grp">
@@ -151,6 +151,6 @@ export const RunDialog = ({ machines, initial, onClose }: { machines: MachineVie
           </div>
         </div>
       </div>
-    </Dialog>
+    </>
   );
 };

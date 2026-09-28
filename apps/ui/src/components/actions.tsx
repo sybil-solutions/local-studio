@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { LaunchPlan, LaunchProgress, Peer, RecipeExport, RecipePr, RecipeRow, TailnetCandidate } from "@local-studio/contracts/client";
 import { fmt } from "@local-studio/contracts/client";
 import { call, get, post, setKey, via } from "../api";
 import { fmtFormat, type MachineView, type RecipeView } from "../model/view";
+import { H, Item } from "./panel";
 import { loadAll, loadRecipes, restart, setState, useStore } from "../store";
 import { Btn, Dialog, Err, KV, SectionHeading, Table } from "./basics";
 
@@ -303,7 +304,7 @@ export const KeyPrompt = () => {
 
 type TailnetInfo = { signedIn: boolean; login: string | null; tailnet: string | null; trust: boolean; auto: boolean };
 
-export const ConnectDialog = ({ onClose }: { onClose: () => void }) => {
+export const ConnectDialog = ({ onClose, page }: { onClose: () => void; page?: boolean }) => {
   const [info, setInfo] = useState<TailnetInfo | null>(null);
   const [cands, setCands] = useState<TailnetCandidate[] | null>(null);
   const [manual, setManual] = useState(false);
@@ -328,74 +329,73 @@ export const ConnectDialog = ({ onClose }: { onClose: () => void }) => {
     void loadAll();
     scan();
   };
-  return (
-    <Dialog title="connect" onClose={onClose}>
-      <div className="blk">
-        {info === null ? (
-          <span className="label">checking tailscale</span>
-        ) : info.signedIn ? (
-          <span>
-            <span className="ink">{`tailscale · ${info.login}`}</span>
-            <span className="label">{info.auto ? " · your machines connect automatically" : ""}</span>
-          </span>
-        ) : (
-          <span className="label">tailscale is not running here; install it and sign in, or connect with a key</span>
-        )}
-      </div>
-      {cands === null ? (
-        <div className="blk label">scanning tailnet</div>
-      ) : (
-        <div className="blk">
-          {cands.map((c) => (
-            <div key={c.dnsName} className="p-row">
-              <span className="ink">{c.hostName}</span>
-              <span className="label ellipsis">{c.kind === "legacy-controller" ? "old controller" : c.mine ? c.url.replace(/^https?:\/\//, "") : "another account"}</span>
-              <span className="p-go">
-                {c.alreadyConnected ? (
-                  <span className="label">connected</span>
-                ) : c.kind === "local-studio" ? (
-                  <Btn kind={c.mine ? "primary" : "secondary"} onClick={() => (c.mine ? void connect(c.url) : (setManual(true), setUrl(c.url)))} disabled={busy === c.url}>
-                    {busy === c.url ? "Connecting" : c.mine ? "Connect ›" : "Use key ›"}
-                  </Btn>
-                ) : (
-                  <span className="label">update to connect</span>
-                )}
-              </span>
-            </div>
-          ))}
-          {cands.length === 0 && <span className="label">no other machines on this tailnet run Local Studio</span>}
-        </div>
-      )}
-      {manual ? (
-        <form
-          className="blk form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void connect(url, key);
-          }}
-        >
-          <label htmlFor="cu">url</label>
-          <input id="cu" className="input" value={url} onChange={(e) => setUrl(e.target.value)} spellCheck={false} />
-          <label htmlFor="ck">key</label>
-          <input id="ck" className="input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
-          <span />
-          <span>
-            <Btn kind="primary" onClick={() => void connect(url, key)} disabled={!!busy || !url || key.length < 16}>
-              Connect ›
+  const rowsOf = (list: TailnetCandidate[]) =>
+    list.map((c) => (
+      <Item
+        key={c.dnsName}
+        lead={<span className={`dot ${c.alreadyConnected ? "ok" : c.kind === "local-studio" ? "idle" : "off"}`} />}
+        title={c.hostName}
+        sub={`${c.os ? `${c.os} · ` : ""}${c.kind === "legacy-controller" ? "old controller; update it to connect" : c.kind === "none" ? "no Local Studio here" : c.mine ? c.url.replace(/^https?:\/\//, "") : "signed in to another account"}`}
+        actions={
+          c.alreadyConnected ? (
+            <span className="label">connected</span>
+          ) : c.kind === "local-studio" ? (
+            <Btn kind={c.mine ? "primary" : "secondary"} onClick={() => (c.mine ? void connect(c.url) : (setManual(true), setUrl(c.url)))} disabled={busy === c.url}>
+              {busy === c.url ? "Connecting" : c.mine ? "Connect" : "Use a key"}
             </Btn>
-          </span>
-        </form>
-      ) : (
-        <div className="blk">
-          <button type="button" className="p-link" onClick={() => setManual(true)}>
-            connect by url and key ›
-          </button>
-        </div>
-      )}
-      <div className="blk">
-        {msg && <span className="ink">{msg}</span>}
+          ) : undefined
+        }
+      />
+    ));
+  return (
+    <Frame page={page} onClose={onClose}>
+      <div className="panel">
+        <H>tailscale</H>
+        <Item
+          lead={<span className={`dot ${info?.signedIn ? "ok" : "off"}`} />}
+          title={info === null ? "checking" : info.signedIn ? (info.login ?? "signed in") : "not running here"}
+          sub={info?.signedIn ? (info.auto ? "machines on this account connect automatically" : "machines on this account can connect without a key") : "install Tailscale and sign in, or connect by address below"}
+          actions={
+            <Btn onClick={scan} disabled={cands === null}>
+              Scan again
+            </Btn>
+          }
+        />
+        <H aside={cands ? `${cands.filter((c) => c.alreadyConnected).length} of ${cands.length} connected` : undefined}>on your tailnet</H>
+        {cands === null ? <Item title="scanning" /> : cands.length ? rowsOf(cands) : <Item title="no other machines on this tailnet run Local Studio" />}
+        <H>by address</H>
+        <Item
+          title="URL and key"
+          sub="for a controller outside your tailnet; run local-studio key --federation there"
+          actions={!manual && <Btn onClick={() => setManual(true)}>Add ›</Btn>}
+        />
+        {manual && (
+          <form
+            className="p-row conn-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void connect(url, key);
+            }}
+          >
+            <input className="input" placeholder="http://host:8080" value={url} onChange={(e) => setUrl(e.target.value)} spellCheck={false} />
+            <input className="input" placeholder="key" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} />
+            <Btn kind="primary" onClick={() => void connect(url, key)} disabled={!!busy || !url || key.length < 16}>
+              Connect
+            </Btn>
+          </form>
+        )}
+        {msg && <div className="ink conn-msg">{msg}</div>}
         <Err>{err}</Err>
       </div>
-    </Dialog>
+    </Frame>
   );
 };
+
+const Frame = ({ page, onClose, children }: { page?: boolean; onClose: () => void; children: ReactNode }) =>
+  page ? (
+    <div className="dlg-page">{children}</div>
+  ) : (
+    <Dialog title="connect" onClose={onClose}>
+      {children}
+    </Dialog>
+  );
