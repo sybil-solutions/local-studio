@@ -4,8 +4,8 @@ import { withPort } from "../discovery/lifecycle";
 import type { Ctx, RuntimeView } from "../context";
 import { availableKeys, fitFor, hardwareIds } from "./fit";
 import { type LoadedCatalog, normEngine, type V2Recipe } from "./registry";
-import { DEVICE_ENV, DIGEST_PINNED, DOCKER_OPT, ENV_KEY, FORBIDDEN_ARG, HttpError, REVISION_40 } from "./util";
-import type { ResolvedWeight, WeightIndex } from "./weights";
+import { DEVICE_ENV, DIGEST_PINNED, ENV_KEY, FORBIDDEN_ARG, HttpError, REVISION_40 } from "./util";
+import { hfHome, type ResolvedWeight, type WeightIndex } from "./weights";
 
 export interface PlanResult {
   plan: LaunchPlan;
@@ -46,8 +46,8 @@ const gate = (r: V2Recipe, pod?: PodRank): void => {
     }
     if (!w.mountPath.startsWith("/")) bad(`weights mount path ${w.mountPath} is not absolute`);
   }
-  for (const o of r.launch.docker ?? []) if (!DOCKER_OPT.test(o)) bad(`docker option ${o} is not supported`);
-  for (const m of r.launch.mounts ?? []) if (!r.local || !m.source.startsWith("/") || !m.target.startsWith("/") || /[:,]/.test(m.source + m.target)) bad(`mount ${m.source}:${m.target} is not allowed`);
+  for (const o of r.launch.docker ?? []) if (!/^--[a-z][\w-]*(=[^\s]+)?$/.test(o)) bad(`docker option ${o} is malformed`);
+  for (const m of r.launch.mounts ?? []) if (!/^(\/|\$\{[A-Z][A-Z0-9_]*\})/.test(m.source) || !m.target.startsWith("/") || /[:,]/.test(m.source + m.target)) bad(`mount ${m.source}:${m.target} is not an absolute path`);
   if (!r.launch.arguments.every((a) => typeof a === "string")) bad("arguments must all be strings");
   const hay = [r.launch.entrypoint ?? "", ...r.launch.arguments, ...Object.values(r.launch.environment ?? {})].join(" ");
   if (FORBIDDEN_ARG.test(hay)) bad("enforce-eager / disabled CUDA graphs are not allowed");
@@ -117,6 +117,15 @@ export const buildPlan = (
   const gpuUuids = gpuKeys.map((k) => view.gpus.find((g) => g.key === k)?.uuid ?? "");
   if (gpuUuids.some((u) => !u)) throw new HttpError(422, "GPU_UUID", "a chosen GPU has no UUID");
 
+  const known: Record<string, string> = {
+    HF_HOME: hfHome(),
+    TRITON_CACHE_DIR: join(ctx.config.dataDir, "cache", "triton"),
+    FLASHINFER_CACHE_DIR: join(ctx.config.dataDir, "cache", "flashinfer"),
+    WORK_DIR: join(ctx.config.dataDir, "work", recipeId),
+    HOME: process.env.HOME ?? "",
+    ...(opts.pod?.vars ?? {}),
+  };
+  const fill = (t: string) => t.replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (m, k: string) => known[k] ?? m);
   const weights = raw.weights.map((w) => index.resolve(w));
   const mounts: LaunchMount[] = [];
   const addMount = (m: LaunchMount) => {
@@ -134,7 +143,7 @@ export const buildPlan = (
     }
     addMount({ source: w.hostPath, target: w.mountPath, readOnly: w.layout === "dir" });
   }
-  for (const m of raw.launch.mounts ?? []) addMount({ source: m.source, target: m.target, readOnly: m.readOnly !== false });
+  for (const m of raw.launch.mounts ?? []) addMount({ source: fill(m.source), target: m.target, readOnly: m.readOnly === true });
   if (raw.local && !DIGEST_PINNED.test(raw.image)) warnings.push(`image ${raw.image} is not pinned by digest`);
   let asset: PlanResult["asset"] = null;
   if (raw.asset) {
@@ -195,12 +204,11 @@ export const buildPlan = (
   }
   const engine = String(normEngine(raw.engine));
   const pod = opts.pod;
-  const fill = (t: string) => (pod ? t.replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (m, k: string) => pod.vars[k] ?? m) : t);
   let args = raw.launch.arguments.map(fill);
+  for (const [k, v] of Object.entries(env)) env[k] = fill(v);
+  const left = [...args, ...Object.values(env), ...mounts.map((m) => m.source)].join(" ").match(/\$\{[A-Z][A-Z0-9_]*\}/g);
+  if (left) throw new HttpError(422, "LAUNCH_VARS", `${recipeId}: this launch needs ${[...new Set(left)].join(", ")}, which comes from its publisher's setup and Local Studio cannot fill`);
   if (pod) {
-    for (const [k, v] of Object.entries(env)) env[k] = fill(v);
-    const left = [...args, ...Object.values(env)].join(" ").match(/\$\{[A-Z][A-Z0-9_]*\}/g);
-    if (left) throw new HttpError(422, "POD_VARS", `${recipeId}: this launch needs ${[...new Set(left)].join(", ")}, which Local Studio does not know how to fill`);
     args = args.filter((a) => a !== "");
     if (pod.rank > 0 && engine === "vllm" && !args.includes("--headless") && !Object.values(env).includes("--headless")) args = [...args, "--headless"];
   }

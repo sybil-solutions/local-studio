@@ -78,6 +78,8 @@ const ENGINE: Record<string, Engine> = { vllm: "vllm", sglang: "sglang", "llama-
 
 export const normEngine = (e: string): Engine | string => ENGINE[e.toLowerCase()] ?? e;
 
+const OWNED_FLAG = /^(--(network|gpus|shm-size|name|rm|detach|publish|label|entrypoint|volume|mount)\b|-(d|p|v)(\s|=|$))/;
+
 export const dockerFlags = (flags: string[], dataDir: string): string[] =>
   flags.map((f) => {
     const [k = "", ...rest] = f.trim().split(/\s+/);
@@ -110,6 +112,13 @@ export const toV2 = (key: string, r: RegRecipe, L: Launch, p: Profile, tree: Pic
   const served = x?.servedName ?? servedName(L) ?? (p.defaults ? basename(L.weights[0]?.at ?? r.model) : r.model);
   const size = x?.sizeGb ?? b?.size_gb ?? 0;
   const entry = L.kind === "container" && Array.isArray(L.entrypoint) ? L.entrypoint : null;
+  const flags = L.kind === "container" ? L.flags.map((f) => f.trim()).filter((f) => f.startsWith("-")) : [];
+  const vols = flags.filter((f) => /^(-v|--volume)[ =]/.test(f)).map((f) => f.replace(/^(-v|--volume)[ =]\s*/, ""));
+  const flagEntry = flags.find((f) => /^--entrypoint\b/.test(f))?.replace(/^--entrypoint[ =]?\s*/, "") || null;
+  const mounts: V2Mount[] = vols.map((v) => {
+    const [source = "", target = "", mode] = v.split(":");
+    return { source, target, readOnly: mode === "ro" };
+  });
   return {
     id: p.ids?.[r.card] ?? `${stem}.${r.card}`,
     name: x?.name ?? m?.name ?? r.model,
@@ -126,7 +135,15 @@ export const toV2 = (key: string, r: RegRecipe, L: Launch, p: Profile, tree: Pic
     scratch: null,
     launch:
       L.kind === "container"
-        ? { entrypoint: entry ? (entry[0] ?? null) : ((L.entrypoint as string | null) ?? null), arguments: entry ? [...entry.slice(1), ...L.args] : L.args, environment: L.env, port: L.port, shm: L.shm, docker: dockerFlags(L.flags.filter((f) => !/^--(network|gpus|shm-size)\b/.test(f)), dataDir) }
+        ? {
+            entrypoint: entry ? (entry[0] ?? null) : ((L.entrypoint as string | null) ?? flagEntry),
+            arguments: entry ? [...entry.slice(1), ...L.args] : L.args,
+            environment: L.env,
+            port: L.port,
+            shm: L.shm,
+            docker: dockerFlags(flags.filter((f) => !OWNED_FLAG.test(f)), dataDir),
+            ...(mounts.length ? { mounts } : {}),
+          }
         : { entrypoint: null, arguments: L.command, environment: L.env, port: L.port, shm: null },
     serving: { ctxTokens: L.ctx, kvTokens: x?.serving?.kvTokens ?? (p.defaults ? L.ctx * L.seqs + 1024 * L.seqs : 0) },
     capabilities: { chat: true, reasoning: gates.includes("reasoning"), tools: gates.includes("tools"), vision: L.vision },

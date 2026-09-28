@@ -27,7 +27,7 @@ export interface WeightIndex {
   resolve(w: V2Weights): ResolvedWeight;
 }
 
-const hfHome = (): string => process.env.HF_HOME ?? join(homedir(), ".cache", "huggingface");
+export const hfHome = (): string => process.env.HF_HOME ?? join(homedir(), ".cache", "huggingface");
 
 const firstLine = (p: string): string | null => {
   try {
