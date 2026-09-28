@@ -37,6 +37,9 @@ export interface RecipeProof {
   served?: string;
   legacy?: boolean;
   proxy?: string;
+  reported?: boolean;
+  src?: string;
+  log?: string;
 }
 
 export interface Recipe {

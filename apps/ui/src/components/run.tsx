@@ -19,7 +19,10 @@ const gpuState = (m: MachineView, key: string): { label: string; free: boolean }
 const proofText = (r: SelectionRow): string => {
   const p = r.proof;
   if (!p) return r.origin === "yours" ? "your config" : "–";
-  return `${p.tps ? `${fmt.tps(p.tps)} tok/s · ` : ""}${p.legacy ? "load + chat only" : `${p.gates.split(" ").length}/6 checks`}${p.on ? ` · ${p.on}` : ""}`;
+  const tps = p.tps ? `${fmt.tps(p.tps)} tok/s · ` : "";
+  if (p.reported) return `${tps}reported by ${p.on}`;
+  const n = p.gates.split(/\s+/).filter(Boolean).length;
+  return `${tps}${n === 6 ? "all 6 checks" : `${n} of 6 checks`} · ${p.on === "vast" ? "rented GPU" : p.on === "legacy" ? "older run" : p.on}`;
 };
 
 export const RunDialog = ({ machines, initial, onClose }: { machines: MachineView[]; initial: Sel; onClose: () => void }) => {
@@ -67,57 +70,86 @@ export const RunDialog = ({ machines, initial, onClose }: { machines: MachineVie
   };
 
   const count = chosen.reduce((t, [, k]) => t + k.length, 0);
+  const isSpark = (m: MachineView) => /^spark-/.test(m.name);
+  const sparks = withGpus.filter(isSpark);
+  const groups: { name: string; members: MachineView[] }[] = [...withGpus.filter((m) => !isSpark(m)).map((m) => ({ name: m.name, members: [m] })), ...(sparks.length ? [{ name: "sparks", members: sparks }] : [])];
+  const short = (n: string) => n.replace(/ Blackwell Workstation Edition| Workstation Edition| Generation| Max-Q/g, "").replace(/^RTX PRO/, "PRO");
+  const holders = [
+    ...new Set(
+      chosen.flatMap(([id, keys]) => {
+        const m = machines.find((x) => x.id === id);
+        return m ? keys.map((k) => gpuState(m, k)).filter((st) => !st.free).map((st) => st.label) : [];
+      }),
+    ),
+  ];
+  const summary = chosen
+    .map(([id, keys]) => {
+      const m = machines.find((x) => x.id === id);
+      const g = m?.snap?.gpus.find((x) => x.key === keys[0]);
+      return `${keys.length} × ${short(g?.name ?? "GPU")} on ${m?.name ?? id}`;
+    })
+    .join(" + ");
   return (
     <Dialog title="Run a model" onClose={onClose} wide>
-      <div className="blk">
-        {withGpus.map((m) => (
-          <div key={m.id} className="p-row run-m">
-            <span className="ink run-name">{m.name}</span>
-            <span className="run-gpus">
-              {(m.snap?.gpus ?? []).map((g) => {
-                const st = gpuState(m, g.key);
-                const on = (sel[m.id] ?? []).includes(g.key);
-                return (
-                  <button type="button" key={g.key} className={`gpu-chip${on ? " on" : ""}${st.free ? "" : " held"}`} onClick={() => toggle(m, g.key)} title={`${g.product} · ${st.label}`}>
-                    <span>{`${g.name} · ${g.index}`}</span>
-                    <span className="label">{st.label}</span>
-                  </button>
-                );
-              })}
-            </span>
-          </div>
-        ))}
-      </div>
-      <div className="blk run-head">
-        <span className="label">{count ? `${count} GPU${count > 1 ? "s" : ""} on ${chosen.length} machine${chosen.length > 1 ? "s" : ""} · ${fit ? `${rows.length} configs` : "checking"}` : "pick one or more GPUs"}</span>
-        <input className="input run-q" placeholder="filter" value={q} onChange={(e) => setQ(e.target.value)} />
-      </div>
-      <Err>{err}</Err>
-      <div className="blk">
-        {fit && rows.length === 0 && <div className="label">no config in the registry fits this selection; select a different number of GPUs</div>}
-        {rows.map((r) => {
-          const pod = (r.machines ?? 1) > 1;
-          return (
-            <div key={r.id} className="p-row run-r">
-              <span className="run-cfg">
-                <span className="ink">{r.name}</span>
-                <span className="label">{`${r.engine} · ${fmtFormat(r.format)} · ${fmt.ctx(r.ctxTokens)}${r.runtime === "host" ? " · native" : ""}${r.sizeGb ? ` · ${Math.round(r.sizeGb)} GB` : ""}`}</span>
-              </span>
-              <span className="label run-proof">{proofText(r)}</span>
-              <span className="p-go">
-                {pod ? (
-                  <span className="label">needs a pod launch; not supported yet</span>
-                ) : r.runningModelId ? (
-                  <span className="label">running</span>
-                ) : (
-                  <Btn kind={r.fit === "fits" ? "primary" : "danger"} onClick={() => void run(r)} disabled={busy !== null}>
-                    {busy === r.id ? "Starting" : r.fit === "fits" ? `Run${r.weightsPresent === false ? " + download" : ""} ›` : `Stop ${r.stops.map((s) => s.modelId ?? "other").join(", ")} and run ›`}
-                  </Btn>
+      <div className="run">
+        <div className="run-pick">
+          {groups.map((grp) => (
+            <div key={grp.name} className="run-grp">
+              <div className="ink">{grp.name}</div>
+              <div className="run-chips">
+                {grp.members.flatMap((m) =>
+                  (m.snap?.gpus ?? []).map((g) => {
+                    const st = gpuState(m, g.key);
+                    const on = (sel[m.id] ?? []).includes(g.key);
+                    const label = grp.members.length > 1 ? m.name.replace(/^spark-/, "") : `${short(g.name)} ${g.index}`;
+                    return (
+                      <button type="button" key={`${m.id}/${g.key}`} className={`gpu-chip${on ? " on" : ""}${st.free ? "" : " held"}`} onClick={() => toggle(m, g.key)} title={`${m.name} · ${g.product} · ${st.label}`}>
+                        <span>{label}</span>
+                        <span className="label ellipsis">{st.label}</span>
+                      </button>
+                    );
+                  }),
                 )}
-              </span>
+              </div>
             </div>
-          );
-        })}
+          ))}
+        </div>
+        <div className="run-list">
+          <div className="run-head">
+            <span className={count ? "ink" : "label"}>{count ? summary : "no GPUs picked"}</span>
+            <input className="input run-q" placeholder="filter" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+          <div className="label run-count">
+            {count && !err ? (fit ? `${rows.length} configs fit${holders.length ? ` · Run stops ${holders.join(", ")} first` : ""}` : "checking") : ""}
+          </div>
+          <Err>{err}</Err>
+          <div className="run-rows">
+            {fit && rows.length === 0 && <div className="label">no config fits this selection</div>}
+            {rows.map((r) => {
+              const pod = (r.machines ?? 1) > 1;
+              return (
+                <div key={r.id} className="run-r">
+                  <span className="run-cfg">
+                    <span className="ink">{r.name}</span>
+                    <span className="label">{`${r.engine} · ${fmtFormat(r.format)} · ${fmt.ctx(r.ctxTokens)}${r.runtime === "host" ? " · native" : ""}${r.sizeGb ? ` · ${Math.round(r.sizeGb)} GB` : ""}`}</span>
+                  </span>
+                  <span className="label run-proof">{proofText(r)}</span>
+                  <span className="run-go">
+                    {pod ? (
+                      <span className="label">needs a pod launch</span>
+                    ) : r.runningModelId ? (
+                      <span className="label">running</span>
+                    ) : (
+                      <Btn kind={r.fit === "fits" ? "primary" : "danger"} onClick={() => void run(r)} disabled={busy !== null}>
+                        {busy === r.id ? "Starting" : r.fit === "fits" ? "Run ›" : "Stop & run ›"}
+                      </Btn>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </Dialog>
   );
