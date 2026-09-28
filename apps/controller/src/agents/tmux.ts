@@ -29,8 +29,14 @@ export const agentRunCommand = (home: string, id: string): string => [...selfArg
 
 export const tmuxBin = async (): Promise<string | null> => which("tmux", EXTRA_BIN);
 
+const ownScope = async (name: string): Promise<string[]> => {
+  if (process.platform !== "linux" || !process.env.INVOCATION_ID) return [];
+  const run = await which("systemd-run", EXTRA_BIN);
+  return run ? [run, "--user", "--scope", "--quiet", "--collect", `--unit=local-studio-agent-${name}`] : [];
+};
+
 export const startSession = async (ctx: Ctx, tmux: string, name: string, dir: string, command: string): Promise<string | null> => {
-  const r = await ctx.exec([tmux, ...TMUX_SOCKET, "start-server", ...SERVER_OPTIONS.flatMap(([k, v]) => [";", "set-option", "-g", k, v]), ";", "set-option", "-as", "terminal-features", "xterm*:extkeys", ";", "new-session", "-d", "-s", name, "-c", dir, command], {
+  const r = await ctx.exec([...(await ownScope(name)), tmux, ...TMUX_SOCKET, "start-server", ...SERVER_OPTIONS.flatMap(([k, v]) => [";", "set-option", "-g", k, v]), ";", "set-option", "-as", "terminal-features", "xterm*:extkeys", ";", "new-session", "-d", "-s", name, "-c", dir, command], {
     timeoutMs: 10_000,
     cwd: dir,
   });
