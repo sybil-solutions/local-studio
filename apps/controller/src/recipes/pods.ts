@@ -7,6 +7,21 @@ import { HttpError } from "./util";
 
 const subnet = (ip: string) => ip.split(".").slice(0, 3).join(".");
 
+const podVars = ({ rank, size, head, own, hcas }: { rank: number; size: number; head: string; own: FabricPort; hcas: string[] }): Record<string, string> => {
+  const put = (names: string[], v: string) => Object.fromEntries(names.map((n) => [n, v]));
+  return {
+    ...put(["NODE_RANK", "R"], String(rank)),
+    ...put(["HEAD_IP", "MASTER", "MASTER_ADDR", "HEAD_FABRIC_ADDRESS"], head),
+    ...put(["MIP", "NODE_IP", "VLLM_HOST_IP", "NODE_ROCE_IP"], own.ip),
+    ...put(["MGMT_IF", "CX7_IF", "FABRIC_INTERFACE", "IFACE", "SOCKET_IFNAME", "NCCL_SOCKET_IFNAME"], own.ifname),
+    ...put(["IB_HCA", "CX7_IB", "NCCL_IB_HCA"], hcas.join(",")),
+    ...(own.gid !== null ? put(["GID_INDEX", "GID", "NCCL_IB_GID_INDEX"], String(own.gid)) : {}),
+    ...put(["NNODES"], String(size)),
+    ...put(["MPORT"], "29521"),
+    ...put(["HEADLESS"], rank > 0 ? "--headless" : ""),
+  };
+};
+
 export const podRoutes = (ctx: Ctx, svc: Services, recipes: RecipeService): Hono<Env> => {
   const r = new Hono<Env>();
 
@@ -66,7 +81,7 @@ export const podRoutes = (ctx: Ctx, svc: Services, recipes: RecipeService): Hono
           id,
           rank,
           size,
-          vars: { NODE_RANK: String(rank), R: String(rank), HEAD_IP: head.ip, MASTER: head.ip, MASTER_ADDR: head.ip, MPORT: "29521", NNODES: String(size), MIP: port.ip, IB_HCA: hcas.join(","), MGMT_IF: port.ifname },
+          vars: podVars({ rank, size, head: head.ip, own: port, hcas }),
         };
         const gpuKeys = m.gpus.slice(0, 1).map((g) => g.key);
         const launch = m.peerId === null ? await recipes.launch(recipeId, gpuKeys, false, pod) : await call<LaunchProgress>(m.peerId, "POST", `/api/recipes/${encodeURIComponent(recipeId)}/launch`, { gpuKeys, pod });

@@ -393,7 +393,20 @@ export interface FabricPort {
   hca: string;
   ifname: string;
   ip: string;
+  gid: number | null;
 }
+
+const gidFor = async (hca: string, ip: string): Promise<number | null> => {
+  const hex = ip.split(".").map((x) => Number(x).toString(16).padStart(2, "0"));
+  const tail = `${hex[0]}${hex[1]}:${hex[2]}${hex[3]}`;
+  for (let i = 0; i < 32; i++) {
+    const gid = await rd(`/sys/class/infiniband/${hca}/ports/1/gids/${i}`);
+    if (gid === null) break;
+    const type = (await rd(`/sys/class/infiniband/${hca}/ports/1/gid_attrs/types/${i}`)) ?? "";
+    if (/v2/i.test(type) && gid.endsWith(tail)) return i;
+  }
+  return null;
+};
 
 export const fabricPorts = async (): Promise<FabricPort[]> => {
   const out: FabricPort[] = [];
@@ -403,7 +416,7 @@ export const fabricPorts = async (): Promise<FabricPort[]> => {
     for (const ifname of await lsdir(`/sys/class/infiniband/${hca}/device/net`)) {
       if ((await rd(`/sys/class/net/${ifname}/operstate`)) !== "up") continue;
       const ip = (nics[ifname] ?? []).find((a) => a.family === "IPv4" && !a.internal)?.address;
-      if (ip) out.push({ hca, ifname, ip });
+      if (ip) out.push({ hca, ifname, ip, gid: await gidFor(hca, ip) });
     }
   }
   return out.sort((a, b) => a.ip.localeCompare(b.ip, undefined, { numeric: true }));

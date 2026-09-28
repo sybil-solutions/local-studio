@@ -201,7 +201,8 @@ export const buildPlan = (
     for (const [k, v] of Object.entries(env)) env[k] = fill(v);
     const left = [...args, ...Object.values(env)].join(" ").match(/\$\{[A-Z][A-Z0-9_]*\}/g);
     if (left) throw new HttpError(422, "POD_VARS", `${recipeId}: this launch needs ${[...new Set(left)].join(", ")}, which Local Studio does not know how to fill`);
-    if (pod.rank > 0 && engine === "vllm" && !args.includes("--headless")) args = [...args, "--headless"];
+    args = args.filter((a) => a !== "");
+    if (pod.rank > 0 && engine === "vllm" && !args.includes("--headless") && !Object.values(env).includes("--headless")) args = [...args, "--headless"];
   }
   const injected = pod && pod.rank > 0 ? [] : injectedFlags(engine, args);
   const plan: LaunchPlan = {
