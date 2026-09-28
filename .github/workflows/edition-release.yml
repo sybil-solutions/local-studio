@@ -1,0 +1,425 @@
+name: Edition Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+      version:
+        description: Stable version (X.Y.Z). Nightly versions are computed.
+        type: string
+        default: ""
+      edition_ref:
+        description: Ref of 0xSero/t3code to build
+        type: string
+        default: local-studio
+      controller_ref:
+        description: Ref of this repository whose controller is bundled
+        type: string
+        default: feat/local-ai-system
+
+concurrency:
+  group: edition-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  EDITION_REPOSITORY: 0xSero/t3code
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      edition_sha: ${{ steps.version.outputs.edition_sha }}
+      controller_sha: ${{ steps.version.outputs.controller_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.controller_ref }}
+          path: studio
+
+      - name: Fetch edition source
+        env:
+          EDITION_REF: ${{ inputs.edition_ref }}
+        run: |
+          set -euo pipefail
+          git init -q edition
+          git -C edition remote add origin "https://github.com/${EDITION_REPOSITORY}.git"
+          git -C edition fetch -q --no-tags --depth=1 origin "$EDITION_REF"
+          git -C edition sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -C edition checkout -q --detach FETCH_HEAD
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.13.1
+
+      - id: version
+        name: Resolve version and tag
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          STABLE_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          prefix="$(node edition/.local-studio/edition-identity.ts tag)"
+          if [[ "$CHANNEL" == "stable" ]]; then
+            if [[ ! "$STABLE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "A stable release needs version X.Y.Z, got '$STABLE_VERSION'." >&2
+              exit 1
+            fi
+            version="$STABLE_VERSION"
+          else
+            base="$(node -p 'require("./edition/apps/server/package.json").version.split("-")[0]')"
+            version="${base}-nightly.$(date -u +%Y%m%d).${GITHUB_RUN_NUMBER}"
+          fi
+          tag="${prefix}${version}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists." >&2
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "edition_sha=$(git -C edition rev-parse HEAD)"
+            echo "controller_sha=$(git -C studio rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+          echo "Edition $version ($tag)"
+
+  desktop-mac:
+    needs: preflight
+    runs-on: macos-15
+    timeout-minutes: 90
+    environment: release-signing
+    env:
+      RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+    steps:
+      - name: Fetch edition source
+        env:
+          EDITION_SHA: ${{ needs.preflight.outputs.edition_sha }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${EDITION_REPOSITORY}.git"
+          git fetch -q --no-tags --depth=1 origin "$EDITION_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout -q --detach FETCH_HEAD
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.preflight.outputs.controller_sha }}
+          path: .studio
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+
+      - name: Build bundled Local Studio controller
+        working-directory: .studio
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+          LOCAL_STUDIO_TARGETS=bun-darwin-arm64 bash scripts/release.sh
+          mkdir -p "$RUNNER_TEMP/controller"
+          tar -xzf dist/local-studio-*-darwin-arm64.tar.gz -C "$RUNNER_TEMP/controller"
+          "$RUNNER_TEMP/controller/local-studio" version
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Apply edition identity
+        run: |
+          set -euo pipefail
+          node .local-studio/edition-identity.ts apply
+          node .local-studio/edition-identity.ts env "$RUNNER_TEMP/controller" >> "$GITHUB_ENV"
+          node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+
+      - name: Build, sign and notarize desktop app
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$CSC_LINK" || -z "$CSC_KEY_PASSWORD" ]]; then
+            echo "The release-signing environment has no macOS certificate." >&2
+            exit 1
+          fi
+          if [[ -n "$APPLE_API_KEY_BASE64" && -n "$APPLE_API_KEY_ID" && -n "$APPLE_API_ISSUER" ]]; then
+            key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+            printf '%s' "$APPLE_API_KEY_BASE64" | base64 --decode > "$key_path"
+            export APPLE_API_KEY="$key_path"
+            echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD
+            echo "Notarizing with the App Store Connect API key."
+          elif [[ -n "$APPLE_ID" && -n "$APPLE_APP_SPECIFIC_PASSWORD" && -n "$APPLE_TEAM_ID" ]]; then
+            unset APPLE_API_KEY_ID APPLE_API_ISSUER
+            echo "Notarizing with the Apple ID."
+          else
+            echo "The release-signing environment has no notarization credentials." >&2
+            exit 1
+          fi
+          vp run dist:desktop:artifact \
+            --platform mac \
+            --target dmg \
+            --arch arm64 \
+            --build-version "$RELEASE_VERSION" \
+            --signed \
+            --verbose
+
+      - name: Verify signed app and update feed
+        run: |
+          set -euo pipefail
+          app="$(find release -maxdepth 2 -name '*.app' -type d | head -n 1)"
+          test -n "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+          xcrun stapler validate "$app"
+          update_config="$app/Contents/Resources/app-update.yml"
+          cat "$update_config"
+          grep -Fx "provider: generic" "$update_config"
+          grep -F "url: $T3CODE_EDITION_UPDATE_FEED_URL" "$update_config"
+          controller="$app/Contents/Resources/local-studio/local-studio"
+          codesign --verify --strict --verbose=2 "$controller"
+          "$controller" version
+
+      - name: Build CLI single-executable
+        env:
+          VP_NODE_VERSION: "26.8.2"
+        run: node apps/server/scripts/cli.ts build-exe --verbose
+
+      - name: Import signing certificate for the CLI archive
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/edition-cli-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 16)"
+          echo "::add-mask::$keychain_password"
+          cert_path="$RUNNER_TEMP/edition-cli-signing.p12"
+          printf '%s' "$CSC_LINK" | base64 --decode > "$cert_path"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert_path" -k "$keychain" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          read -r -a existing_keychains <<< "$(security list-keychains -d user | tr -d '"' | xargs)"
+          security list-keychains -d user -s "$keychain" "${existing_keychains[@]}"
+          rm -f "$cert_path"
+          identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -n 1)"
+          test -n "$identity"
+          echo "T3CODE_CLI_MAC_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build CLI archive
+        run: |
+          set -euo pipefail
+          target_dir="$RUNNER_TEMP/cli-resource-monitor/darwin-arm64"
+          mkdir -p "$target_dir"
+          cp native/resource-monitor/target/aarch64-apple-darwin/release/t3-resource-monitor "$target_dir/"
+          node scripts/build-cli-archive.ts \
+            --platform mac \
+            --arch arm64 \
+            --version "$RELEASE_VERSION" \
+            --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
+            --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$RELEASE_VERSION"
+
+      - name: Collect assets
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          shopt -s nullglob
+          cp release/*.dmg release/*.zip release/*.blockmap release/*.yml release-publish/
+          cp release-cli/* release-publish/
+          ls -la release-publish
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: edition-mac-arm64
+          path: release-publish/*
+          if-no-files-found: error
+          retention-days: 7
+
+  cli-linux:
+    needs: preflight
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x64
+            rust_target: x86_64-unknown-linux-gnu
+            resource_key: linux-x64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            rust_target: aarch64-unknown-linux-gnu
+            resource_key: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+    steps:
+      - name: Fetch edition source
+        env:
+          EDITION_SHA: ${{ needs.preflight.outputs.edition_sha }}
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${EDITION_REPOSITORY}.git"
+          git fetch -q --no-tags --depth=1 origin "$EDITION_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout -q --detach FETCH_HEAD
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+          targets: ${{ matrix.rust_target }}
+
+      - name: Install dependencies
+        run: vp install --frozen-lockfile
+
+      - name: Apply edition identity
+        run: |
+          set -euo pipefail
+          node .local-studio/edition-identity.ts apply
+          node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+
+      - name: Build server, resource monitor and single-executable
+        env:
+          VP_NODE_VERSION: "26.8.2"
+        run: |
+          set -euo pipefail
+          vp run --filter t3 build
+          cargo build --release --locked --target "${{ matrix.rust_target }}" --manifest-path native/resource-monitor/Cargo.toml
+          target_dir="$RUNNER_TEMP/cli-resource-monitor/${{ matrix.resource_key }}"
+          mkdir -p "$target_dir"
+          cp "native/resource-monitor/target/${{ matrix.rust_target }}/release/t3-resource-monitor" "$target_dir/"
+          node apps/server/scripts/cli.ts build-exe --verbose
+
+      - name: Build CLI archive
+        run: |
+          set -euo pipefail
+          node scripts/build-cli-archive.ts \
+            --platform linux \
+            --arch "${{ matrix.arch }}" \
+            --version "$RELEASE_VERSION" \
+            --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
+            --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "$RELEASE_VERSION"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: edition-cli-${{ matrix.resource_key }}
+          path: release-cli/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [preflight, desktop-mac, cli-linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ needs.preflight.outputs.version }}
+      RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+      CHANNEL: ${{ inputs.channel }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Fetch edition release tooling
+        env:
+          EDITION_SHA: ${{ needs.preflight.outputs.edition_sha }}
+        run: |
+          set -euo pipefail
+          git init -q edition
+          git -C edition remote add origin "https://github.com/${EDITION_REPOSITORY}.git"
+          git -C edition fetch -q --no-tags --depth=1 origin "$EDITION_SHA"
+          git -C edition sparse-checkout set --no-cone '/.local-studio/'
+          git -C edition checkout -q --detach FETCH_HEAD
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.13.1
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: edition-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Checksums and update feed
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum t3-* > SHA256SUMS
+          cat SHA256SUMS
+          mkdir -p ../feed
+          cp ./*.yml ../feed/
+          node ../edition/.local-studio/edition-identity.ts feed ../feed "$RELEASE_VERSION"
+          cat ../feed/*.yml
+
+      - name: Publish release
+        env:
+          EDITION_SHA: ${{ needs.preflight.outputs.edition_sha }}
+          CONTROLLER_SHA: ${{ needs.preflight.outputs.controller_sha }}
+        run: |
+          set -euo pipefail
+          notes="Local Studio Code ${RELEASE_VERSION}
+
+          Edition: https://github.com/${EDITION_REPOSITORY}/commit/${EDITION_SHA}
+          Bundled controller: https://github.com/${GITHUB_REPOSITORY}/commit/${CONTROLLER_SHA}"
+          flags=(--latest=false --target "$GITHUB_SHA")
+          if [[ "$CHANNEL" == "nightly" ]]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Local Studio Code ${RELEASE_VERSION}" \
+            --notes "$notes" \
+            "${flags[@]}" \
+            release-assets/*
+
+      - name: Update the update feed
+        run: |
+          set -euo pipefail
+          feed_tag="$(node edition/.local-studio/edition-identity.ts feed-tag)"
+          if ! gh release view "$feed_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$feed_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Local Studio Code update feed" \
+              --notes "Update manifests for Local Studio Code. Each points at a ${RELEASE_TAG%%[0-9]*}* release." \
+              --latest=false \
+              --target "$GITHUB_SHA"
+          fi
+          gh release upload "$feed_tag" --repo "$GITHUB_REPOSITORY" --clobber feed/*.yml
+          gh release view "$feed_tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'
