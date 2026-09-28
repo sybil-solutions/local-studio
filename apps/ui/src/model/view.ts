@@ -116,6 +116,8 @@ const gpuCountLine = (gpus: Gpu[]): string => {
   return [...by.entries()].map(([n, c]) => (c > 1 ? `${c} × ${n}` : n)).join(", ");
 };
 
+export const podWorker = (m: { runtime: { kind: string; containerName?: string } }): boolean => m.runtime.kind === "docker" && /-pod-[a-z0-9]+-r[1-9]\d*$/.test(m.runtime.containerName ?? "");
+
 export const machines = (f: FleetSnapshot | null, live: Record<string, LaunchProgress>): MachineView[] =>
   (f?.machines ?? []).map((m) => {
     const s = m.snapshot;
@@ -375,7 +377,7 @@ export const homeCards = (
     const s = mv.snap;
     if (!s || !mv.online) continue;
     const ls = launchesFor(s, live, selfId);
-    for (const m of s.models) {
+    for (const m of s.models.filter((x) => !podWorker(x))) {
       const l = ls.find((x) => x.modelId === m.id && ACTIVE.includes(x.phase)) ?? null;
       (m.state === "ready" ? ready : working).push(cardOf(mv, s, m, l, engineFor(s, m.id, engines, mv.self)));
     }

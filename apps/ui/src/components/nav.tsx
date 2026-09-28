@@ -1,6 +1,6 @@
 import { type ReactNode, useMemo, useState } from "react";
 import { getKey, setKey } from "../api";
-import { machines } from "../model/view";
+import { machines, podWorker } from "../model/view";
 import { restart, useStore } from "../store";
 import { BarMark } from "./basics";
 
@@ -18,7 +18,7 @@ export const Nav = ({ path }: { path: string }) => {
   const conn = useStore((s) => s.conn);
   const [open, setOpen] = useState(false);
   const ms = useMemo(() => machines(fleet, launches), [fleet, launches]);
-  const running = ms.flatMap((m) => (m.snap?.models ?? []).filter((x) => (x.modality ?? "chat") === "chat").map((x) => ({ key: `${m.id}/${x.id}`, name: x.primaryModel || x.id, machine: m.name })));
+  const running = ms.flatMap((m) => (m.snap?.models ?? []).filter((x) => (x.modality ?? "chat") === "chat" && !podWorker(x)).map((x) => ({ key: `${m.id}/${x.id}`, name: x.primaryModel || x.id, machine: m.name })));
   const endpoints = ms.reduce((t, m) => t + (m.snap?.models ?? []).filter((x) => (x.modality ?? "chat") !== "chat").length, 0);
   const sparks = ms.filter((m) => /^spark-/.test(m.name));
   const others = ms.filter((m) => !/^spark-/.test(m.name));
