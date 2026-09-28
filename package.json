@@ -2,11 +2,11 @@
   "name": "local-studio",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "controller", "ui", "desktop"],
+  "workspaces": ["packages/*", "apps/*"],
   "scripts": {
     "typecheck": "bun run --filter '*' typecheck",
-    "build:ui": "bun run --cwd ui build",
-    "build:bin": "bun run --cwd controller build",
-    "serve": "bun controller/src/main.ts serve"
+    "build:ui": "bun run --cwd apps/ui build",
+    "build:bin": "bun run --cwd apps/controller build",
+    "serve": "bun apps/controller/src/main.ts serve"
   }
 }

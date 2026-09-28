@@ -2,7 +2,7 @@ appId: org.local.studio.desktop
 productName: Local Studio
 artifactName: Local-Studio-${version}-${os}-${arch}.${ext}
 directories:
-  output: ../dist/desktop
+  output: ../../dist/desktop
   buildResources: build
 files:
   - main.cjs
@@ -23,7 +23,7 @@ mac:
   category: public.app-category.developer-tools
   hardenedRuntime: true
   extraResources:
-    - from: ../dist/darwin-arm64/
+    - from: ../../dist/darwin-arm64/
       to: local-studio/
 linux:
   executableName: local-studio
@@ -32,5 +32,5 @@ linux:
       arch: x64
   category: Development
   extraResources:
-    - from: ../dist/linux-x64/
+    - from: ../../dist/linux-x64/
       to: local-studio/

@@ -120,7 +120,7 @@ jobs:
         run: mkdir -p dist/darwin-arm64 && tar -xzf "dist/local-studio-$VERSION-darwin-arm64.tar.gz" -C dist/darwin-arm64
       - id: build
         name: Build, sign and notarize
-        working-directory: desktop
+        working-directory: apps/desktop
         timeout-minutes: 50
         env:
           CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
@@ -203,7 +203,7 @@ jobs:
       - name: Unpack bundled controller
         run: mkdir -p dist/linux-x64 && tar -xzf "dist/local-studio-$VERSION-linux-x64.tar.gz" -C dist/linux-x64
       - name: Build AppImage
-        working-directory: desktop
+        working-directory: apps/desktop
         run: timeout 1200 ./node_modules/.bin/electron-builder --linux --x64 --publish never "-c.extraMetadata.version=$VERSION" "-c.extraMetadata.localStudioCommit=$RELEASE_SHA"
       - name: Verify AppImage
         run: |

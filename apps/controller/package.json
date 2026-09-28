@@ -7,7 +7,7 @@
   "scripts": {
     "typecheck": "tsc -p .",
     "serve": "bun src/main.ts serve",
-    "build": "bun build src/main.ts --compile --outfile ../dist/local-studio"
+    "build": "bun build src/main.ts --compile --outfile ../../dist/local-studio"
   },
   "dependencies": {
     "@local-studio/contracts": "workspace:*",

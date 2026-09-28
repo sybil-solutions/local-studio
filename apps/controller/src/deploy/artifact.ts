@@ -10,12 +10,12 @@ export interface Artifact {
   built: boolean;
 }
 
-const SOURCES = ["controller/src", "controller/package.json", "packages/contracts/src", "ui/src", "ui/index.html", "ui/package.json", "scripts/release.sh"];
+const SOURCES = ["apps/controller/src", "apps/controller/package.json", "packages", "apps/ui/src", "apps/ui/index.html", "apps/ui/package.json", "scripts/release.sh"];
 const SKIP = new Set(["node_modules", "dist", ".git"]);
 
 export const repoRoot = (): string => {
-  const candidates = [process.env.LOCAL_STUDIO_REPO, resolve(import.meta.dir, "../../..")].filter((x): x is string => !!x);
-  const root = candidates.find((d) => existsSync(join(d, "scripts/release.sh")) && existsSync(join(d, "controller/package.json")));
+  const candidates = [process.env.LOCAL_STUDIO_REPO, resolve(import.meta.dir, "../../../..")].filter((x): x is string => !!x);
+  const root = candidates.find((d) => existsSync(join(d, "scripts/release.sh")) && existsSync(join(d, "apps/controller/package.json")));
   if (!root) throw new DeployError("cannot find the local-studio source tree (set LOCAL_STUDIO_REPO)");
   return root;
 };
@@ -30,7 +30,7 @@ const newest = (path: string): number => {
 };
 
 export const sourceVersion = (root: string): string =>
-  (JSON.parse(readFileSync(join(root, "controller/package.json"), "utf8")) as { version: string }).version;
+  (JSON.parse(readFileSync(join(root, "apps/controller/package.json"), "utf8")) as { version: string }).version;
 
 export const artifactFor = async (target: Probe, log: (s: string) => void): Promise<Artifact> => {
   const root = repoRoot();

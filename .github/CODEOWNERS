@@ -4,7 +4,7 @@
 * @0xSero
 
 # Application-specific owners
-/controller/ @0xSero
+/apps/controller/ @0xSero
 /frontend/ @0xSero
 
 # Configuration
