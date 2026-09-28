@@ -4,7 +4,7 @@ import { which } from "../core/exec";
 
 const EXTRA_BIN = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
 
-export const shq = (s: string) => (/^[A-Za-z0-9_./:=@%+-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+export const shq = (s: string) => (/^[A-Za-z0-9_./:@%+-][A-Za-z0-9_./:=@%+-]*$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 
 export const TMUX_SOCKET = ["-L", "local-studio-agents", "-f", "/dev/null"];
 
