@@ -20,6 +20,7 @@ const READ_ONLY_DENY: RegExp[] = [
   /^\/api\/agents\/(launch|[^/]+\/install|sessions\/[^/]+)$/,
   /^\/api\/models\/[^/]+\/export\/pr$/,
   /^\/api\/peers\/[^/]+\/api\//,
+  /^\/api\/t3\/(start|stop|pair)$/,
 ];
 
 const SAFE = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -35,6 +36,7 @@ const FEDERATION_ACTIONS: RegExp[] = [
   /^\/api\/recipes\/[^/]+\/assigned$/,
   /^\/api\/lab\/verify$/,
   /^\/api\/pods\/[^/]+$/,
+  /^\/api\/t3\/(start|stop|pair)$/,
 ];
 
 const federationAllows = (id: KeyIdentity, method: string, path: string): boolean => {

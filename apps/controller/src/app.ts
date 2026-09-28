@@ -23,6 +23,7 @@ import { createGateway } from "./gateway";
 import { createMetrics } from "./metrics";
 import { createRecipes } from "./recipes";
 import { HttpError } from "./recipes/util";
+import { createT3 } from "./t3";
 
 export interface App {
   ctx: Ctx;
@@ -65,7 +66,8 @@ export const createApp = (config: Config): App => {
   svc.recipes = recipes.service;
   const agents = createAgents(ctx, svc);
   svc.agents = agents.service;
-  const modules: Module<unknown>[] = [discovery, metrics, federation, gateway, recipes, agents];
+  const t3 = createT3(ctx, svc);
+  const modules: Module<unknown>[] = [discovery, metrics, federation, gateway, recipes, agents, t3];
 
   const hono = new Hono<Env>();
   obs.gauge("db.bytes", () => dbBytes(config.dataDir).db);
