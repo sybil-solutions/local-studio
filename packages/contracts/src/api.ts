@@ -8,7 +8,7 @@ export const ConnectPeerBody = z.object({
 });
 export type ConnectPeerBody = z.infer<typeof ConnectPeerBody>;
 
-const GpuKeys = z.array(z.string().regex(/^(nvidia|apple|intel):[0-9]{1,2}$/)).min(1).max(8);
+const GpuKeys = z.array(z.string().regex(/^(nvidia|apple|intel|amd):[0-9]{1,2}$/)).min(1).max(8);
 
 export const LaunchRecipeBody = z.object({
   gpuKeys: GpuKeys.optional(),

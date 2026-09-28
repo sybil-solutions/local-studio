@@ -1,4 +1,4 @@
-export type GpuBackend = "nvidia" | "apple" | "intel-xpu";
+export type GpuBackend = "nvidia" | "metal" | "intel-xpu" | "amd-rocm";
 
 export type GpuKey = string;
 

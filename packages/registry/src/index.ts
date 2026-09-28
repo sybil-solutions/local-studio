@@ -277,12 +277,14 @@ export const normProduct = (s: string): string =>
     .replace(/nvidia|geforce|intel|amd|radeon|generation|workstation|edition|\d+\s*gb/g, "")
     .replace(/[^a-z0-9]/g, "");
 
-export const matchCard = (tree: Tree, gpu: { backend: string; product: string; memMiB: number }): Card | null => {
-  const n = normProduct(gpu.product);
-  const gap = (c: Card) => Math.abs(c.match.vramGb * 1024 - gpu.memMiB);
+export type CardMatch = { match: { backend: string; name: string; names: string[]; vramGb: number } };
+
+export const matchCard = <C extends CardMatch>(cards: Iterable<C>, backend: string, product: string, memMiB: number): C | null => {
+  const n = normProduct(product);
+  const gap = (c: C) => Math.abs(c.match.vramGb * 1024 - memMiB);
   return (
-    [...tree.cards.values()]
-      .filter((c) => c.match.backend === gpu.backend && (c.match.names.includes(n) || normProduct(c.match.name) === n) && gap(c) <= Math.max(1024, c.match.vramGb * 51))
+    [...cards]
+      .filter((c) => c.match.backend === backend && (c.match.names.includes(n) || normProduct(c.match.name) === n) && gap(c) <= Math.max(1024, c.match.vramGb * 51))
       .sort((a, b) => gap(a) - gap(b))[0] ?? null
   );
 };

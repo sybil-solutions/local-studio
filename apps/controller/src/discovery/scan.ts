@@ -4,7 +4,12 @@ import { modelPathArg, quantFromConfig, quantFromFlag, quantFromName, quantNames
 import type { Ctx, RuntimeView } from "../context";
 import { containerName, digestOf, dockerScan, imageInfo, type Inspect, publishedPorts, wantsGpu } from "./docker";
 import { computeGroups } from "./groups";
-import { type ComputeApp, containerDrm, drmClients, type HardwareList, intelClients, intelMemUsed, resolveGpuRefs, scanGpus, setIntelApps, sumClients } from "./gpus";
+import type { RecipeCatalog } from "@local-studio/contracts";
+import { type ComputeApp, containerDrm, drmClients, intelClients, intelMemUsed, resolveGpuRefs, scanGpus, setIntelApps, sumClients } from "@local-studio/probe";
+import { hardwareMatch } from "../recipes/fit";
+import { sysOf } from "./util";
+
+type HardwareList = RecipeCatalog["hardware"];
 import { type Fingerprint, fingerprint, get, type Health, healthCheck, type ModelEntry, PROBE_CONCURRENCY, PROBE_MAX, type ProbeCache } from "./probe";
 import { ancestors, cmdline, descendants, type Listener, listListeners, listProcs, type ProcTable, probeHost } from "./procs";
 import { ENGINE_RE, embeddingArgv, modalityOf, engineFromArgs, envMap, flag, flagList, hasFlag, num, parseJson, pool, portArg, promLabels } from "./util";
@@ -207,7 +212,7 @@ const signalBlock = (uid: number | undefined): string | null =>
 export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null, excluded: Set<number>): Promise<ScanResult> => {
   const t0 = performance.now();
   const errors: string[] = [];
-  const [gs, procs, listeners, { docker, containers }] = await Promise.all([scanGpus(ctx, hw), listProcs(ctx), listListeners(ctx), dockerScan(ctx)]);
+  const [gs, procs, listeners, { docker, containers }] = await Promise.all([scanGpus(sysOf(ctx), hardwareMatch(hw)), listProcs(ctx), listListeners(ctx), dockerScan(ctx)]);
   if (gs.error) errors.push(gs.error);
   if (gs.nodes.size) {
     const engines = [...procs.byPid.values()].filter((p) => ENGINE_RE.test(p.args));
@@ -219,7 +224,7 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
     for (const c of containers) {
       const uuids = [...new Set((c.HostConfig.Devices ?? []).flatMap((d) => (d.PathOnHost.replace(/\/+$/, "") === "/dev/dri" ? intel : [gs.nodes.get(d.PathOnHost)])).filter((u): u is string => !!u))];
       if (!uuids.length || !c.State.Running) continue;
-      const clients = await containerDrm(ctx, c.Id);
+      const clients = await containerDrm(sysOf(ctx), c.Id);
       held.push({ uuids, clients });
       const pid = findEnginePid(procs, c.State.Pid, []) ?? c.State.Pid;
       for (const uuid of uuids) {
@@ -309,7 +314,7 @@ export const fullScan = async (ctx: Ctx, st: ScanState, hw: HardwareList | null,
     });
   }
 
-  const apple = ctx.config.platform === "darwin" ? gs.gpus.find((g) => g.backend === "apple") : undefined;
+  const apple = ctx.config.platform === "darwin" ? gs.gpus.find((g) => g.backend === "metal") : undefined;
   const portOwner = new Map<number, number>();
   for (const app of gs.apps) {
     const owner = appOwner.get(app.pid);

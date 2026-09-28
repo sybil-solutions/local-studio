@@ -1,19 +1,28 @@
 import type { Gpu, GpuGroup, Recipe, RecipeCatalog, RecipeFit, RecipeRow, RecipeStop, RunningModel } from "@local-studio/contracts";
 import type { RuntimeView } from "../context";
-import { matchHardware, normProduct } from "../discovery/gpus";
+import type { Match } from "@local-studio/probe";
+import { matchCard, normProduct } from "@local-studio/registry";
 import type { LoadedCatalog } from "./registry";
 import type { WeightIndex } from "./weights";
+
+export const matchHardware = (hardware: RecipeCatalog["hardware"] | null, backend: string, product: string, memMiB: number): string =>
+  (hardware ? matchCard(hardware, backend, product, memMiB)?.hardwareId : undefined) ?? `${backend}-${normProduct(product)}`;
+
+export const hardwareMatch =
+  (hardware: RecipeCatalog["hardware"] | null): Match =>
+  (backend, product, memMiB) =>
+    matchHardware(hardware, backend, product, memMiB);
 
 export const hardwareIds = (g: Gpu, hardware: RecipeCatalog["hardware"]): Set<string> => {
   const out = new Set<string>([`${g.backend}-${normProduct(g.product || g.name)}`]);
   if (g.hardwareId) out.add(g.hardwareId);
-  const m = matchHardware(hardware, g.backend, g.product || g.name, g.memTotalMiB, g.unified);
+  const m = matchHardware(hardware, g.backend, g.product || g.name, g.memTotalMiB);
   if (m) out.add(m);
   return out;
 };
 
 export const hardwareOf = (g: Gpu, hardware: RecipeCatalog["hardware"]): string | null => {
-  const m = matchHardware(hardware, g.backend, g.product || g.name, g.memTotalMiB, g.unified);
+  const m = matchHardware(hardware, g.backend, g.product || g.name, g.memTotalMiB);
   return m && hardware.some((h) => h.hardwareId === m) ? m : g.hardwareId ?? m;
 };
 

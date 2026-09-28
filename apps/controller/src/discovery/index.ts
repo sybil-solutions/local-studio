@@ -2,7 +2,12 @@ import { hostname, networkInterfaces } from "node:os";
 import type { Machine, RunningModel, Watchdog } from "@local-studio/contracts";
 import type { Ctx, LifecycleService, Module, RuntimeService, RuntimeView, Services } from "../context";
 import { computeGroups } from "./groups";
-import { type HardwareList, scanGpus } from "./gpus";
+import type { RecipeCatalog } from "@local-studio/contracts";
+import { scanGpus } from "@local-studio/probe";
+import { hardwareMatch } from "../recipes/fit";
+import { sysOf } from "./util";
+
+type HardwareList = RecipeCatalog["hardware"];
 import { createHostSampler } from "./host";
 import { createLifecycle } from "./lifecycle";
 import { createProbeCache, healthCheck } from "./probe";
@@ -99,7 +104,7 @@ export const createDiscovery = (ctx: Ctx, svc: Services): Module<{ runtime: Runt
     fastBusy = true;
     const started = performance.now();
     try {
-      const gs = await scanGpus(ctx, hardware());
+      const gs = await scanGpus(sysOf(ctx), hardwareMatch(hardware()));
       const known = new Set(pidOwner.keys());
       const newPid = gs.apps.some((a) => !known.has(a.pid) && !view.gpus.some((g) => g.processes.some((p) => p.pid === a.pid)));
       const gonePid = [...known].some((pid) => !gs.apps.some((a) => a.pid === pid));

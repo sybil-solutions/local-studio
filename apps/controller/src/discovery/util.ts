@@ -1,3 +1,4 @@
+import type { Sys } from "@local-studio/probe";
 export const ENGINE_RE =
   /(^|[\/\s])vllm-mlx\s+serve\b|(^|[\/\s])vllm\s+serve\b|\bvllm\.entrypoints\.|\s-m\s+vllm(\.|\s|$)|sglang\.launch_server|\s-m\s+sglang(\.|\s|$)|(^|[\/\s])sglang\s+serve\b|(^|\/)llama-server(\s|$)|tabbyAPI|mlx_lm[.\s]server|(^|[\/\s])mlx_lm\.server/;
 
@@ -110,3 +111,5 @@ export const promLabels = (text: string, metric: string): Record<string, string>
   for (const p of (m[1] ?? "").matchAll(/(\w+)="((?:[^"\\]|\\.)*)"/g)) out[p[1] as string] = p[2] as string;
   return out;
 };
+
+export const sysOf = (ctx: { config: { platform: string }; exec: Sys["exec"] }): Sys => ({ platform: ctx.config.platform, exec: ctx.exec });
