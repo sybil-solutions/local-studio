@@ -160,7 +160,7 @@ export const RunPanel = ({ machines, initial, onDone }: { machines: MachineView[
                   <div className="run-r" onClick={() => setOpen(expanded ? null : r.id)}>
                     <span className="run-cfg">
                       <span className="ink">{r.name}</span>
-                      <span className="label">{`${fmt.ctx(r.ctxTokens)} context${r.sizeGb ? ` · ${Math.round(r.sizeGb)} GB` : ""}${pod ? ` · ${r.machines} machines` : ""}`}</span>
+                      <span className="label">{`${r.engine} · ${fmt.ctx(r.ctxTokens)} context${r.sizeGb ? ` · ${Math.round(r.sizeGb)} GB` : ""}${pod ? ` · ${r.machines} machines` : ""}`}</span>
                     </span>
                     <span className="run-speed">{r.proof?.tps ? `${fmt.tps(r.proof.tps)} tok/s` : ""}</span>
                     <span className="run-go" onClick={(e) => e.stopPropagation()}>
