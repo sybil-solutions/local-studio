@@ -80,3 +80,16 @@ export type PriceBody = z.infer<typeof PriceBody>;
 
 export const WindowParam = z.enum(["1h", "24h", "7d", "30d", "all"]).default("24h");
 
+
+export const T3StartBody = z.object({
+  host: z.string().regex(/^[0-9a-fA-F:.]{2,45}$/).optional(),
+  port: z.number().int().min(1024).max(65535).optional(),
+  cwd: z.string().min(1).max(1024).optional(),
+});
+export type T3StartBody = z.infer<typeof T3StartBody>;
+
+export const T3PairBody = z.object({
+  ttlMinutes: z.number().int().min(1).max(1440).optional(),
+  label: z.string().min(1).max(64).optional(),
+});
+export type T3PairBody = z.infer<typeof T3PairBody>;
