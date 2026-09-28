@@ -129,6 +129,7 @@ export interface LaunchPlan {
   servedName: string;
   injected: string[];
   host?: HostPlan;
+  downloads?: { repository: string; argv: string[] }[];
 }
 
 export interface HostPlan {

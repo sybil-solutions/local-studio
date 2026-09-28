@@ -205,10 +205,6 @@ const build = (ctx: Ctx, cache: CacheFile, source: string): LoadedCatalog => {
         skip("image built from source");
         continue;
       }
-      if (L.kind === "container" && L.machines > 1) {
-        skip("runs across several machines");
-        continue;
-      }
       const v = toV2(key, r, L, p, tree, ctx.config.dataDir);
       if (!RECIPE_ID.test(v.id) || raw.has(v.id)) continue;
       raw.set(v.id, v);

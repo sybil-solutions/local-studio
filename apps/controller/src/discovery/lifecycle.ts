@@ -252,6 +252,14 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       for (let p = lo; !hostPort && p <= hi; p++) if (await bindable(p)) hostPort = p;
       if (!hostPort) return fail(`no free port in ${lo}-${hi}`);
       const final: LaunchPlan = { ...plan, gpuUuids: uuids, hostPort };
+      for (const dl of plan.downloads ?? []) {
+        if (cur().cancelled) return;
+        const hf = await which("hf", [join(process.env.HOME ?? "", ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/Library/Frameworks/Python.framework/Versions/Current/bin"]);
+        if (!hf) return fail(`weights ${dl.repository} are not here and the hf command is not installed; run: ${dl.argv.join(" ")}`);
+        update(id, { phase: "weights", detail: `downloading ${dl.repository}`, percent: null });
+        const r = await ctx.exec([hf, ...dl.argv.slice(1)], { timeoutMs: 12 * 3600_000, env: { HF_HUB_ENABLE_HF_TRANSFER: "1" } });
+        if (r.code !== 0) return fail(`download of ${dl.repository} failed: ${redact((r.stderr || r.stdout).trim().split("\n").at(-1) ?? "")}`);
+      }
       if (cur().cancelled) return;
       if (plan.host) {
         const moved = hostPort === plan.hostPort ? { argv: plan.host.command, env: plan.host.env } : withPort(plan.host.command, plan.host.env, plan.hostPort, hostPort);

@@ -43,7 +43,7 @@ export const createRecipes = (ctx: Ctx, svc: Services): Module<RecipeService> =>
       let view = svc.runtime.view();
       if (stop && gpuKeys?.length) {
         const pre = buildPlan(ctx, view, loaded, index, recipeId, { gpuKeys, strict: false });
-        const missing = pre.weights.find((w) => !w.present);
+        const missing = pre.weights.find((w) => !w.present && !w.hint?.startsWith("hf download "));
         if (missing) throw new HttpError(409, "WEIGHTS_MISSING", missing.hint ?? `weights ${missing.repository} are not on this machine`);
         for (const s of stopsFor(ctx.identity.machineId, pre.plan.gpuKeys, view.groups)) {
           if (!s.modelId || s.state === "foreign") throw new HttpError(409, "GPU_FOREIGN", `${s.gpuKeys.join(",")} are held by a process Local Studio does not run; stop it on the machine first`);

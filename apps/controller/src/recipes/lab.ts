@@ -5,7 +5,6 @@ import { type Gate, runGates } from "@local-studio/gates";
 import { type Card, type Launch, type Profile, type Recipe as RegRecipe, type Proof, recipePath } from "@local-studio/registry";
 import { Hono } from "hono";
 import type { Ctx, Env, Services } from "../context";
-import { which } from "../core/exec";
 import { buildPlan } from "./plan";
 import { type LoadedCatalog, toRecipe, toV2 } from "./registry";
 import { HttpError } from "./util";
@@ -34,7 +33,6 @@ interface TryBody {
   keep?: boolean;
 }
 
-const HF_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/Library/Frameworks/Python.framework/Versions/Current/bin", `${process.env.HOME ?? ""}/.local/bin`];
 
 export const createLab = (ctx: Ctx, svc: Services) => {
   const runs = new Map<string, LabRun>();
@@ -68,17 +66,6 @@ export const createLab = (ctx: Ctx, svc: Services) => {
     const reg: RegRecipe = { ...b.recipe, proof: [] };
     const v = toV2(key, reg, b.launch, b.profile, { models: {}, builds: {} }, ctx.config.dataDir);
     v.id = `lab-${r.id}`;
-    const index = createWeightIndex(ctx);
-    set(r, { phase: "weights", detail: "resolving weights" });
-    for (const w of v.weights) {
-      const res = index.resolve(w);
-      if (res.present) continue;
-      const hf = await which("hf", HF_DIRS);
-      if (!hf || !res.hint?.startsWith("hf download ")) throw new Error(`weights ${w.repository} are missing and cannot be downloaded here${res.hint ? `; run: ${res.hint}` : ""}`);
-      set(r, { detail: `downloading ${w.repository}@${w.revision.slice(0, 8)}` });
-      const dl = await ctx.exec([hf, ...res.hint.slice(3).split(" ")], { timeoutMs: 6 * 3600_000, env: { HF_HUB_ENABLE_HF_TRANSFER: "1" } });
-      if (dl.code !== 0) throw new Error(`download failed: ${(dl.stderr || dl.stdout).trim().split("\n").at(-1)}`);
-    }
     const loaded: LoadedCatalog = {
       catalog: { source: "lab", ref: "lab", registryCommit: null, generatedAt: null, fetchedAt: Date.now(), hardware: [{ hardwareId: b.card.id, match: b.card.match }], recipes: [toRecipe(v, b.card.id, false)] },
       raw: new Map([[v.id, v]]),

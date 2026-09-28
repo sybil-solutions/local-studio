@@ -122,11 +122,15 @@ export const buildPlan = (
   const addMount = (m: LaunchMount) => {
     if (!mounts.some((x) => x.target === m.target)) mounts.push(m);
   };
+  const downloads: { repository: string; argv: string[] }[] = [];
   for (const w of weights) {
     if (!w.present) {
-      const msg = w.source === "missing" && w.hint?.startsWith("/") ? w.hint : `weights ${w.repository}@${w.revision.slice(0, 12)} are not on this machine; run: ${w.hint}`;
-      if (opts.strict) throw new HttpError(409, "WEIGHTS_MISSING", msg);
-      warnings.push(msg);
+      if (w.hint?.startsWith("hf download ")) downloads.push({ repository: `${w.repository}@${w.revision.slice(0, 12)}`, argv: w.hint.split(" ") });
+      else {
+        const msg = w.source === "missing" && w.hint?.startsWith("/") ? w.hint : `weights ${w.repository}@${w.revision.slice(0, 12)} are not on this machine; run: ${w.hint}`;
+        if (opts.strict) throw new HttpError(409, "WEIGHTS_MISSING", msg);
+        warnings.push(msg);
+      }
     }
     addMount({ source: w.hostPath, target: w.mountPath, readOnly: w.layout === "dir" });
   }
@@ -177,6 +181,7 @@ export const buildPlan = (
       servedName: raw.servedName,
       injected: [],
       host,
+      downloads,
     };
     return { plan, weights, warnings, asset: null, scratchDir: null };
   }
@@ -207,6 +212,7 @@ export const buildPlan = (
     labels: { "local-studio.managed": "1", "local-studio.recipe": recipeId, "local-studio.machine": ctx.identity.machineId },
     servedName: raw.servedName,
     injected,
+    downloads,
   };
   return { plan, weights, warnings, asset, scratchDir };
 };
