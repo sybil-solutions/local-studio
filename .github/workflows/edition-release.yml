@@ -253,7 +253,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-publish
           shopt -s nullglob
-          cp release/*.dmg release/*.zip release/*.blockmap release/*.yml release-publish/
+          cp release/*.dmg release/*.zip release/*.blockmap release/latest*.yml release/nightly*.yml release-publish/
           cp release-cli/* release-publish/
           ls -la release-publish
 
