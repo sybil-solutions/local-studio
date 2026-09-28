@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { HostPlan, LaunchMount, LaunchPlan } from "@local-studio/contracts";
+import type { HostPlan, LaunchMount, LaunchPlan, PodRank } from "@local-studio/contracts";
 import { withPort } from "../discovery/lifecycle";
 import type { Ctx, RuntimeView } from "../context";
 import { availableKeys, fitFor, hardwareIds } from "./fit";
@@ -28,7 +28,7 @@ const gateHost = (r: V2Recipe, bad: (msg: string) => never): void => {
   if (!Number.isInteger(h.port) || h.port < 1 || h.port > 65535) bad("port is invalid");
 };
 
-const gate = (r: V2Recipe): void => {
+const gate = (r: V2Recipe, pod?: PodRank): void => {
   const bad = (msg: string): never => {
     throw new HttpError(422, "RECIPE_GATE", `${r.id}: ${msg}`);
   };
@@ -36,7 +36,7 @@ const gate = (r: V2Recipe): void => {
   if (!r.local && !DIGEST_PINNED.test(r.image)) bad("image is not pinned by digest");
   if (!/^[\w./:@-]+$/.test(r.image)) bad(`image ${r.image} is invalid`);
   if (!(r.cards >= 1 && r.cards <= 8)) bad(`cards ${r.cards} out of range`);
-  if ((r.machines ?? 1) > 1) bad(`runs across ${r.machines} machines (one rank each, host networking); launching a pod is not supported yet`);
+  if ((r.machines ?? 1) > 1 && pod?.size !== r.machines) bad(`runs across ${r.machines} machines; launch it as a pod of ${r.machines}`);
   for (const w of r.weights) {
     if (w.hostPath !== undefined) {
       if (!r.local || !w.hostPath.startsWith("/")) bad(`weights host path ${w.hostPath} is not allowed`);
@@ -84,12 +84,12 @@ export const buildPlan = (
   loaded: LoadedCatalog,
   index: WeightIndex,
   recipeId: string,
-  opts: { gpuKeys?: string[]; strict: boolean },
+  opts: { gpuKeys?: string[]; strict: boolean; pod?: PodRank },
 ): PlanResult => {
   const raw = loaded.raw.get(recipeId);
   const recipe = loaded.catalog.recipes.find((r) => r.id === recipeId);
   if (!raw || !recipe) throw new HttpError(404, "RECIPE_NOT_FOUND", `no recipe ${recipeId} in the registry catalog`);
-  gate(raw);
+  gate(raw, opts.pod);
   const warnings: string[] = [];
   const hw = loaded.catalog.hardware;
   const fit = fitFor(recipe.hardwareId, recipe.cards, view, hw, recipe.machines ?? 1);
@@ -194,25 +194,35 @@ export const buildPlan = (
     env[k] = String(v);
   }
   const engine = String(normEngine(raw.engine));
-  const injected = injectedFlags(engine, raw.launch.arguments);
+  const pod = opts.pod;
+  const fill = (t: string) => (pod ? t.replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (m, k: string) => pod.vars[k] ?? m) : t);
+  let args = raw.launch.arguments.map(fill);
+  if (pod) {
+    for (const [k, v] of Object.entries(env)) env[k] = fill(v);
+    const left = [...args, ...Object.values(env)].join(" ").match(/\$\{[A-Z][A-Z0-9_]*\}/g);
+    if (left) throw new HttpError(422, "POD_VARS", `${recipeId}: this launch needs ${[...new Set(left)].join(", ")}, which Local Studio does not know how to fill`);
+    if (pod.rank > 0 && engine === "vllm" && !args.includes("--headless")) args = [...args, "--headless"];
+  }
+  const injected = pod && pod.rank > 0 ? [] : injectedFlags(engine, args);
   const plan: LaunchPlan = {
     recipeId,
-    containerName: containerNameFor(recipeId, view),
+    containerName: pod ? `ls-${recipeId}`.slice(0, 90) + `-pod-${pod.id}-r${pod.rank}` : containerNameFor(recipeId, view),
     image: raw.image,
     entrypoint: raw.launch.entrypoint ?? null,
-    args: [...raw.launch.arguments, ...injected],
+    args: [...args, ...injected],
     env,
     mounts,
     gpuUuids,
     gpuKeys,
-    hostPort: hostPortFor(ctx, view),
+    hostPort: pod ? raw.launch.port : hostPortFor(ctx, view),
     containerPort: raw.launch.port,
     shm: raw.launch.shm ?? null,
     dockerOpts: raw.launch.docker ?? [],
-    labels: { "local-studio.managed": "1", "local-studio.recipe": recipeId, "local-studio.machine": ctx.identity.machineId },
+    labels: { "local-studio.managed": "1", "local-studio.recipe": recipeId, "local-studio.machine": ctx.identity.machineId, ...(pod ? { "local-studio.pod": pod.id, "local-studio.rank": String(pod.rank) } : {}) },
     servedName: raw.servedName,
     injected,
     downloads,
+    ...(pod ? { hostNetwork: true, worker: pod.rank > 0 } : {}),
   };
   return { plan, weights, warnings, asset, scratchDir };
 };

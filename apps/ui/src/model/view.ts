@@ -25,6 +25,7 @@ export interface MachineView {
 
 export interface CardView {
   key: string;
+  pod: string | null;
   machine: string;
   machineId: string;
   peerId: string | null;
@@ -298,6 +299,7 @@ export const cardOf = (mv: MachineView, s: Snapshot, m: RunningModel, launch: La
     modality: m.modality ?? (m.embedding ? "embedding" : "chat"),
     endpoint: m.baseUrl ?? null,
     stopBlocked: m.stopBlocked,
+    pod: m.runtime.kind === "docker" ? (/-pod-([a-z0-9]+)-r0$/.exec(m.runtime.containerName)?.[1] ?? null) : null,
     name: m.primaryModel || m.id,
     family: family(m.primaryModel),
     gpu: cards.length ? gpuLine(cards) : `${m.engine} · :${m.port}`,
@@ -340,6 +342,7 @@ const launchCard = (mv: MachineView, s: Snapshot, l: LaunchProgress, recipes: Re
     modality: "chat",
     endpoint: null,
     stopBlocked: null,
+    pod: null,
     name: r?.name ?? l.recipeId,
     family: family(r?.family ?? r?.name ?? l.recipeId),
     gpu: r ? `${r.cards > 1 ? `${r.cards} × ` : ""}${shortGpu(s.gpus.find((g) => g.hardwareId === r.hardwareId) ?? s.gpus[0]!) }` : "",

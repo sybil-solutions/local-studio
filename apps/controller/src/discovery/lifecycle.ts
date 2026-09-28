@@ -65,7 +65,8 @@ export const dockerArgv = (plan: LaunchPlan, machineId: string): string[] => {
   if (plan.shm) argv.push("--shm-size", plan.shm);
   argv.push(...(plan.dockerOpts ?? []));
   if (plan.entrypoint) argv.push("--entrypoint", plan.entrypoint);
-  argv.push("-p", `127.0.0.1:${plan.hostPort}:${plan.containerPort}`);
+  if (plan.hostNetwork) argv.push("--network", "host");
+  else argv.push("-p", `127.0.0.1:${plan.hostPort}:${plan.containerPort}`);
   for (const m of plan.mounts) argv.push("-v", `${m.source}:${m.target}${m.readOnly ? ":ro" : ""}`);
   for (const [k, v] of Object.entries(plan.env).sort(([a], [b]) => a.localeCompare(b))) argv.push("-e", `${k}=${v}`);
   argv.push(plan.image, ...plan.args);
@@ -248,7 +249,8 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       for (const key of plan.gpuKeys) reserved.add(key);
       const uuids = plan.gpuUuids.length ? plan.gpuUuids : plan.gpuKeys.map((k) => view.gpus.find((g) => g.key === k)?.uuid).filter((u): u is string => !!u);
       const [lo, hi] = ctx.config.managedPortRange;
-      let hostPort = plan.hostPort >= lo && plan.hostPort <= hi && (await bindable(plan.hostPort)) ? plan.hostPort : 0;
+      let hostPort = plan.hostNetwork ? plan.containerPort : plan.hostPort >= lo && plan.hostPort <= hi && (await bindable(plan.hostPort)) ? plan.hostPort : 0;
+      if (plan.hostNetwork && !plan.worker && !(await bindable(hostPort))) return fail(`port ${hostPort} is in use on this machine; the pod's head needs it`);
       for (let p = lo; !hostPort && p <= hi; p++) if (await bindable(p)) hostPort = p;
       if (!hostPort) return fail(`no free port in ${lo}-${hi}`);
       const final: LaunchPlan = { ...plan, gpuUuids: uuids, hostPort };
@@ -278,6 +280,17 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       const r = await ctx.exec(argv, { timeoutMs: 120000 });
       if (r.code !== 0) return fail(`docker run failed: ${redact(r.stderr.trim().split("\n").at(-1) ?? "")}`);
       cur().containerStarted = true;
+      if (plan.worker) {
+        update(id, { phase: "loading", detail: "worker started; waiting for the head", percent: null });
+        for (let i = 0; i < 10; i++) {
+          await Bun.sleep(3000);
+          const [c] = await inspectContainers(ctx, [plan.containerName]);
+          if (!c || !c.State.Running) return fail(firstErrorLine(await dockerLogs(plan.containerName, 80)));
+        }
+        update(id, { phase: "ready", percent: 100, detail: "worker running" });
+        void d.rescan();
+        return;
+      }
       const expected = await expectedSeconds(plan.recipeId);
       const base = `http://127.0.0.1:${hostPort}`;
       update(id, { phase: "loading", detail: `waiting for ${base}/health`, percent: 0 });
@@ -452,6 +465,13 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       return (c as Inspect | undefined) ?? null;
     },
     hostArgv: async (modelId) => findModel(modelId)?.argv ?? null,
+    async removePod(podId) {
+      const ls = await ctx.exec(["docker", "ps", "-aq", "--filter", `label=local-studio.pod=${podId}`, "--filter", `label=local-studio.machine=${ctx.identity.machineId}`], { timeoutMs: 10_000 });
+      const ids = ls.stdout.split("\n").map((x) => x.trim()).filter(Boolean);
+      for (const cid of ids) await removeContainer(cid);
+      await d.rescan();
+      return ids.length;
+    },
     imageEnv: async (image) => (await imageInfo(ctx, image))?.Env ?? [],
     imageEntrypoint: async (image) => (await imageInfo(ctx, image))?.Entrypoint ?? null,
     imageDigest: async (image) => {

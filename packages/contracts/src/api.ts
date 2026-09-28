@@ -10,9 +10,23 @@ export type ConnectPeerBody = z.infer<typeof ConnectPeerBody>;
 
 const GpuKeys = z.array(z.string().regex(/^(nvidia|apple|intel|amd):[0-9]{1,2}$/)).min(1).max(8);
 
+export const PodRank = z.object({
+  id: z.string().regex(/^[a-z0-9]{4,16}$/),
+  rank: z.number().int().min(0).max(15),
+  size: z.number().int().min(2).max(16),
+  vars: z.record(z.string().regex(/^[A-Z][A-Z0-9_]{0,31}$/), z.string().max(200)),
+});
+export type PodRank = z.infer<typeof PodRank>;
+
 export const LaunchRecipeBody = z.object({
   gpuKeys: GpuKeys.optional(),
   stop: z.boolean().optional(),
+  pod: PodRank.optional(),
+});
+
+export const PodLaunchBody = z.object({
+  recipeId: z.string().min(1).max(200),
+  machineIds: z.array(z.string().min(1).max(64)).min(2).max(16),
 });
 export type LaunchRecipeBody = z.infer<typeof LaunchRecipeBody>;
 

@@ -126,7 +126,7 @@ export const toV2 = (key: string, r: RegRecipe, L: Launch, p: Profile, tree: Pic
     scratch: null,
     launch:
       L.kind === "container"
-        ? { entrypoint: entry ? (entry[0] ?? null) : ((L.entrypoint as string | null) ?? null), arguments: entry ? [...entry.slice(1), ...L.args] : L.args, environment: L.env, port: L.port, shm: L.shm, docker: dockerFlags(L.flags.filter((f) => !/^--network\b/.test(f)), dataDir) }
+        ? { entrypoint: entry ? (entry[0] ?? null) : ((L.entrypoint as string | null) ?? null), arguments: entry ? [...entry.slice(1), ...L.args] : L.args, environment: L.env, port: L.port, shm: L.shm, docker: dockerFlags(L.flags.filter((f) => !/^--(network|gpus|shm-size)\b/.test(f)), dataDir) }
         : { entrypoint: null, arguments: L.command, environment: L.env, port: L.port, shm: null },
     serving: { ctxTokens: L.ctx, kvTokens: x?.serving?.kvTokens ?? (p.defaults ? L.ctx * L.seqs + 1024 * L.seqs : 0) },
     capabilities: { chat: true, reasoning: gates.includes("reasoning"), tools: gates.includes("tools"), vision: L.vision },

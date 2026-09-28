@@ -31,6 +31,7 @@ export const RunPanel = ({ machines, initial, onDone }: { machines: MachineView[
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [q, setQ] = useState("");
+  const [open, setOpen] = useState<string | null>(null);
   const withGpus = machines.filter((m) => m.online && (m.snap?.gpus.length ?? 0) > 0);
   const chosen = Object.entries(sel).filter(([, keys]) => keys.length);
   const selKey = JSON.stringify(chosen);
@@ -64,6 +65,15 @@ export const RunPanel = ({ machines, initial, onDone }: { machines: MachineView[
     if (!m || !gpuKeys) return;
     setBusy(r.id);
     const res = await post(via(m.peerId, `/api/recipes/${encodeURIComponent(r.id)}/launch`), { gpuKeys, stop: r.fit === "busy" });
+    setBusy(null);
+    if (!res.ok) return setErr(res.error);
+    onDone();
+  };
+
+  const runPod = async (r: SelectionRow) => {
+    setBusy(r.id);
+    setErr(null);
+    const res = await post("/api/pods/launch", { recipeId: r.id, machineIds: chosen.map(([id]) => id) });
     setBusy(null);
     if (!res.ok) return setErr(res.error);
     onDone();
@@ -127,24 +137,52 @@ export const RunPanel = ({ machines, initial, onDone }: { machines: MachineView[
             {fit && rows.length === 0 && <div className="label">no config fits this selection</div>}
             {rows.map((r) => {
               const pod = (r.machines ?? 1) > 1;
+              const expanded = open === r.id;
+              const button = r.runningModelId ? (
+                <span className="label">running</span>
+              ) : pod ? (
+                <Btn kind="primary" onClick={() => void runPod(r)} disabled={busy !== null || chosen.length !== r.machines}>
+                  {busy === r.id ? "Starting" : `Run pod of ${r.machines} ›`}
+                </Btn>
+              ) : (
+                <Btn kind={r.fit === "fits" ? "primary" : "secondary"} onClick={() => void run(r)} disabled={busy !== null}>
+                  {busy === r.id ? "Starting" : r.fit === "fits" ? "Run ›" : "Stop & run ›"}
+                </Btn>
+              );
               return (
-                <div key={r.id} className="run-r">
-                  <span className="run-cfg">
-                    <span className="ink">{r.name}</span>
-                    <span className="label">{`${r.engine} · ${fmtFormat(r.format)} · ${fmt.ctx(r.ctxTokens)}${r.runtime === "host" ? " · native" : ""}${r.sizeGb ? ` · ${Math.round(r.sizeGb)} GB` : ""}`}</span>
-                  </span>
-                  <span className="label run-proof">{proofText(r)}</span>
-                  <span className="run-go">
-                    {pod ? (
-                      <span className="label">needs a pod launch</span>
-                    ) : r.runningModelId ? (
-                      <span className="label">running</span>
-                    ) : (
-                      <Btn kind={r.fit === "fits" ? "primary" : "danger"} onClick={() => void run(r)} disabled={busy !== null}>
-                        {busy === r.id ? "Starting" : r.fit === "fits" ? "Run ›" : "Stop & run ›"}
-                      </Btn>
-                    )}
-                  </span>
+                <div key={r.id} className={`run-item${expanded ? " open" : ""}`}>
+                  <div className="run-r" onClick={() => setOpen(expanded ? null : r.id)}>
+                    <span className="run-cfg">
+                      <span className="ink">{r.name}</span>
+                      <span className="label">{`${fmt.ctx(r.ctxTokens)} context${r.sizeGb ? ` · ${Math.round(r.sizeGb)} GB` : ""}${pod ? ` · ${r.machines} machines` : ""}`}</span>
+                    </span>
+                    <span className="run-speed">{r.proof?.tps ? `${fmt.tps(r.proof.tps)} tok/s` : ""}</span>
+                    <span className="run-go" onClick={(e) => e.stopPropagation()}>
+                      {button}
+                    </span>
+                  </div>
+                  {expanded && (
+                    <dl className="run-more">
+                      <dt>engine</dt>
+                      <dd>{`${r.engine}${r.runtime === "host" ? " · native program" : " · container"}`}</dd>
+                      <dt>weights</dt>
+                      <dd>{`${fmtFormat(r.format)}${r.weights[0] ? ` · ${r.weights[0].repository}` : ""}`}</dd>
+                      <dt>proof</dt>
+                      <dd>{proofText(r)}</dd>
+                      {r.image && (
+                        <>
+                          <dt>image</dt>
+                          <dd className="ellipsis">{r.image}</dd>
+                        </>
+                      )}
+                      {pod && (
+                        <>
+                          <dt>pod</dt>
+                          <dd>{chosen.length === r.machines ? `${chosen.map(([id]) => machines.find((m) => m.id === id)?.name ?? id).join(" + ")}; the first one serves the API` : `pick ${r.machines} machines`}</dd>
+                        </>
+                      )}
+                    </dl>
+                  )}
                 </div>
               );
             })}

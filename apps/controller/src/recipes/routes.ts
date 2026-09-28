@@ -48,7 +48,7 @@ export const recipeRoutes = (service: RecipeService, internal: RecipesInternal):
   });
   r.post("/api/recipes/:id/launch", async (c) => {
     const b = parse(LaunchRecipeBody, await body(c));
-    return c.json(await service.launch(c.req.param("id"), b.gpuKeys, b.stop), 202);
+    return c.json(await service.launch(c.req.param("id"), b.gpuKeys, b.stop, b.pod), 202);
   });
   r.post("/api/models/:id/export", async (c) => c.json(await service.exportModel(c.req.param("id"))));
   r.post("/api/models/:id/export/pr", async (c) => {

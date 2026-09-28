@@ -34,6 +34,7 @@ const FEDERATION_ACTIONS: RegExp[] = [
   /^\/api\/recipes\/sync$/,
   /^\/api\/recipes\/[^/]+\/assigned$/,
   /^\/api\/lab\/verify$/,
+  /^\/api\/pods\/[^/]+$/,
 ];
 
 const federationAllows = (id: KeyIdentity, method: string, path: string): boolean => {

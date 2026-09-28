@@ -26,6 +26,7 @@ import type {
   Snapshot,
   Window,
   Endpoint,
+  PodRank,
 } from "@local-studio/contracts";
 import type { AuthVars } from "./core/auth";
 import type { Bus } from "./core/bus";
@@ -97,6 +98,7 @@ export interface LifecycleService {
   stop(modelId: string, opts: { confirm: string; force?: boolean }): Promise<{ ok: boolean; detail: string }>;
   inspect(modelId: string): Promise<DockerInspect | null>;
   hostArgv(modelId: string): Promise<string[] | null>;
+  removePod(podId: string): Promise<number>;
   imageEnv(image: string): Promise<string[]>;
   imageEntrypoint(image: string): Promise<string[] | null>;
   imageDigest(image: string): Promise<string | null>;
@@ -136,7 +138,7 @@ export interface PeerService {
 export interface RecipeService {
   catalog(): Promise<RecipeCatalog>;
   rows(): Promise<RecipeRow[]>;
-  launch(recipeId: string, gpuKeys?: string[], stop?: boolean): Promise<LaunchProgress>;
+  launch(recipeId: string, gpuKeys?: string[], stop?: boolean, pod?: PodRank): Promise<LaunchProgress>;
   exportModel(modelId: string): Promise<RecipeExport>;
   openPr(modelId: string, opts: { title?: string; draft: boolean; dryRun?: boolean }): Promise<RecipePr>;
 }

@@ -388,3 +388,23 @@ export const resolveGpuRefs = (refs: string[], gpus: Gpu[]): Gpu[] => {
   }
   return out;
 };
+
+export interface FabricPort {
+  hca: string;
+  ifname: string;
+  ip: string;
+}
+
+export const fabricPorts = async (): Promise<FabricPort[]> => {
+  const out: FabricPort[] = [];
+  const { networkInterfaces } = await import("node:os");
+  const nics = networkInterfaces();
+  for (const hca of (await lsdir("/sys/class/infiniband")).sort()) {
+    for (const ifname of await lsdir(`/sys/class/infiniband/${hca}/device/net`)) {
+      if ((await rd(`/sys/class/net/${ifname}/operstate`)) !== "up") continue;
+      const ip = (nics[ifname] ?? []).find((a) => a.family === "IPv4" && !a.internal)?.address;
+      if (ip) out.push({ hca, ifname, ip });
+    }
+  }
+  return out.sort((a, b) => a.ip.localeCompare(b.ip, undefined, { numeric: true }));
+};

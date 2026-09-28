@@ -133,6 +133,8 @@ export interface LaunchPlan {
   injected: string[];
   host?: HostPlan;
   downloads?: { repository: string; argv: string[] }[];
+  hostNetwork?: boolean;
+  worker?: boolean;
 }
 
 export interface HostPlan {

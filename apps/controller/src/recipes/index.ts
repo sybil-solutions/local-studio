@@ -5,6 +5,7 @@ import type { Ctx, Module, RecipeService, Services } from "../context";
 import { migrate } from "../core/db";
 import { createExporter } from "./export";
 import { createLab } from "./lab";
+import { podRoutes } from "./pods";
 import { buildRows, fitSelection, hardwareIds, type SelectedMachine, servingModel, stopsFor } from "./fit";
 import { buildPlan } from "./plan";
 import { createPrOpener } from "./pr";
@@ -37,7 +38,7 @@ export const createRecipes = (ctx: Ctx, svc: Services): Module<RecipeService> =>
       const on = assigned();
       return buildRows(await registry.load(), svc.runtime.view(), createWeightIndex(ctx)).map((r) => ({ ...r, assigned: on.has(r.id) }));
     },
-    launch: async (recipeId, gpuKeys, stop) => {
+    launch: async (recipeId, gpuKeys, stop, pod) => {
       const loaded = await registry.load();
       const index = createWeightIndex(ctx);
       let view = svc.runtime.view();
@@ -53,7 +54,7 @@ export const createRecipes = (ctx: Ctx, svc: Services): Module<RecipeService> =>
         }
         view = await svc.runtime.rescan();
       }
-      const res = buildPlan(ctx, view, loaded, index, recipeId, { gpuKeys, strict: true });
+      const res = buildPlan(ctx, view, loaded, index, recipeId, { gpuKeys, strict: true, pod });
       if (res.asset) {
         mkdirSync(dirname(res.asset.path), { recursive: true });
         writeFileSync(res.asset.path, res.asset.text);
@@ -145,7 +146,7 @@ export const createRecipes = (ctx: Ctx, svc: Services): Module<RecipeService> =>
 
   return {
     service,
-    routes: recipeRoutes(service, internal).route("/", createLab(ctx, svc).routes),
+    routes: recipeRoutes(service, internal).route("/", createLab(ctx, svc).routes).route("/", podRoutes(ctx, svc, service)),
     start: () => {
       registry.load().catch((e) => ctx.log.warn(`recipes: initial registry load failed: ${e instanceof Error ? e.message : String(e)}`));
     },

@@ -92,8 +92,12 @@ export const ControlPage = ({ sub }: { sub: string[] }) => {
     );
   const stopBtn = (c: CardView) =>
     (c.modelId || c.launchId) && (
-      <Btn kind="danger" onClick={() => (c.modelId ? setDlg({ k: "stop", c }) : c.launchId && void cancelLaunch(target(c), c.launchId).then(setMsg))} disabled={c.readOnly || !!c.stopBlocked}>
-        Stop
+      <Btn
+        kind="danger"
+        onClick={() => (c.pod ? void post<{ results: unknown[] }>(`/api/pods/${c.pod}/stop`).then((r) => setMsg(r.ok ? `pod ${c.pod} stopped on every machine` : r.error)) : c.modelId ? setDlg({ k: "stop", c }) : c.launchId && void cancelLaunch(target(c), c.launchId).then(setMsg))}
+        disabled={c.readOnly || (!c.pod && !!c.stopBlocked)}
+      >
+        {c.pod ? "Stop pod" : "Stop"}
       </Btn>
     );
   const figs = (c: CardView, more?: { v: string; k: string }[]) =>
