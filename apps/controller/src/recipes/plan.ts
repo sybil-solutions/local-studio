@@ -5,7 +5,8 @@ import type { Ctx, RuntimeView } from "../context";
 import { availableKeys, fitFor, hardwareIds } from "./fit";
 import { type LoadedCatalog, normEngine, type V2Recipe } from "./registry";
 import { DEVICE_ENV, DIGEST_PINNED, ENV_KEY, FORBIDDEN_ARG, HttpError, REVISION_40 } from "./util";
-import { hfHome, type ResolvedWeight, type WeightIndex } from "./weights";
+import { dropUnsetSecrets, fillWith, launchVars, unfilled } from "./vars";
+import type { ResolvedWeight, WeightIndex } from "./weights";
 
 export interface PlanResult {
   plan: LaunchPlan;
@@ -44,7 +45,7 @@ const gate = (r: V2Recipe, pod?: PodRank): void => {
       if (!/^[\w.-]+\/[\w.-]+$/.test(w.repository)) bad(`weights repository ${w.repository} is not owner/name`);
       if (!REVISION_40.test(w.revision)) bad(`weights ${w.repository} revision is not a 40-hex commit`);
     }
-    if (!w.mountPath.startsWith("/")) bad(`weights mount path ${w.mountPath} is not absolute`);
+    if (!/^(\/|\$\{[A-Z][A-Z0-9_]*\})/.test(w.mountPath)) bad(`weights mount path ${w.mountPath} is not absolute`);
   }
   for (const o of r.launch.docker ?? []) if (!/^--[a-z][\w-]*(=[^\s]+)?$/.test(o)) bad(`docker option ${o} is malformed`);
   for (const m of r.launch.mounts ?? []) if (!/^(\/|\$\{[A-Z][A-Z0-9_]*\})/.test(m.source) || !m.target.startsWith("/") || /[:,]/.test(m.source + m.target)) bad(`mount ${m.source}:${m.target} is not an absolute path`);
@@ -53,8 +54,8 @@ const gate = (r: V2Recipe, pod?: PodRank): void => {
   if (FORBIDDEN_ARG.test(hay)) bad("enforce-eager / disabled CUDA graphs are not allowed");
   for (const k of Object.keys(r.launch.environment ?? {})) if (!ENV_KEY.test(k)) bad(`environment key ${k} is invalid`);
   if (!Number.isInteger(r.launch.port) || r.launch.port < 1 || r.launch.port > 65535) bad("container port is invalid");
-  if (r.launch.shm !== null && r.launch.shm !== undefined && !/^[0-9]+[bkmg]?$/i.test(r.launch.shm)) bad(`shm ${r.launch.shm} is invalid`);
-  if (r.launch.entrypoint && !/^[\w./-]+$/.test(r.launch.entrypoint)) bad(`entrypoint ${r.launch.entrypoint} is invalid`);
+  if (r.launch.shm !== null && r.launch.shm !== undefined && !/^[0-9]+(\.[0-9]+)?[kmgt]?(i?b)?$/i.test(r.launch.shm)) bad(`shm ${r.launch.shm} is invalid`);
+  if (r.launch.entrypoint && !/^([\w./-]|\$\{[A-Z][A-Z0-9_]*\})+$/.test(r.launch.entrypoint)) bad(`entrypoint ${r.launch.entrypoint} is invalid`);
 };
 
 const containerNameFor = (id: string, view: RuntimeView): string => {
@@ -117,16 +118,9 @@ export const buildPlan = (
   const gpuUuids = gpuKeys.map((k) => view.gpus.find((g) => g.key === k)?.uuid ?? "");
   if (gpuUuids.some((u) => !u)) throw new HttpError(422, "GPU_UUID", "a chosen GPU has no UUID");
 
-  const known: Record<string, string> = {
-    HF_HOME: hfHome(),
-    TRITON_CACHE_DIR: join(ctx.config.dataDir, "cache", "triton"),
-    FLASHINFER_CACHE_DIR: join(ctx.config.dataDir, "cache", "flashinfer"),
-    WORK_DIR: join(ctx.config.dataDir, "work", recipeId),
-    HOME: process.env.HOME ?? "",
-    ...(opts.pod?.vars ?? {}),
-  };
-  const fill = (t: string) => t.replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (m, k: string) => known[k] ?? m);
-  const weights = raw.weights.map((w) => index.resolve(w));
+  const known = launchVars(raw, { dataDir: ctx.config.dataDir, recipeId, pod: opts.pod?.vars });
+  const fill = fillWith(known);
+  const weights = raw.weights.map((w) => index.resolve({ ...w, mountPath: fill(w.mountPath) }));
   const mounts: LaunchMount[] = [];
   const addMount = (m: LaunchMount) => {
     if (!mounts.some((x) => x.target === m.target)) mounts.push(m);
@@ -206,8 +200,11 @@ export const buildPlan = (
   const pod = opts.pod;
   let args = raw.launch.arguments.map(fill);
   for (const [k, v] of Object.entries(env)) env[k] = fill(v);
-  const left = [...args, ...Object.values(env), ...mounts.map((m) => m.source)].join(" ").match(/\$\{[A-Z][A-Z0-9_]*\}/g);
-  if (left) throw new HttpError(422, "LAUNCH_VARS", `${recipeId}: this launch needs ${[...new Set(left)].join(", ")}, which comes from its publisher's setup and Local Studio cannot fill`);
+  dropUnsetSecrets(env);
+  const dockerOpts = (raw.launch.docker ?? []).map(fill);
+  const entrypoint = raw.launch.entrypoint ? fill(raw.launch.entrypoint) : null;
+  const left = unfilled([...args, ...Object.values(env), ...mounts.map((m) => m.source), ...dockerOpts, entrypoint ?? ""]);
+  if (left.length) throw new HttpError(422, "LAUNCH_VARS", `${recipeId}: this launch needs ${left.join(", ")}, which its publisher's setup script makes; Local Studio cannot fill it`);
   if (pod) {
     args = args.filter((a) => a !== "");
     if (pod.rank > 0 && engine === "vllm" && !args.includes("--headless") && !Object.values(env).includes("--headless")) args = [...args, "--headless"];
@@ -217,7 +214,7 @@ export const buildPlan = (
     recipeId,
     containerName: pod ? `ls-${recipeId}`.slice(0, 90) + `-pod-${pod.id}-r${pod.rank}` : containerNameFor(recipeId, view),
     image: raw.image,
-    entrypoint: raw.launch.entrypoint ?? null,
+    entrypoint,
     args: [...args, ...injected],
     env,
     mounts,
@@ -225,8 +222,8 @@ export const buildPlan = (
     gpuKeys,
     hostPort: pod ? raw.launch.port : hostPortFor(ctx, view),
     containerPort: raw.launch.port,
-    shm: raw.launch.shm ?? null,
-    dockerOpts: raw.launch.docker ?? [],
+    shm: raw.launch.shm ? raw.launch.shm.toLowerCase().replace(/i?b$/, "") : null,
+    dockerOpts,
     labels: { "local-studio.managed": "1", "local-studio.recipe": recipeId, "local-studio.machine": ctx.identity.machineId, ...(pod ? { "local-studio.pod": pod.id, "local-studio.rank": String(pod.rank) } : {}) },
     servedName: raw.servedName,
     injected,

@@ -5,6 +5,7 @@ import { type Card, type HostLaunch, type Launch, load as loadTree, type Profile
 import type { Ctx } from "../context";
 import seccompIoUring from "./seccomp-default-plus-io_uring.json";
 import { HttpError, RECIPE_ID } from "./util";
+import { blockedReason } from "./vars";
 
 export type { Card, Profile, RegRecipe, Tree };
 
@@ -52,6 +53,7 @@ export interface V2Recipe {
   machines?: number;
   flags?: string[];
   proof?: RecipeProof | null;
+  publisher?: string | null;
 }
 
 export interface LoadedCatalog {
@@ -155,6 +157,7 @@ export const toV2 = (key: string, r: RegRecipe, L: Launch, p: Profile, tree: Pic
     machines: L.kind === "container" ? L.machines : 1,
     flags: L.kind === "container" ? L.flags : [],
     proof,
+    publisher: L.source ?? null,
   };
 };
 
@@ -198,6 +201,8 @@ export const toRecipe = (r: V2Recipe, hardwareId: string, recommended: boolean):
     machines: r.machines ?? 1,
     flags: r.flags ?? [],
     proof: r.proof ?? null,
+    blocked: blockedReason(r),
+    publisher: r.publisher ?? null,
     runtime: r.host ? "host" : "container",
   };
 };

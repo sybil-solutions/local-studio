@@ -140,6 +140,10 @@ export const RunPanel = ({ machines, initial, onDone }: { machines: MachineView[
               const expanded = open === r.id;
               const button = r.runningModelId ? (
                 <span className="label">running</span>
+              ) : r.blocked ? (
+                <Btn kind="secondary" disabled onClick={() => setOpen(r.id)}>
+                  Needs setup
+                </Btn>
               ) : pod ? (
                 <Btn kind="primary" onClick={() => void runPod(r)} disabled={busy !== null || chosen.length !== r.machines}>
                   {busy === r.id ? "Starting" : `Run pod of ${r.machines} ›`}
@@ -169,6 +173,22 @@ export const RunPanel = ({ machines, initial, onDone }: { machines: MachineView[
                       <dd>{`${fmtFormat(r.format)}${r.weights[0] ? ` · ${r.weights[0].repository}` : ""}`}</dd>
                       <dt>proof</dt>
                       <dd>{proofText(r)}</dd>
+                      {r.blocked && (
+                        <>
+                          <dt>setup</dt>
+                          <dd>
+                            {r.blocked}
+                            {r.publisher && (
+                              <>
+                                {" · "}
+                                <a href={r.publisher} target="_blank" rel="noreferrer">
+                                  publisher
+                                </a>
+                              </>
+                            )}
+                          </dd>
+                        </>
+                      )}
                       {r.image && (
                         <>
                           <dt>image</dt>

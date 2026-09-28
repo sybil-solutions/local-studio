@@ -70,6 +70,8 @@ export interface Recipe {
   flags?: string[];
   proof?: RecipeProof | null;
   runtime?: "container" | "host";
+  blocked?: string | null;
+  publisher?: string | null;
 }
 
 export interface RecipeCatalog {
