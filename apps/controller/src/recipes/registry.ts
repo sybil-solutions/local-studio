@@ -323,9 +323,11 @@ export const createRegistry = (ctx: Ctx): Registry => {
     if (!(await ensureClone())) return null;
     const sha = /^[0-9a-f]{40}$/.test(ref);
     const target = sha ? `${ref}^{commit}` : `refs/remotes/origin/${ref}`;
+    let gone = false;
     const fetch = async () => {
       const f = await git(["fetch", "--prune", "origin", sha ? ref : `+refs/heads/${ref}:refs/remotes/origin/${ref}`], 90_000);
       if (f.code !== 0) ctx.log.warn(`recipes: git fetch ${ref} failed: ${tail(f)}`);
+      gone = f.code !== 0 && /couldn't find remote ref|not our ref/i.test(f.stderr);
     };
     let rev = await git(["rev-parse", "--verify", "--quiet", target], 10_000);
     if (sync || rev.code !== 0 || Date.now() - lastFetchAt() > STALE_MS) {
@@ -333,9 +335,13 @@ export const createRegistry = (ctx: Ctx): Registry => {
       rev = await git(["rev-parse", "--verify", "--quiet", target], 10_000);
     }
     let used = ref;
-    if (rev.code !== 0 && ref !== "main") {
-      ctx.log.warn(`recipes: registry ref ${ref} is gone; reading main`);
+    if ((rev.code !== 0 || gone) && ref !== "main") {
+      ctx.log.warn(`recipes: registry ref ${ref} is gone; reading main from now on`);
       used = "main";
+      ref = "main";
+      try {
+        writeFileSync(refPath, "main\n");
+      } catch {}
       await git(["fetch", "--prune", "origin", "+refs/heads/main:refs/remotes/origin/main"], 90_000);
       rev = await git(["rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"], 10_000);
     }
