@@ -12,7 +12,7 @@ import { clientOf, isTerminal } from "./launch-table";
 import { defaultDir, expandDir, forgetSpec, listSpecs, newSessionId, readSpec, writeSpec } from "./sessions";
 import { hasGui, openTerminal, resolveTerminal } from "./terminals";
 import { testHarness } from "./test";
-import { agentRunCommand, attachCommand, capture, childArgs, killSession, panes, sessionName, startSession, tmuxBin } from "./tmux";
+import { agentRunCommand, attachCommand, capture, childArgs, killSession, panes, sessionName, shq, startSession, tmuxBin } from "./tmux";
 
 export const gatewayUrlFor = (ctx: Ctx): string => {
   const h = ctx.config.host;
@@ -248,7 +248,7 @@ export const createAgentRoutes = (ctx: Ctx, svc: Services, deps: { dsh: DshManag
         }
       }
       ctx.log.info(`agent ${harness} ${id}: ${detail}${warn}`);
-      const res: AgentLaunchResult = { ...base, how, command: cmd, url: null, tmuxSession: name, attach: hasGui() ? attach : `ssh -t ${ctx.identity.hostname} ${attach}`, running };
+      const res: AgentLaunchResult = { ...base, how, command: cmd, url: null, tmuxSession: name, attach: hasGui() ? attach : `ssh -t ${ctx.identity.hostname} ${shq(attach)}`, running };
       void sessions.list();
       return c.json({ ...res, note: `${detail}${warn}` });
     }

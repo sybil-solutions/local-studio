@@ -54,10 +54,30 @@ const isDir = (p: string): boolean => {
   }
 };
 
+const complete = (p: string): boolean => {
+  let names: string[];
+  try {
+    names = readdirSync(p);
+  } catch {
+    return false;
+  }
+  const index = names.find((n) => n.endsWith(".safetensors.index.json"));
+  if (index) {
+    try {
+      const map = (JSON.parse(readFileSync(join(p, index), "utf8")) as { weight_map?: Record<string, string> }).weight_map ?? {};
+      const files = [...new Set(Object.values(map))];
+      return files.length > 0 && files.every((f) => existsSync(join(p, f)));
+    } catch {
+      return false;
+    }
+  }
+  return names.some((n) => /\.(safetensors|gguf|bin|pt)$/.test(n) && existsSync(join(p, n)));
+};
+
 const holds = (p: string, w: V2Weights): boolean => {
   if (w.files) return existsSync(join(p, w.files));
   if (w.dir) return isDir(join(p, w.dir));
-  return existsSync(join(p, "config.json")) || existsSync(join(p, "model.safetensors.index.json"));
+  return complete(p);
 };
 
 export const canonicalDir = (modelsDir: string, w: { repository: string; revision: string }): string =>
@@ -103,7 +123,7 @@ export const createWeightIndex = (ctx: Ctx): WeightIndex => {
     }
     if (w.layout === "hub") {
       const snap = hfSnapshot(w);
-      const present = isDir(snap) && (w.files ? existsSync(join(snap, w.files)) : true);
+      const present = w.files ? existsSync(join(snap, w.files)) : complete(snap);
       return {
         ...base,
         hostPath: hfHome(),

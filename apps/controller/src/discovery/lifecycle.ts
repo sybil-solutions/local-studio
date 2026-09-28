@@ -255,13 +255,13 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       for (let p = lo; !hostPort && p <= hi; p++) if (await bindable(p)) hostPort = p;
       if (!hostPort) return fail(`no free port in ${lo}-${hi}`);
       const final: LaunchPlan = { ...plan, gpuUuids: uuids, hostPort };
+      const abort = new AbortController();
+      aborts.set(id, abort);
       for (const dl of plan.downloads ?? []) {
         if (cur().cancelled) return;
         const hf = await which("hf", [join(process.env.HOME ?? "", ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/Library/Frameworks/Python.framework/Versions/Current/bin"]);
         if (!hf) return fail(`weights ${dl.repository} are not here and the hf command is not installed; run: ${dl.argv.join(" ")}`);
         update(id, { phase: "weights", detail: `downloading ${dl.repository}`, percent: null });
-        const abort = new AbortController();
-        aborts.set(id, abort);
         const watch = setInterval(() => {
           if (!dl.dir || !dl.bytes) return;
           void ctx.exec(["du", "-sk", dl.dir], { timeoutMs: 10_000 }).then((d) => {
@@ -271,10 +271,7 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
             update(id, { detail: `downloading ${dl.repository} · ${(got / 1e9).toFixed(1)} of ${(dl.bytes! / 1e9).toFixed(1)} GB`, percent: Math.min(99, Math.round((got / dl.bytes!) * 100)) });
           });
         }, 5000);
-        const r = await ctx.exec([hf, ...dl.argv.slice(1)], { timeoutMs: 12 * 3600_000, env: { HF_HUB_ENABLE_HF_TRANSFER: "1" }, signal: abort.signal }).finally(() => {
-          clearInterval(watch);
-          aborts.delete(id);
-        });
+        const r = await ctx.exec([hf, ...dl.argv.slice(1)], { timeoutMs: 12 * 3600_000, env: { HF_HUB_ENABLE_HF_TRANSFER: "1" }, signal: abort.signal }).finally(() => clearInterval(watch));
         if (cur().cancelled) return;
         if (r.code !== 0) return fail(`download of ${dl.repository} failed: ${redact((r.stderr || r.stdout).trim().split("\n").at(-1) ?? "")}`);
       }
@@ -286,9 +283,11 @@ export const createLifecycle = (d: LifecycleDeps): LifecycleService => {
       update(id, { phase: "pulling", detail: `checking image ${plan.image}` });
       if (!(await imageInfo(ctx, plan.image))) {
         update(id, { detail: `docker pull ${plan.image}` });
-        const pull = await ctx.exec(["docker", "pull", plan.image], { timeoutMs: 60 * 60 * 1000 });
+        const pull = await ctx.exec(["docker", "pull", plan.image], { timeoutMs: 60 * 60 * 1000, signal: abort.signal });
+        if (cur().cancelled) return;
         if (pull.code !== 0) return fail(`docker pull failed: ${redact(pull.stderr.trim().split("\n").at(-1) ?? "")}`);
       }
+      aborts.delete(id);
       if (cur().cancelled) return;
       update(id, { phase: "starting", detail: "docker run" });
       const argv = dockerArgv(final, ctx.identity.machineId);
