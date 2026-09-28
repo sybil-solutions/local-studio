@@ -8,6 +8,14 @@ export const shq = (s: string) => (/^[A-Za-z0-9_./:@%+-][A-Za-z0-9_./:=@%+-]*$/.
 
 export const TMUX_SOCKET = ["-L", "local-studio-agents", "-f", "/dev/null"];
 
+const SERVER_OPTIONS: [string, string][] = [
+  ["remain-on-exit", "on"],
+  ["extended-keys", "on"],
+  ["escape-time", "0"],
+  ["default-terminal", "screen-256color"],
+  ["history-limit", "50000"],
+];
+
 export const sessionName = (harness: string, id: string) => `ls-${harness}-${id.slice(3)}`;
 
 export const selfArgv = (): string[] => {
@@ -22,7 +30,7 @@ export const agentRunCommand = (home: string, id: string): string => [...selfArg
 export const tmuxBin = async (): Promise<string | null> => which("tmux", EXTRA_BIN);
 
 export const startSession = async (ctx: Ctx, tmux: string, name: string, dir: string, command: string): Promise<string | null> => {
-  const r = await ctx.exec([tmux, ...TMUX_SOCKET, "start-server", ";", "set-option", "-g", "remain-on-exit", "on", ";", "new-session", "-d", "-s", name, "-c", dir, command], {
+  const r = await ctx.exec([tmux, ...TMUX_SOCKET, "start-server", ...SERVER_OPTIONS.flatMap(([k, v]) => [";", "set-option", "-g", k, v]), ";", "set-option", "-as", "terminal-features", "xterm*:extkeys", ";", "new-session", "-d", "-s", name, "-c", dir, command], {
     timeoutMs: 10_000,
     cwd: dir,
   });

@@ -105,6 +105,8 @@ export const missingVars = (r: V2Recipe): string[] => {
 export const blockedReason = (r: V2Recipe): string | null => {
   const miss = missingVars(r);
   if (miss.length) return `needs ${miss.join(", ")}, which its publisher's setup script makes`;
+  const head = r.host?.command[0] ?? "";
+  if (r.host && !r.host.pip?.length && head.includes("/") && !head.startsWith("/") && !head.startsWith("$")) return `runs ${head} from its publisher's checkout, which Local Studio does not build`;
   const hay = r.host ? [...r.host.command, ...Object.values(r.host.env)] : [r.launch.entrypoint ?? "", ...r.launch.arguments, ...Object.values(r.launch.environment ?? {}).map(String)];
   if (FORBIDDEN_ARG.test(hay.join(" "))) return "turns off CUDA graphs (enforce-eager), which Local Studio does not run";
   return null;
