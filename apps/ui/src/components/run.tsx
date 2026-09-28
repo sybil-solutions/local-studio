@@ -9,6 +9,8 @@ type Sel = Record<string, string[]>;
 
 const gpuState = (m: MachineView, key: string): { label: string; free: boolean } => {
   const s = m.snap;
+  const l = s?.launches.find((x) => (x.gpuKeys ?? []).includes(key) && ["planning", "weights", "pulling", "starting", "loading"].includes(x.phase));
+  if (l) return { label: `${l.phase === "weights" ? "downloading" : "starting"} ${l.recipeId.split(".")[0]}`, free: false };
   const g = s?.groups.find((x) => x.gpuKeys.includes(key));
   if (!g || g.state === "available") return { label: "free", free: true };
   if (g.state === "foreign") return { label: "other program", free: false };

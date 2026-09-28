@@ -19,7 +19,7 @@ export const RunPage = ({ machine, gpus }: { machine: string | null; gpus: strin
   return (
     <div className="page2">
       <H>run a model</H>
-      <RunPanel key={`${machine}:${gpus}`} machines={ms} initial={initial} onDone={() => (location.hash = "#/control")} />
+      <RunPanel key={`${machine}:${gpus}:${Object.keys(initial).length}`} machines={ms} initial={initial} onDone={() => (location.hash = "#/control")} />
     </div>
   );
 };
