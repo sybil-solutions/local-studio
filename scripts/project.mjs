@@ -1,1 +1,0 @@
-../frontend/desktop/project.mjs

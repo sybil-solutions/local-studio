@@ -1,0 +1,174 @@
+import * as Rpc from "effect/unstable/rpc/Rpc";
+import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import * as Schema from "effect/Schema";
+
+import * as AcpSchema from "./_generated/schema.gen.ts";
+import { AGENT_METHODS, CLIENT_METHODS } from "./_generated/meta.gen.ts";
+
+const InitializeRpc = Rpc.make(AGENT_METHODS.initialize, {
+  payload: AcpSchema.InitializeRequest,
+  success: AcpSchema.InitializeResponse,
+  error: AcpSchema.Error,
+});
+
+const AuthenticateRpc = Rpc.make(AGENT_METHODS.authenticate, {
+  payload: AcpSchema.AuthenticateRequest,
+  success: AcpSchema.AuthenticateResponse,
+  error: AcpSchema.Error,
+});
+
+const LogoutRpc = Rpc.make(AGENT_METHODS.logout, {
+  payload: AcpSchema.LogoutRequest,
+  success: AcpSchema.LogoutResponse,
+  error: AcpSchema.Error,
+});
+
+const NewSessionRpc = Rpc.make(AGENT_METHODS.session_new, {
+  payload: AcpSchema.NewSessionRequest,
+  success: AcpSchema.NewSessionResponse,
+  error: AcpSchema.Error,
+});
+
+const LoadSessionRpc = Rpc.make(AGENT_METHODS.session_load, {
+  payload: AcpSchema.LoadSessionRequest,
+  success: AcpSchema.LoadSessionResponse,
+  error: AcpSchema.Error,
+});
+
+const ListSessionsRpc = Rpc.make(AGENT_METHODS.session_list, {
+  payload: AcpSchema.ListSessionsRequest,
+  success: AcpSchema.ListSessionsResponse,
+  error: AcpSchema.Error,
+});
+
+const ForkSessionRpc = Rpc.make(AGENT_METHODS.session_fork, {
+  payload: AcpSchema.ForkSessionRequest,
+  success: AcpSchema.ForkSessionResponse,
+  error: AcpSchema.Error,
+});
+
+const ResumeSessionRpc = Rpc.make(AGENT_METHODS.session_resume, {
+  payload: AcpSchema.ResumeSessionRequest,
+  success: AcpSchema.ResumeSessionResponse,
+  error: AcpSchema.Error,
+});
+
+const CloseSessionRpc = Rpc.make(AGENT_METHODS.session_close, {
+  payload: AcpSchema.CloseSessionRequest,
+  success: AcpSchema.CloseSessionResponse,
+  error: AcpSchema.Error,
+});
+
+const PromptRpc = Rpc.make(AGENT_METHODS.session_prompt, {
+  payload: AcpSchema.PromptRequest,
+  success: AcpSchema.PromptResponse,
+  error: AcpSchema.Error,
+});
+
+const SetSessionModelRpc = Rpc.make(AGENT_METHODS.session_set_model, {
+  payload: AcpSchema.SetSessionModelRequest,
+  success: AcpSchema.SetSessionModelResponse,
+  error: AcpSchema.Error,
+});
+
+const SetSessionConfigOptionRpc = Rpc.make(AGENT_METHODS.session_set_config_option, {
+  payload: AcpSchema.SetSessionConfigOptionRequest,
+  success: AcpSchema.SetSessionConfigOptionResponse,
+  error: AcpSchema.Error,
+});
+
+const ReadTextFileRpc = Rpc.make(CLIENT_METHODS.fs_read_text_file, {
+  payload: AcpSchema.ReadTextFileRequest,
+  success: AcpSchema.ReadTextFileResponse,
+  error: AcpSchema.Error,
+});
+
+const WriteTextFileRpc = Rpc.make(CLIENT_METHODS.fs_write_text_file, {
+  payload: AcpSchema.WriteTextFileRequest,
+  success: AcpSchema.WriteTextFileResponse,
+  error: AcpSchema.Error,
+});
+
+const RequestPermissionRpc = Rpc.make(CLIENT_METHODS.session_request_permission, {
+  payload: AcpSchema.RequestPermissionRequest,
+  success: AcpSchema.RequestPermissionResponse,
+  error: AcpSchema.Error,
+});
+
+const ElicitationRpc = Rpc.make(CLIENT_METHODS.session_elicitation, {
+  payload: AcpSchema.ElicitationRequest,
+  success: AcpSchema.ElicitationResponse,
+  error: AcpSchema.Error,
+});
+
+// The pinned v0.11.3 schema predates the SDK's method name and flat response.
+// Keep its RPC for existing peers and translate the SDK alias at the boundary.
+const CreateElicitationRpc = Rpc.make("elicitation/create", {
+  payload: Schema.Unknown,
+  success: Schema.Struct({
+    action: Schema.Literals(["accept", "decline", "cancel"]),
+    content: Schema.optionalKey(
+      Schema.NullOr(Schema.Record(Schema.String, AcpSchema.ElicitationContentValue)),
+    ),
+    _meta: AcpSchema.ElicitationResponse.fields._meta,
+  }),
+  error: AcpSchema.Error,
+});
+
+const CreateTerminalRpc = Rpc.make(CLIENT_METHODS.terminal_create, {
+  payload: AcpSchema.CreateTerminalRequest,
+  success: AcpSchema.CreateTerminalResponse,
+  error: AcpSchema.Error,
+});
+
+const TerminalOutputRpc = Rpc.make(CLIENT_METHODS.terminal_output, {
+  payload: AcpSchema.TerminalOutputRequest,
+  success: AcpSchema.TerminalOutputResponse,
+  error: AcpSchema.Error,
+});
+
+const ReleaseTerminalRpc = Rpc.make(CLIENT_METHODS.terminal_release, {
+  payload: AcpSchema.ReleaseTerminalRequest,
+  success: AcpSchema.ReleaseTerminalResponse,
+  error: AcpSchema.Error,
+});
+
+const WaitForTerminalExitRpc = Rpc.make(CLIENT_METHODS.terminal_wait_for_exit, {
+  payload: AcpSchema.WaitForTerminalExitRequest,
+  success: AcpSchema.WaitForTerminalExitResponse,
+  error: AcpSchema.Error,
+});
+
+const KillTerminalRpc = Rpc.make(CLIENT_METHODS.terminal_kill, {
+  payload: AcpSchema.KillTerminalRequest,
+  success: AcpSchema.KillTerminalResponse,
+  error: AcpSchema.Error,
+});
+
+export const AgentRpcs = RpcGroup.make(
+  InitializeRpc,
+  AuthenticateRpc,
+  LogoutRpc,
+  NewSessionRpc,
+  LoadSessionRpc,
+  ListSessionsRpc,
+  ForkSessionRpc,
+  ResumeSessionRpc,
+  CloseSessionRpc,
+  PromptRpc,
+  SetSessionModelRpc,
+  SetSessionConfigOptionRpc,
+);
+
+export const ClientRpcs = RpcGroup.make(
+  ReadTextFileRpc,
+  WriteTextFileRpc,
+  RequestPermissionRpc,
+  ElicitationRpc,
+  CreateElicitationRpc,
+  CreateTerminalRpc,
+  TerminalOutputRpc,
+  ReleaseTerminalRpc,
+  WaitForTerminalExitRpc,
+  KillTerminalRpc,
+);
