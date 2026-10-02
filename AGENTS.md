@@ -170,3 +170,7 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 - Don't verify with browsers or computer use unless the user explicitly agrees or requests it.
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+## Local Studio fork requirements
+
+The user requests pinned upstream T3 Code plus Pi/OMP, one Local registry/fleet page, and an isolated controller. Preserve upstream behavior. Limit maintained additions beyond the import in LOCAL_STUDIO_UPSTREAM.json to 4,000 source lines, enforced by npm run check:budget. No new unit tests; verify with end-to-end checks only. Run npm run check before handoff. Never expose secrets or stop existing applications, controllers, engines, or GPU jobs. New controllers use port 18091 and a separate data root. Keep native inference requests as passthrough. Never disable CUDA graphs, enforce eager, or set output caps on vLLM/SGLang. Add no code comments. This migration starts from origin/main, uses one branch and PR targeting dev, and is tracked in Linear HOM-202. Browser and Electron acceptance are explicitly requested. Existing upstream source and tests are retained as upstream, not rewritten.

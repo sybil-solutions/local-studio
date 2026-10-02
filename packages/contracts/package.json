@@ -18,6 +18,10 @@
     "./relay": {
       "types": "./src/relay.ts",
       "import": "./src/relay.ts"
+    },
+    "./local-studio": {
+      "types": "./src/localStudio.ts",
+      "import": "./src/localStudio.ts"
     }
   },
   "scripts": {

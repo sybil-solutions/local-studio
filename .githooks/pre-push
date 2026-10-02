@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+node scripts/local-check.mjs --budget

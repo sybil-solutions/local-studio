@@ -1,4 +1,18 @@
-# T3 Code
+# Local Studio
+
+Local Studio is a pinned T3 Code fork with Pi and Oh My Pi providers, a Local registry/fleet page, and a small federated inference controller. Upstream source and MIT attribution are preserved below. `LOCAL_STUDIO_UPSTREAM.json` records the import; `npm run check:budget` limits maintained custom source additions to 4,000 lines, excluding the upstream import itself.
+
+Use Node 24, pnpm 11 and Bun 1.3.14. Run `pnpm install`, `pnpm --filter @local-studio/controller start`, then `pnpm dev:desktop --port 18773 --home-dir .t3`. This opens **Local Studio Dev** with hot reload and independent state. `npm run check` runs type checks, the web build and process-level controller E2E checks; no new unit tests are included.
+
+The controller defaults to loopback port **18091** and `~/.local-studio-t3/config.json` (0600). To link machines, set their reachable `url`, bind `LOCAL_STUDIO_T3_HOST` to the tailnet address, and give them the same private `fleetKey`. Add peer URLs on the Local page. Never publish the key. `engineKeys` supplies credentials by port; `excludePorts` excludes other gateways. Configuration changes require restarting only the new controller.
+
+Controllers discover local `/v1/models` listeners and expose `/v1/models`, `/v1/chat/completions`, `/v1/completions`, `/v1/messages` and `/v1/responses`. Requests and streams pass through natively; unsupported protocols retain the engine's error. `auto` chooses the live model with the most completed successful requests across the reachable graph. This measures traffic through these controllers, not historical engine traffic.
+
+Registry launches use pinned container images and weight revisions on free matching NVIDIA GPUs, with separate ports **18100–18299**. Existing engines are never evicted. Captured configurations remain read-only; host-specific, multi-machine and privileged launches show their limitations instead of being silently rewritten. Cancellation is forwarded, but an engine that ignores client disconnects may continue generating. Pi/OMP use their installed CLI credentials and configuration; add them in Settings → Providers.
+
+Connections uses direct, revocable pairing links to your environment and Local Studio desktop URL handlers. T3-owned cloud services are optional and disabled unless configured. The current migration runs as a development app alongside the existing install; stable release packaging is not enabled by this change.
+
+## Upstream T3 Code
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 

@@ -53,7 +53,7 @@ import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
 import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { formatElapsedDurationLabel, formatExpiresInLabel } from "../../timestampFormat";
-import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
+import { resolveDesktopPairingUrl } from "./pairingUrls";
 import {
   applyWslEnableSelection,
   isQrShareableEndpoint,
@@ -539,12 +539,6 @@ function resolveAdvertisedEndpointPairingUrl(
   endpoint: AdvertisedEndpoint,
   credential: string,
 ): string {
-  if (endpoint.compatibility.hostedHttpsApp === "compatible") {
-    return (
-      resolveHostedPairingUrl(endpoint.httpBaseUrl, credential) ??
-      resolveDesktopPairingUrl(endpoint.httpBaseUrl, credential)
-    );
-  }
   return resolveDesktopPairingUrl(endpoint.httpBaseUrl, credential);
 }
 
@@ -615,13 +609,6 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
     () => (credential ? resolveCurrentOriginPairingUrl(credential) : null),
     [credential],
   );
-  const hostedPairingUrl = useMemo(
-    () =>
-      credential && endpointUrl != null && endpointUrl !== ""
-        ? resolveHostedPairingUrl(endpointUrl, credential)
-        : null,
-    [endpointUrl, credential],
-  );
   const endpointPairingUrl = useMemo(() => {
     const endpoint = selectPairingEndpoint(endpoints, defaultEndpointKey);
     return endpoint && credential
@@ -657,7 +644,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   const shareablePairingUrl =
     endpointPairingUrl ??
     (credential && endpointUrl != null && endpointUrl !== ""
-      ? (hostedPairingUrl ?? resolveDesktopPairingUrl(endpointUrl, credential))
+      ? resolveDesktopPairingUrl(endpointUrl, credential)
       : isLoopbackHostname(window.location.hostname)
         ? null
         : currentOriginPairingUrl);

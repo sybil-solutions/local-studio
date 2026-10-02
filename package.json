@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check": "node scripts/local-check.mjs",
+    "check:budget": "node scripts/local-check.mjs --budget",
     "prepare": "effect-tsgo patch && vp config --no-agent",
     "dev": "node scripts/dev-runner.ts dev",
     "dev:share": "node scripts/dev-runner.ts dev --share",
