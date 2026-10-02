@@ -1,276 +1,147 @@
 # Local Studio
 
-Local Studio is a local-first workstation for running, managing, and using
-self-hosted LLM backends. One machine can launch models, watch GPU/runtime
-state, chat with OpenAI-compatible endpoints, and run agent sessions against
-local or remote controllers. Version 2.0 unifies day-to-day operation around
-Status, Workbench, Configure, and Usage instead of separate model, integration,
-and server surfaces.
+Local Studio is a pinned T3 Code fork with Pi and Oh My Pi providers, a Local registry/fleet page, and a small federated inference controller. Upstream source and MIT attribution are preserved below. `LOCAL_STUDIO_UPSTREAM.json` records the import; `npm run check:budget` limits maintained custom source additions to 4,000 lines, excluding the upstream import itself.
 
-## Download
+Use Node 24, pnpm 11 and Bun 1.3.14. Run `pnpm install`, `pnpm --filter @local-studio/controller start`, then `pnpm dev:desktop --port 18773 --home-dir .t3`. This opens **Local Studio Dev** with hot reload and independent state. `npm run check` runs type checks, the web build and process-level controller E2E checks; no new unit tests are included.
 
-**[Download Local Studio for macOS (Apple Silicon)](https://github.com/sybil-solutions/local-studio/releases/latest/download/Local-Studio-arm64.dmg)**
-— signed and notarized; updates itself from GitHub releases. All versions on the
-[releases page](https://github.com/sybil-solutions/local-studio/releases), or via
-[localstudio.ai](https://localstudio.ai).
+The controller defaults to loopback port **18091** and `~/.local-studio-t3/config.json` (0600). To link machines, set their reachable `url`, bind `LOCAL_STUDIO_T3_HOST` to the tailnet address, and give them the same private `fleetKey`. Add peer URLs on the Local page. Never publish the key. `engineKeys` supplies credentials by port; `excludePorts` excludes other gateways. Configuration changes require restarting only the new controller.
 
-It is built from two modules that share one controller API:
+Controllers discover local `/v1/models` listeners and expose `/v1/models`, `/v1/chat/completions`, `/v1/completions`, `/v1/messages` and `/v1/responses`. Requests and streams pass through natively; unsupported protocols retain the engine's error. `auto` chooses the live model with the most completed successful requests across the reachable graph. This measures traffic through these controllers, not historical engine traffic.
 
-- [`controller/`](controller/README.md) — Bun/Hono backend. Owns model lifecycle
-  (launch, evict, recipes, downloads, runtime process coordination), an
-  OpenAI-compatible proxy (chat, models, tokenization, audio), system state
-  (GPU metrics, logs, usage, settings, SSE), and controller integrations.
-- [`frontend/`](frontend/README.md) — Next.js 16 + React 19 UI and the macOS
-  Electron desktop shell. Hosts the Workbench (`/agent`), consolidated
-  Configure surface, settings, usage, logs, and browser-facing API routes.
+Registry launches use pinned container images and weight revisions on free matching NVIDIA GPUs, with separate ports **18100–18299**. Existing engines are never evicted. Captured configurations remain read-only; host-specific, multi-machine and privileged launches show their limitations instead of being silently rewritten. Cancellation is forwarded, but an engine that ignores client disconnects may continue generating. Pi/OMP use their installed CLI credentials and configuration; add them in Settings → Providers.
 
-## Mobile companion
+Connections uses direct, revocable pairing links to your environment and Local Studio desktop URL handlers. T3-owned cloud services are optional and disabled unless configured. The current migration runs as a development app alongside the existing install; stable release packaging is not enabled by this change.
 
-[KittyLitter](https://kittylitter.app) connects to Local Studio so the same
-agent sessions, streaming content, reasoning, tool calls, and tool results are
-available on iPhone, iPad, and Android. Pair from **Settings → Profile & phone →
-Connect your phone**. The QR code and copied connection JSON are private
-controller credentials; share them only with a device you trust.
+## Upstream T3 Code
 
-See the complete pairing, version, and security guide at
-[localstudio.ai/mobile](https://localstudio.ai/mobile). Mobile pairing requires
-Local Studio 2.9.0 or newer and KittyLitter 1.6.0 or newer.
+T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
 
-## What is a controller?
+Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.
 
-A controller is the backend process the UI talks to — the Bun/Hono
-server in `controller/`. You can run one locally or point the frontend at a
-remote controller on a GPU host. The controller owns model lifecycle, the
-OpenAI-compatible proxy, system state, and SSE event streams.
+## "Wait, what are you selling me?"
 
-## Architecture
+Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
 
-```mermaid
-flowchart LR
-    User["User"] --> Desktop["Electron desktop app"]
-    User --> Web["Next.js web UI"]
-    Desktop --> Frontend["Frontend server / API routes"]
-    Web --> Frontend
-    Frontend --> Controller["Controller API (Bun + Hono)"]
+We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
 
-    Controller --> Runtime["Inference runtime process"]
-    Runtime --> Backends["vLLM / SGLang / llama.cpp / MLX recipes"]
-    Controller --> Data["Local data directory"]
-    Controller --> Events["SSE status and runtime events"]
-    Frontend --> Agent["Pi coding agent runtime"]
-```
+## Installation
 
-```mermaid
-flowchart TB
-    subgraph Frontend["frontend/"]
-        AgentPage["/agent"]
-        Configure["/configure"]
-        Settings["/settings"]
-        Usage["/usage"]
-        ProxyRoutes["/api/* proxy and agent routes"]
-        DesktopMain["desktop/ Electron shell"]
-    end
+> [!WARNING]
+> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
+>
+> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
+> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
+> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
+> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
+> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
 
-    subgraph Controller["controller/"]
-        HttpApp["src/http/app.ts"]
-        Engines["src/modules/engines"]
-        Models["src/modules/models"]
-        Proxy["src/modules/proxy"]
-        Studio["src/modules/studio"]
-        System["src/modules/system"]
-        Audio["src/modules/audio"]
-        Stores["src/stores"]
-    end
-
-    ProxyRoutes --> HttpApp
-    HttpApp --> Engines
-    HttpApp --> Models
-    HttpApp --> Proxy
-    HttpApp --> Studio
-    HttpApp --> System
-    HttpApp --> Audio
-    System --> Stores
-```
-
-## Quick start
-
-Prerequisites: Bun 1.3.14+, Node.js 22.19+, npm 10+, Python 3.10+, and Git.
-`uv` is strongly recommended; engine installs fall back to pip. vLLM/SGLang
-serving on Linux needs NVIDIA driver + CUDA; Apple Silicon uses the MLX backend.
-
-Validate the toolchain, then install every locked workspace dependency from the
-repository root:
+### Command line
 
 ```bash
-npm run doctor
-npm run setup
+curl -fsSL https://t3.codes/install.sh | sh
 ```
 
-Start the controller (listens on `127.0.0.1:8080`, data dir + SQLite created
-automatically, model weights in `LOCAL_STUDIO_MODELS_DIR`, default `/models`):
+On Windows, in PowerShell:
+
+```powershell
+irm https://t3.codes/install.ps1 | iex
+```
+
+Then run `t3` to start the server and open the local web app. `t3 service install` keeps it running in the background, `t3 update` moves to a newer release, and `t3 --help` has the full reference.
+
+To try it once without installing, run `npx t3@latest` instead.
+
+### Desktop app
+
+Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
+
+#### Windows (`winget`)
 
 ```bash
-npm run dev:controller
+winget install T3Tools.T3Code
 ```
 
-Start the frontend in a second terminal, then open
-<http://localhost:3000/setup>:
+#### macOS (Homebrew)
 
 ```bash
-npm run dev
+brew install --cask t3-code
 ```
 
-`npm run setup` installs the controller, shared contracts, agent runtime, and
-frontend from their lockfiles. The setup wizard walks through choosing a models
-directory, installing an engine, downloading a model, launching it, and
-benchmarking. Engine installs (vLLM/SGLang/MLX) land below the data directory at
-`runtime/venvs/<backend>-latest`.
+#### Debian, Ubuntu (`.deb`)
 
-## Agent runtime
-
-The agent surface lives at `/agent` in the frontend. It uses
-`@earendil-works/pi-coding-agent` through the frontend runtime rather than
-shelling out to a separate agent process for normal turns. Agent skills and
-extensions are discovered through Pi and surfaced in the session UI. Pi remains
-the source of truth for authentication, settings, resources, tools, and native
-JSONL sessions. The runtime respects `PI_CODING_AGENT_DIR`,
-`PI_CODING_AGENT_SESSION_DIR`, and Pi's `sessionDir` setting in the same
-precedence order as the CLI. Existing Local Studio session storage remains a
-read-compatible legacy source, while new sessions use Pi's resolved directory.
-Workbench sends only the active controller to Pi and shows that controller's
-advertised models by default. The model picker has an explicit Other models
-switch for models from the user's Pi catalog and providers connected in
-Configure. Those opt-in models use Pi's native provider routing without adding
-saved inactive controllers to the session.
-
-New Workbench chats start with Pi's `read`, `grep`, `find`, and `ls` tools. Full
-access enables every tool registered in that Pi session, including extension
-tools. Read only is a model-tool allowlist, not an operating-system sandbox,
-and loaded extensions may still have their own behavior. Pi runs with the full
-permissions of the host user. Tailscale limits who can reach the dashboard; it
-does not sandbox Pi.
-
-## Runtime backends
-
-Recipes launch through the controller runtime layer. Wired backend families:
-
-- `vllm` — vLLM server recipes through configured/discovered/system/Docker/bundled targets.
-- `sglang` — SGLang `launch-server` recipes through configured or discovered Python targets.
-- `llamacpp` — llama.cpp `llama-server` recipes for GGUF models.
-- `mlx` — MLX `mlx_lm.server` recipes for Apple Silicon.
-
-Runtime target discovery, models, integrations, and server controls are
-surfaced in Configure; selections persist in the controller data directory.
-
-## Production
-
-Build the frontend, then serve the controller and standalone frontend in separate
-terminals:
+Download the `.deb` from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), then:
 
 ```bash
-npm run build
-npm run start:controller
-npm run start
+sudo apt install ./T3-Code-*.deb
 ```
 
-`npm run start` launches the standalone server through `scripts/project.mjs`.
-Never use plain `next start` — it breaks SSE streaming. The controller runs the
-same way in production as in development: `bun src/main.ts`.
+#### Arch Linux (AUR)
 
-The production frontend binds only to `127.0.0.1` and defaults to port `4783`.
-`PORT` may be set to an integer from 1024 through 65535. Workspace paths are
-canonicalized and must be under `WORKSPACE_ROOTS`, a platform-path-delimited
-list that defaults to the current user's home directory. Add mounted locations
-explicitly, for example `WORKSPACE_ROOTS="$HOME:/Volumes/Projects"` on macOS.
-
-For private mobile access, first configure the exact Serve hostname:
+Stable:
 
 ```bash
-cd frontend
-ALLOWED_TAILSCALE_HOSTS=studio.example.ts.net npm start
-tailscale serve --bg http://127.0.0.1:4783
-tailscale serve status
+yay -S t3code-bin
 ```
 
-Serve supplies a private HTTPS tailnet URL. Both devices must be in the intended
-tailnet, and ACLs or grants should restrict the URL to its owner. Do not use
-Tailscale Funnel. `tailscale serve --bg` persists the proxy configuration across
-Tailscale restarts and reboots; it does not start Local Studio. Optionally set
-`ALLOWED_TAILSCALE_USERS` to a comma-separated login allowlist. The
-`Tailscale-User-Login` header is trusted only because the backend remains bound
-to loopback behind Serve.
-
-Manual availability requires `npm start` to remain active. An OS-native user
-service can start the compiled app after login and restart it after a crash, but
-it is intentionally not installed automatically. The host must still be on,
-awake, online, and connected to Tailscale.
-
-## Remote / LAN deployment
-
-The controller binds `127.0.0.1` by default. Binding a non-loopback host (e.g.
-`LOCAL_STUDIO_HOST=0.0.0.0`) requires `LOCAL_STUDIO_API_KEY` — startup throws
-without it. On a trusted LAN you may instead set
-`LOCAL_STUDIO_ALLOW_UNAUTHENTICATED=true` to opt out of authentication.
-
-Point the frontend at a remote controller with `BACKEND_URL` or
-`NEXT_PUBLIC_API_URL` (default `http://localhost:8080`).
-
-Deploy with your normal SSH or infrastructure workflow. The repository does not
-maintain a second deployment wrapper alongside the controller installer.
-
-The controller installer registers a persistent user service automatically
-(`launchd` on macOS and `systemd --user` on Linux), so installed controllers
-return after login without a repository daemon wrapper.
-
-## Validation
+Nightly:
 
 ```bash
-npm run check
+yay -S t3code-nightly-bin
 ```
 
-The configured pre-push hook (`.githooks/pre-push`) checks conventional commits
-and runs the frontend quality gate before pushing. The hook filenames are
-symlinks to `scripts/project.mjs`; they do not contain separate automation logic.
+The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
 
-## Releases
+## Some notes
 
-Every successful `main` CI run builds an unsigned macOS app and keeps the
-exact-SHA package as a GitHub Actions artifact. Conventional commits
-then trigger `release.yml`. Semantic Release chooses the next version (`feat` →
-minor, breaking → major, all other allowed commit types → patch).
+We are very very early in this project. Expect bugs.
 
-The release workflow builds the exact revision without Apple credentials,
-then passes only that unsigned app bundle to a separate signing job. The signing
-job installs the lockfile-pinned signing tooling without lifecycle scripts,
-signs, notarizes and staples the release assets, and hands them to a final
-publish job. Each stage rechecks that its revision is still `origin/main`; only
-the final stage can create the GitHub release with the DMG, updater files,
-stable website alias, checksums, and source manifest. There is no npm publish
-and tags are never created by hand.
+We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
 
-## Acknowledgements
+## Documentation
 
-Local Studio is built with and inspired by exceptional open-source work:
+Full docs live in [docs/](./docs). There's no docs site yet.
 
-- [Pi](https://github.com/earendil-works/pi) — the agent runtime and native
-  session model behind Workbench.
-- [T3 Code](https://github.com/pingdotgg/t3code) — inspiration for a focused,
-  developer-first coding workbench.
-- [SGLang](https://github.com/sgl-project/sglang) — a high-performance model
-  serving backend supported by Local Studio recipes.
-- [vLLM](https://github.com/vllm-project/vllm) — a high-throughput inference
-  and serving backend supported throughout Local Studio.
-- [Convex](https://github.com/get-convex/convex-backend) — inspiration for
-  reactive, real-time application architecture.
+- [Install and first run](./docs/user/install.md)
+- [Permission modes](./docs/user/permission-modes.md)
+- [Keyboard shortcuts](./docs/user/keybindings.md)
+- [Project settings](./docs/user/project-settings.md)
+- [Remote access from a phone or another machine](./docs/user/remote-access.md)
+- [Keeping app and server in sync](./docs/user/updating.md)
+- [Source control integrations](./docs/user/source-control.md)
+- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
+- [Run T3 Code as a background service](./docs/user/background-service.md)
 
-## Contributing
+Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
 
-Contributions should be small, focused, and easy to review. Start from the
-latest `dev`, one logical change per branch, no formatting-only rewrites, no
-secrets or build artifacts. Run `npm run check` before opening a PR; include a concise summary, the validation
-commands you ran, and screenshots for UI changes. See AGENTS.md for the full
-code standards an agent (or contributor) must follow.
+## If you REALLY want to contribute still.... read this first
 
-## License
+### Install `vp`
 
-See [LICENSE](LICENSE).
+T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
+
+#### macOS / Linux
+
+```bash
+curl -fsSL https://vite.plus | bash
+```
+
+#### Windows
+
+```bash
+irm https://vite.plus/ps1 | iex
+```
+
+Checkout their getting started guide for more information: https://viteplus.dev/guide/
+
+### Install dependencies
+
+```bash
+vp i
+```
+
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
+
+Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
+
+Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).

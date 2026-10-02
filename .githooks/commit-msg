@@ -1,1 +1,3 @@
-../scripts/project.mjs
+#!/bin/sh
+set -eu
+head -n 1 "$1" | grep -Eq '^(feat|fix|refactor|chore|docs|build|ci|perf|test|revert)(\([^)]*\))?!?: .+'

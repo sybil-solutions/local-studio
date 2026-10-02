@@ -1,8 +1,0 @@
-{
-  "apps": {
-    "gmail": {
-      "adapter": "google-workspace",
-      "mode": "read-only"
-    }
-  }
-}

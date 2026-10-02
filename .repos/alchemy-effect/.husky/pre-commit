@@ -1,0 +1,2 @@
+pnpm run format
+git update-index --again

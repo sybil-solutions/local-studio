@@ -1,1 +1,4 @@
-../scripts/project.mjs
+#!/bin/sh
+set -eu
+git diff --cached --check -- '*.ts' '*.tsx' '*.mjs' '*.js' '*.sh' '*.css' '*.json' '*.yml' ':!.repos'
+if test -f scripts/local-check.mjs; then node scripts/local-check.mjs --budget; fi
