@@ -1,5 +1,5 @@
 import { Image } from "expo-image";
-import { Path, Svg } from "react-native-svg";
+import { Path, Rect, Svg } from "react-native-svg";
 import { View } from "react-native";
 import { providerInstanceInitials } from "@t3tools/client-runtime/state/provider-instance-display";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
@@ -60,6 +60,20 @@ export function ProviderIcon(props: ProviderIconProps) {
           fill={isDarkMode ? "#EDECEC" : "#26251E"}
           d="M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01ZM444.05,151.99l-205.63,356.16c-1.39,2.4-5.06,1.42-5.06-1.36v-233.21c0-4.66-2.49-8.97-6.53-11.31L24.87,145.67c-2.4-1.39-1.42-5.06,1.36-5.06h411.26c5.84,0,9.49,6.33,6.57,11.39h-.01Z"
         />
+      </Svg>
+    );
+  }
+
+  if (props.provider === "piAgent" || props.provider === "omp") {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 800 800" fill="none">
+        <Rect width="800" height="800" rx="160" fill="#000" />
+        <Path
+          fill="#fff"
+          fillRule="evenodd"
+          d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
+        />
+        <Path fill="#fff" d="M517.36 400H634.72V634.72H517.36Z" />
       </Svg>
     );
   }

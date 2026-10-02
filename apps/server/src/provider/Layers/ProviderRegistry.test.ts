@@ -2714,7 +2714,9 @@ it.layer(Layer.mergeAll(TestNodeServices, ServerSettingsModule.layerTest(), Test
                 "codex",
                 "cursor",
                 "grok",
+                "omp",
                 "opencode",
+                "piAgent",
               ]);
               assert.strictEqual(cursorProvider?.enabled, false);
               assert.strictEqual(cursorProvider?.status, "disabled");

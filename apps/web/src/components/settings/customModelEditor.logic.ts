@@ -89,6 +89,12 @@ export const DESCRIPTOR_PRESETS_BY_KIND: Partial<
   [ProviderDriverKind.make("grok")]: [
     { id: "reasoningEffort", label: "Reasoning", type: "select", choices: EFFORT_CHOICES },
   ],
+  [ProviderDriverKind.make("piAgent")]: [
+    { id: "reasoningEffort", label: "Reasoning", type: "select", choices: EFFORT_CHOICES },
+  ],
+  [ProviderDriverKind.make("omp")]: [
+    { id: "reasoningEffort", label: "Reasoning", type: "select", choices: EFFORT_CHOICES },
+  ],
   [ProviderDriverKind.make("opencode")]: [
     { id: "variant", label: "Reasoning", type: "select", choices: EFFORT_CHOICES },
     {
