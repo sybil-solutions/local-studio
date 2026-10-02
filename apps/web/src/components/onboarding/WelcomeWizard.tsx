@@ -2,6 +2,7 @@ import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
 import type {
   AgentSessionProjectCandidate,
+  AgentSessionSource,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
@@ -72,7 +73,7 @@ import { readCodexSetupMode } from "../settings/CodexSetupSection.logic";
 import { buildProviderInstanceUpdatePatch } from "../settings/SettingsPanels.logic";
 import { TerminalViewport } from "../ThreadTerminalDrawer";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
-import { ClaudeAI, OpenAI } from "../Icons";
+import { ClaudeAI, OpenAI, PiAgentIcon } from "../Icons";
 import { T3Wordmark } from "../T3Wordmark";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
@@ -1656,7 +1657,7 @@ function ImportRowMeta({
   threadCount,
   lastActiveAt,
 }: {
-  readonly sources: ReadonlyArray<"claudeAgent" | "codex"> | null;
+  readonly sources: ReadonlyArray<AgentSessionSource> | null;
   readonly threadCount: number;
   readonly lastActiveAt: string | null;
 }) {
@@ -1664,7 +1665,7 @@ function ImportRowMeta({
   // "just now" does not fit the fixed column, so collapse it.
   const age = relative === null ? "" : relative.suffix === null ? "now" : relative.value;
   return (
-    <span className="ml-auto grid shrink-0 grid-cols-[1rem_1rem_2.5rem_2.25rem] items-center gap-x-1 text-xs text-muted-foreground tabular-nums">
+    <span className="ml-auto grid shrink-0 grid-cols-[1rem_1rem_1rem_2.5rem_2.25rem] items-center gap-x-1 text-xs text-muted-foreground tabular-nums">
       <span className="flex size-4 items-center justify-center">
         {sources?.includes("claudeAgent") ? (
           <ClaudeAI className="size-3" aria-label="Claude Code" />
@@ -1672,6 +1673,11 @@ function ImportRowMeta({
       </span>
       <span className="flex size-4 items-center justify-center">
         {sources?.includes("codex") ? <OpenAI className="size-3" aria-label="Codex" /> : null}
+      </span>
+      <span className="flex size-4 items-center justify-center">
+        {sources?.some((source) => source === "piAgent" || source === "omp") ? (
+          <PiAgentIcon className="size-3" aria-label="Pi / Oh My Pi" />
+        ) : null}
       </span>
       <span className="text-right">{threadCount}</span>
       <span className="text-right whitespace-nowrap">{age}</span>
