@@ -1,4 +1,11 @@
-# T3 Code docs
+# Docs
+
+Local Studio is built on [T3 Code](https://github.com/pingdotgg/t3code). Most pages below are upstream T3 Code documentation and apply unchanged.
+
+## Local Studio
+
+- [Local controller and fleet](./local-studio/controller.md)
+- [Releasing Local Studio](./local-studio/release.md)
 
 ## Using T3 Code
 

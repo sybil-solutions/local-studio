@@ -1,147 +1,82 @@
 # Local Studio
 
-Local Studio is a pinned T3 Code fork with Pi and Oh My Pi providers, a Local registry/fleet page, and a small federated inference controller. Upstream source and MIT attribution are preserved below. `LOCAL_STUDIO_UPSTREAM.json` records the import; `npm run check:budget` limits maintained custom source additions to 4,000 lines, excluding the upstream import itself.
+> **Built on [T3 Code](https://github.com/pingdotgg/t3code)** by Theo Browne, Julius Marminge and the T3 Tools team, used under the MIT License (Copyright (c) 2026 T3 Tools Inc.).
+> Local Studio is a thin fork that tracks upstream T3 Code closely. Almost all of the app — the agent UI, providers, threads, terminal, source control, remote access and mobile app — is their work. Please star and support [the upstream project](https://github.com/pingdotgg/t3code).
 
-Use Node 24, pnpm 11 and Bun 1.3.14. Run `pnpm install`, `pnpm --filter @local-studio/controller start`, then `pnpm dev:desktop --port 18773 --home-dir .t3`. This opens **Local Studio Dev** with hot reload and independent state. `npm run check` runs type checks, the web build and process-level controller E2E checks; no new unit tests are included.
+Local Studio is T3 Code for people who run their own models. It adds:
 
-The controller defaults to loopback port **18091** and `~/.local-studio-t3/config.json` (0600). To link machines, set their reachable `url`, bind `LOCAL_STUDIO_T3_HOST` to the tailnet address, and give them the same private `fleetKey`. Add peer URLs on the Local page. Never publish the key. `engineKeys` supplies credentials by port; `excludePorts` excludes other gateways. Configuration changes require restarting only the new controller.
+- **Pi and Oh My Pi providers.** Both run next to Codex, Claude, Cursor, Grok, OpenCode and Antigravity. They support streaming, tool calls, reasoning, interrupt, compaction, rollback, model/thinking selection, session import and token usage.
+- **A bundled local controller.** It discovers the inference servers on each machine (vLLM, SGLang, llama.cpp, anything serving `/v1/models`) and exposes them through one OpenAI/Anthropic-compatible gateway. It can launch pinned registry recipes on free NVIDIA GPUs.
+- **A machine fleet over Tailscale.** **Settings → Local** finds the devices on your tailnet and connects existing controllers. On Linux and macOS machines that have none, it installs a controller with one click, so a model loaded on any machine is usable from every machine.
 
-Controllers discover local `/v1/models` listeners and expose `/v1/models`, `/v1/chat/completions`, `/v1/completions`, `/v1/messages` and `/v1/responses`. Requests and streams pass through natively; unsupported protocols retain the engine's error. `auto` chooses the live model with the most completed successful requests across the reachable graph. This measures traffic through these controllers, not historical engine traffic.
+`LOCAL_STUDIO_UPSTREAM.json` records the pinned upstream import. `node scripts/local-check.mjs --budget` keeps Local Studio's own source under 4,000 lines on top of it, so upstream updates stay easy to merge.
 
-Registry launches use pinned container images and weight revisions on free matching NVIDIA GPUs, with separate ports **18100–18299**. Existing engines are never evicted. Captured configurations remain read-only; host-specific, multi-machine and privileged launches show their limitations instead of being silently rewritten. Cancellation is forwarded, but an engine that ignores client disconnects may continue generating. Pi/OMP use their installed CLI credentials and configuration; add them in Settings → Providers.
+## Download
 
-Connections uses direct, revocable pairing links to your environment and Local Studio desktop URL handlers. T3-owned cloud services are optional and disabled unless configured. The current migration runs as a development app alongside the existing install; stable release packaging is not enabled by this change.
+Get the latest release from **[localstudio.ai](https://localstudio.ai)** or [GitHub Releases](https://github.com/sybil-solutions/local-studio/releases/latest):
+
+| Platform             | Installer                                                                        |
+| -------------------- | -------------------------------------------------------------------------------- |
+| macOS, Apple silicon | [Local-Studio-mac-arm64.dmg](https://localstudio.ai/download/macos-arm64)        |
+| macOS, Intel         | [Local-Studio-mac-x64.dmg](https://localstudio.ai/download/macos-x64)            |
+| Windows x64          | [Local-Studio-win-x64.exe](https://localstudio.ai/download/windows)              |
+| Linux x64            | [Local-Studio-linux-x64.AppImage](https://localstudio.ai/download/linux)         |
+| Linux arm64          | [Local-Studio-linux-arm64.AppImage](https://localstudio.ai/download/linux-arm64) |
+
+macOS builds are signed and notarized. Windows builds are not yet code-signed, so SmartScreen asks for confirmation. Each release also attaches `SHA256SUMS` and standalone controller binaries for Linux, macOS and Windows.
+
+Install and log in to at least one agent CLI before first use. For Pi, install `pi`; for Oh My Pi, install `omp`. Both use their own configured models and credentials. The other providers are covered in the [upstream provider guides](./docs/user).
+
+## Local models and the fleet
+
+The desktop app starts its bundled controller on `127.0.0.1:18091` unless one is already running. Its configuration lives in `~/.local-studio-t3/config.json` (mode 0600). That file holds the machine name, the controller URL, the private `fleetKey` and the linked peers.
+
+Open **Settings → Local** to see every connected machine with its GPUs, live models, launchable recipes and usage. Machines on your tailnet appear automatically:
+
+- **Connect**: the machine already runs a controller; this links it.
+- **Install**: the machine is Linux or macOS with no controller. Local Studio installs one over `ssh` as a user service (systemd or launchd), binds it to the machine's Tailscale address, gives it your fleet key, and links it. This needs key-based `ssh` access to that machine. Machines that already have a controller are never overwritten.
+
+Every controller serves `/v1/models`, `/v1/chat/completions`, `/v1/completions`, `/v1/messages` and `/v1/responses`. Requests stream through to the engine that holds the model, on whichever machine it runs. The model id `auto` picks the live model with the most successful requests. Keep the fleet key private. More detail is in [docs/local-studio/controller.md](./docs/local-studio/controller.md).
+
+## Phone and tablet
+
+The [T3 Code mobile app](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824) ([Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)) connects to Local Studio like any T3 Code environment. Pair it from **Settings → Connections**; over Tailscale, use the machine's tailnet address. See [remote access](./docs/user/remote-access.md).
+
+## Development
+
+Use Node 24, pnpm 11 and Bun 1.3.14.
+
+```bash
+pnpm install
+pnpm --filter @local-studio/controller start
+pnpm dev:desktop --port 18773 --home-dir .t3
+```
+
+`dev:desktop` opens **Local Studio Dev** with hot reload and its own state. It runs React in development mode, which is many times slower in long threads. For daily use, build and run the production app instead:
+
+```bash
+pnpm build:desktop
+T3CODE_HOME="$PWD/.t3" pnpm start:desktop
+```
+
+`node scripts/local-check.mjs` runs the type checks, the web build, the controller end-to-end checks and the source budget. Upstream development notes are in [docs/operations/development.md](./docs/operations/development.md).
+
+## Releases
+
+`.github/workflows/release.yml` builds and publishes a release from a `vX.Y.Z` tag or a manual run. It produces:
+
+- signed and notarized macOS DMGs for arm64 and x64
+- a Windows NSIS installer
+- Linux AppImage and `.deb` packages for x64 and arm64
+- controller binaries
+- updater manifests and checksums
+
+The process is in [docs/local-studio/release.md](./docs/local-studio/release.md).
 
 ## Upstream T3 Code
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+The [docs/](./docs) folder is upstream's documentation and still describes most of the app. Upstream's own builds, install script (`t3.codes`), package-manager entries and T3 Connect service belong to T3 Tools. Local Studio does not publish to them.
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.
+## License
 
-## "Wait, what are you selling me?"
-
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
-
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
-
-## Installation
-
-> [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
-> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
-
-### Command line
-
-```bash
-curl -fsSL https://t3.codes/install.sh | sh
-```
-
-On Windows, in PowerShell:
-
-```powershell
-irm https://t3.codes/install.ps1 | iex
-```
-
-Then run `t3` to start the server and open the local web app. `t3 service install` keeps it running in the background, `t3 update` moves to a newer release, and `t3 --help` has the full reference.
-
-To try it once without installing, run `npx t3@latest` instead.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
-```
-
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Debian, Ubuntu (`.deb`)
-
-Download the `.deb` from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), then:
-
-```bash
-sudo apt install ./T3-Code-*.deb
-```
-
-#### Arch Linux (AUR)
-
-Stable:
-
-```bash
-yay -S t3code-bin
-```
-
-Nightly:
-
-```bash
-yay -S t3code-nightly-bin
-```
-
-The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
-
-## Documentation
-
-Full docs live in [docs/](./docs). There's no docs site yet.
-
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Project settings](./docs/user/project-settings.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- [Run T3 Code as a background service](./docs/user/background-service.md)
-
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
-
-## If you REALLY want to contribute still.... read this first
-
-### Install `vp`
-
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
-
-```bash
-curl -fsSL https://vite.plus | bash
-```
-
-#### Windows
-
-```bash
-irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
-
-```bash
-vp i
-```
-
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
-
-Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
-
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+MIT. See [LICENSE](./LICENSE). Copyright (c) 2026 T3 Tools Inc. for T3 Code. Local Studio changes are released under the same license. Oh My Pi's license is in [assets/OMP-LICENSE.txt](./assets/OMP-LICENSE.txt).
