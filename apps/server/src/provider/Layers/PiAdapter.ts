@@ -185,22 +185,34 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       yield* closeItem(ctx, "assistant", text);
       ctx.stopReason = asString(message.stopReason);
       ctx.errorMessage = asString(message.errorMessage);
-      const usage = asRecord(message.usage);
-      const usedTokens = Number(usage.totalTokens);
-      if (!(usedTokens > 0)) return;
+    });
+
+  const refreshUsage = (ctx: PiSessionContext) =>
+    Effect.gen(function* () {
+      const stats = asRecord((yield* (yield* rpcOf(ctx, "get_session_stats")).request({ type: "get_session_stats" })).data);
+      const count = (value: unknown) =>
+        typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+      const context = asRecord(stats.contextUsage);
+      const tokens = asRecord(stats.tokens);
+      const usedTokens = count(context.tokens);
+      const maxTokens = count(context.contextWindow) ?? ctx.contextWindow;
+      if (usedTokens === undefined) return;
       yield* emit(ctx, {
         type: "thread.token-usage.updated",
         payload: {
           usage: {
             usedTokens,
-            inputTokens: Number(usage.input) || 0,
-            outputTokens: Number(usage.output) || 0,
-            cachedInputTokens: Number(usage.cacheRead) || 0,
-            ...(ctx.contextWindow ? { maxTokens: ctx.contextWindow } : {}),
+            ...(maxTokens ? { maxTokens } : {}),
+            totalProcessedTokens: count(tokens.total),
+            inputTokens: count(tokens.input),
+            outputTokens: count(tokens.output),
+            cachedInputTokens: count(tokens.cacheRead),
+            reasoningOutputTokens: count(tokens.reasoning),
+            toolUses: count(stats.toolCalls),
           },
         },
       });
-    });
+    }).pipe(Effect.ignore);
 
   const handleToolFrame = (ctx: PiSessionContext, frame: PiFrame) => {
     const callId = asString(frame.toolCallId);
@@ -349,7 +361,9 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
 
   const handleFrame = (ctx: PiSessionContext, frame: PiFrame): Effect.Effect<void> => {
     const type = asString(frame.type);
-    if (type === flavor.settleEvent) return finishTurn(ctx);
+    if (type === flavor.settleEvent) {
+      return finishTurn(ctx).pipe(Effect.andThen(Effect.forkIn(refreshUsage(ctx), ctx.scope)), Effect.asVoid);
+    }
     if (type === "extension_ui_request") {
       const target = asString(frame.targetId);
       if (frame.method !== "cancel") return openDialog(ctx, frame);
@@ -483,6 +497,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         payload: { providerThreadId: sessionId ?? input.threadId },
       });
       yield* emit(ctx, { type: "session.state.changed", payload: { state: "ready" } });
+      yield* refreshUsage(ctx);
       return ctx.session;
     });
 
@@ -570,6 +585,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         }
         turns.at(-1)?.items.push(message);
       }
+      yield* Effect.flatMap(requireSession(threadId), refreshUsage).pipe(Effect.ignore);
       return { threadId, turns };
     });
 
@@ -585,6 +601,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       start: (threadId) =>
         call(threadId, "compact", 300_000).pipe(
           Effect.andThen(requireSession(threadId)),
+          Effect.tap(refreshUsage),
           Effect.flatMap((ctx) =>
             emit(ctx, { type: "thread.state.changed", payload: { state: "compacted" } }),
           ),
