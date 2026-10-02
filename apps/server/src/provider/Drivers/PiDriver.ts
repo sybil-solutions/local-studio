@@ -12,7 +12,13 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { makePiTextGeneration } from "../../textGeneration/PiTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makePiAdapter } from "../Layers/PiAdapter.ts";
-import { buildInitialPiProviderSnapshot, checkPiProviderStatus, OMP_FLAVOR, PI_FLAVOR, type PiFlavor } from "../Layers/PiProvider.ts";
+import {
+  buildInitialPiProviderSnapshot,
+  checkPiProviderStatus,
+  OMP_FLAVOR,
+  PI_FLAVOR,
+  type PiFlavor,
+} from "../Layers/PiProvider.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import {
@@ -20,7 +26,11 @@ import {
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
 } from "../providerUpdateSettings.ts";
-import { defaultProviderContinuationIdentity, type ProviderDriver, type ProviderInstance } from "../ProviderDriver.ts";
+import {
+  defaultProviderContinuationIdentity,
+  type ProviderDriver,
+  type ProviderInstance,
+} from "../ProviderDriver.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import { withInstanceIdentity } from "./instanceIdentity.ts";
 
@@ -55,15 +65,29 @@ const makePiFamilyDriver = (
         continuationGroupKey: continuationIdentity.continuationKey,
       });
       const settings = { ...config, enabled } satisfies PiAgentSettings;
-      const snapshotSettings = makeProviderSnapshotSettingsSource(settings, yield* ServerSettingsService);
+      const snapshotSettings = makeProviderSnapshotSettingsSource(
+        settings,
+        yield* ServerSettingsService,
+      );
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<PiAgentSettings>>({
         resolveMaintenance: () =>
-          Effect.succeed(makeManualOnlyProviderMaintenanceCapabilities({ provider: driverKind, packageName: flavor.npmPackage })),
+          Effect.succeed(
+            makeManualOnlyProviderMaintenanceCapabilities({
+              provider: driverKind,
+              packageName: flavor.npmPackage,
+            }),
+          ),
         getSettings: snapshotSettings.getSettings,
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-        initialSnapshot: (current) => buildInitialPiProviderSnapshot(flavor, current.provider).pipe(Effect.map(stampIdentity)),
-        checkProvider: checkPiProviderStatus(flavor, settings, processEnv, (yield* ServerConfig).cwd).pipe(
+        initialSnapshot: (current) =>
+          buildInitialPiProviderSnapshot(flavor, current.provider).pipe(Effect.map(stampIdentity)),
+        checkProvider: checkPiProviderStatus(
+          flavor,
+          settings,
+          processEnv,
+          (yield* ServerConfig).cwd,
+        ).pipe(
           Effect.map(stampIdentity),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         ),

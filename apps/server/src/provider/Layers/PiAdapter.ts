@@ -39,12 +39,17 @@ import { asRecord, asString, spawnPiRpc, type PiFrame, type PiRpc } from "./PiRp
 import { REASONING_OPTION_ID, splitModelSlug, type PiFlavor } from "./PiProvider.ts";
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
-type EventBody = DistributiveOmit<ProviderRuntimeEvent, "eventId" | "createdAt" | "provider" | "threadId">;
+type EventBody = DistributiveOmit<
+  ProviderRuntimeEvent,
+  "eventId" | "createdAt" | "provider" | "threadId"
+>;
 type ItemType = ItemLifecyclePayload["itemType"];
 type ItemKind = "assistant" | "reasoning";
 type Dialog = { readonly uiId: string; readonly method: string };
 
-type PiSessionContext = Partial<Record<"sessionFile" | "model" | "effort" | "stopReason" | "errorMessage", string | undefined>> & {
+type PiSessionContext = Partial<
+  Record<"sessionFile" | "model" | "effort" | "stopReason" | "errorMessage", string | undefined>
+> & {
   readonly threadId: ThreadId;
   readonly scope: Scope.Closeable;
   readonly dialogs: Map<ApprovalRequestId, Dialog>;
@@ -60,7 +65,10 @@ type PiSessionContext = Partial<Record<"sessionFile" | "model" | "effort" | "sto
   turnId?: TurnId | undefined;
 };
 
-const ITEM_TYPE: Record<ItemKind, ItemType> = { assistant: "assistant_message", reasoning: "reasoning" };
+const ITEM_TYPE: Record<ItemKind, ItemType> = {
+  assistant: "assistant_message",
+  reasoning: "reasoning",
+};
 const DETAIL_ARGS = ["command", "path", "file_path", "pattern", "query", "url"];
 
 const toolItemType = (name: string): ItemType =>
@@ -73,7 +81,11 @@ const toolItemType = (name: string): ItemType =>
         : "dynamic_tool_call";
 
 const textOf = (content: unknown): string =>
-  typeof content === "string" ? content : Array.isArray(content) ? content.map((part) => asString(asRecord(part).text) ?? "").join("") : "";
+  typeof content === "string"
+    ? content
+    : Array.isArray(content)
+      ? content.map((part) => asString(asRecord(part).text) ?? "").join("")
+      : "";
 
 export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
   flavor: PiFlavor,
@@ -111,7 +123,9 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
   const processError = (threadId: ThreadId, detail: string) => (cause: unknown) =>
     new ProviderAdapterProcessError({ provider: PROVIDER, threadId, detail, cause });
 
-  const requireSession = (threadId: ThreadId): Effect.Effect<PiSessionContext, ProviderAdapterSessionNotFoundError> => {
+  const requireSession = (
+    threadId: ThreadId,
+  ): Effect.Effect<PiSessionContext, ProviderAdapterSessionNotFoundError> => {
     const ctx = sessions.get(threadId);
     return ctx && !ctx.stopping
       ? Effect.succeed(ctx)
@@ -172,8 +186,12 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
 
   const refreshUsage = (ctx: PiSessionContext) =>
     Effect.gen(function* () {
-      const stats = asRecord((yield* (yield* rpcOf(ctx, "get_session_stats")).request({ type: "get_session_stats" })).data);
-      const count = (value: unknown) => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined);
+      const stats = asRecord(
+        (yield* (yield* rpcOf(ctx, "get_session_stats")).request({ type: "get_session_stats" }))
+          .data,
+      );
+      const count = (value: unknown) =>
+        typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
       const context = asRecord(stats.contextUsage);
       const tokens = asRecord(stats.tokens);
       const usedTokens = count(context.tokens);
@@ -205,7 +223,8 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       const itemType = toolItemType(title);
       const args = asRecord(frame.args);
       const key = DETAIL_ARGS.find((name) => asString(args[name]));
-      const detail = (key ? asString(args[key])?.slice(0, 500) : undefined) ?? asString(frame.intent);
+      const detail =
+        (key ? asString(args[key])?.slice(0, 500) : undefined) ?? asString(frame.intent);
       ctx.tools.set(callId, { itemType, title });
       return item(ctx, "item.started", RuntimeItemId.make(callId), {
         itemType,
@@ -232,9 +251,14 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       const method = asString(frame.method);
       if (!uiId || !method || !["select", "confirm", "input", "editor"].includes(method)) return;
       const title = asString(frame.title) ?? "Input requested";
-      const choices = (Array.isArray(frame.options) ? frame.options : []).filter((option): option is string => typeof option === "string");
+      const choices = (Array.isArray(frame.options) ? frame.options : []).filter(
+        (option): option is string => typeof option === "string",
+      );
       if (method === "select" && choices.join("|") === "Approve|Deny") {
-        return yield* ctx.rpc?.write({ type: "extension_ui_response", id: uiId, value: "Approve" }) ?? Effect.void;
+        return yield* (
+          ctx.rpc?.write({ type: "extension_ui_response", id: uiId, value: "Approve" }) ??
+            Effect.void
+        );
       }
       const requestId = ApprovalRequestId.make(yield* uuid);
       ctx.dialogs.set(requestId, { uiId, method });
@@ -259,7 +283,11 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       });
     });
 
-  const settleDialog = (ctx: PiSessionContext, requestId: ApprovalRequestId, answers: Record<string, unknown> = {}) => {
+  const settleDialog = (
+    ctx: PiSessionContext,
+    requestId: ApprovalRequestId,
+    answers: Record<string, unknown> = {},
+  ) => {
     const dialog = ctx.dialogs.get(requestId);
     ctx.dialogs.delete(requestId);
     if (!dialog) return Effect.void;
@@ -275,7 +303,9 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       [...ctx.dialogs].filter(([, dialog]) => !uiId || dialog.uiId === uiId),
       ([requestId, dialog]) =>
         Effect.andThen(
-          (notify && ctx.rpc?.write({ type: "extension_ui_response", id: dialog.uiId, cancelled: true })) || Effect.void,
+          (notify &&
+            ctx.rpc?.write({ type: "extension_ui_response", id: dialog.uiId, cancelled: true })) ||
+            Effect.void,
           settleDialog(ctx, requestId),
         ),
       { discard: true },
@@ -322,7 +352,9 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       yield* finishTurn(ctx);
       yield* emit(ctx, {
         type: "session.exited",
-        payload: reason ? { reason: reason.slice(0, 500), exitKind: "error", recoverable: true } : { exitKind: "graceful" },
+        payload: reason
+          ? { reason: reason.slice(0, 500), exitKind: "error", recoverable: true }
+          : { exitKind: "graceful" },
       });
       yield* Scope.close(ctx.scope, Exit.void);
     });
@@ -330,7 +362,10 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
   const handleFrame = (ctx: PiSessionContext, frame: PiFrame): Effect.Effect<void> => {
     const type = asString(frame.type);
     if (type === flavor.settleEvent) {
-      return finishTurn(ctx).pipe(Effect.andThen(Effect.forkIn(refreshUsage(ctx), ctx.scope)), Effect.asVoid);
+      return finishTurn(ctx).pipe(
+        Effect.andThen(Effect.forkIn(refreshUsage(ctx), ctx.scope)),
+        Effect.asVoid,
+      );
     }
     if (type === "extension_ui_request") {
       const target = asString(frame.targetId);
@@ -349,7 +384,9 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       return streamDelta(ctx, "reasoning", delta);
     }
     const message = asRecord(frame.message);
-    return type === "message_end" && message.role === "assistant" ? finishAssistantMessage(ctx, message) : Effect.void;
+    return type === "message_end" && message.role === "assistant"
+      ? finishAssistantMessage(ctx, message)
+      : Effect.void;
   };
 
   const syncState = (ctx: PiSessionContext, rpc: PiRpc) =>
@@ -371,12 +408,17 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       const slug = selection?.model;
       if (slug && slug !== PI_DEFAULT_MODEL && slug !== ctx.model) {
         const parts = splitModelSlug(slug);
-        if (!parts) return yield* validationError("set_model", `Model '${slug}' must look like provider/model-id.`);
+        if (!parts)
+          return yield* validationError(
+            "set_model",
+            `Model '${slug}' must look like provider/model-id.`,
+          );
         yield* rpc.request({ type: "set_model", ...parts });
         ctx.effort = undefined;
       }
       const effort = getModelSelectionStringOptionValue(selection, REASONING_OPTION_ID);
-      if (effort && effort !== ctx.effort) yield* rpc.request({ type: "set_thinking_level", level: effort });
+      if (effort && effort !== ctx.effort)
+        yield* rpc.request({ type: "set_thinking_level", level: effort });
       yield* syncState(ctx, rpc);
       if (effort && effort !== ctx.effort) {
         yield* emit(ctx, {
@@ -395,10 +437,14 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       const cwd = input.cwd ?? serverConfig.cwd;
       yield* fileSystem
         .makeDirectory(sessionDir, { recursive: true })
-        .pipe(Effect.mapError(processError(input.threadId, "Failed to create the session directory.")));
+        .pipe(
+          Effect.mapError(processError(input.threadId, "Failed to create the session directory.")),
+        );
       const cursorFile = asString(asRecord(input.resumeCursor).sessionFile);
       const resumeFile =
-        cursorFile && (yield* fileSystem.exists(cursorFile).pipe(Effect.orElseSucceed(() => false))) ? cursorFile : undefined;
+        cursorFile && (yield* fileSystem.exists(cursorFile).pipe(Effect.orElseSucceed(() => false)))
+          ? cursorFile
+          : undefined;
       const scope = yield* Scope.make();
       const now = yield* nowIso;
       const ctx: PiSessionContext = {
@@ -475,10 +521,15 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
               attachmentsDir: serverConfig.attachmentsDir,
               attachment,
             });
-            if (!file) return yield* requestError("prompt", `Invalid attachment id '${attachment.id}'.`);
+            if (!file)
+              return yield* requestError("prompt", `Invalid attachment id '${attachment.id}'.`);
             const bytes = yield* fileSystem
               .readFile(file)
-              .pipe(Effect.mapError((cause) => requestError("prompt", `Failed to read attachment '${attachment.id}'.`, cause)));
+              .pipe(
+                Effect.mapError((cause) =>
+                  requestError("prompt", `Failed to read attachment '${attachment.id}'.`, cause),
+                ),
+              );
             return {
               type: "image",
               data: Buffer.from(bytes).toString("base64"),
@@ -559,7 +610,9 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       }
       const history = asRecord((yield* rpc.request({ type: "get_entries" }, 60_000)).data);
       if (!Array.isArray(history.entries)) return yield* fail("Session entries are unavailable.");
-      const entries = new Map(history.entries.map((raw) => [asString(asRecord(raw).id), asRecord(raw)]));
+      const entries = new Map(
+        history.entries.map((raw) => [asString(asRecord(raw).id), asRecord(raw)]),
+      );
       const users: string[] = [];
       const visited = new Set<string>();
       for (let id = asString(history.leafId); id; id = asString(entries.get(id)?.parentId)) {
@@ -570,8 +623,11 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       }
       const entryId = users[Math.min(numTurns, users.length) - 1];
       if (!entryId) return yield* readThread(threadId);
-      const result = asRecord((yield* rpc.request({ type: flavor.rollbackCommand, entryId }, 60_000)).data);
-      if (result.cancelled !== false) return yield* fail("Conversation rollback was cancelled or not confirmed.");
+      const result = asRecord(
+        (yield* rpc.request({ type: flavor.rollbackCommand, entryId }, 60_000)).data,
+      );
+      if (result.cancelled !== false)
+        return yield* fail("Conversation rollback was cancelled or not confirmed.");
       const previous = ctx.sessionFile;
       ctx.sessionFile = undefined;
       yield* syncState(ctx, rpc);
@@ -589,7 +645,8 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       return yield* readThread(threadId);
     });
 
-  const stopAll = () => Effect.forEach([...sessions.values()], (ctx) => endSession(ctx), { discard: true });
+  const stopAll = () =>
+    Effect.forEach([...sessions.values()], (ctx) => endSession(ctx), { discard: true });
   yield* Effect.addFinalizer(() => Effect.andThen(stopAll(), PubSub.shutdown(events)));
 
   return {
@@ -601,7 +658,9 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         call(threadId, "compact", 300_000).pipe(
           Effect.andThen(requireSession(threadId)),
           Effect.tap(refreshUsage),
-          Effect.flatMap((ctx) => emit(ctx, { type: "thread.state.changed", payload: { state: "compacted" } })),
+          Effect.flatMap((ctx) =>
+            emit(ctx, { type: "thread.state.changed", payload: { state: "compacted" } }),
+          ),
         ),
     },
     startSession,
@@ -614,12 +673,16 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         yield* cancelDialogs(ctx, true);
         yield* call(threadId, "abort");
       }),
-    respondToRequest: () => Effect.fail(requestError("respondToRequest", `${flavor.displayName} has no tool approval gate.`)),
+    respondToRequest: () =>
+      Effect.fail(
+        requestError("respondToRequest", `${flavor.displayName} has no tool approval gate.`),
+      ),
     respondToUserInput: (threadId, requestId, answers) =>
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         const dialog = ctx.dialogs.get(requestId);
-        if (!dialog) return yield* requestError("extension_ui_response", `Unknown request: ${requestId}`);
+        if (!dialog)
+          return yield* requestError("extension_ui_response", `Unknown request: ${requestId}`);
         const raw = answers.answer ?? Object.values(answers)[0];
         const value = String((Array.isArray(raw) ? raw[0] : raw) ?? "");
         yield* (yield* rpcOf(ctx, "extension_ui_response")).write({
@@ -630,7 +693,8 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
         yield* settleDialog(ctx, requestId, answers);
       }),
     stopSession: (threadId) => Effect.flatMap(requireSession(threadId), (ctx) => endSession(ctx)),
-    listSessions: () => Effect.sync(() => [...sessions.values()].map((ctx) => ({ ...ctx.session }))),
+    listSessions: () =>
+      Effect.sync(() => [...sessions.values()].map((ctx) => ({ ...ctx.session }))),
     hasSession: (threadId) => Effect.sync(() => sessions.has(threadId)),
     readThread,
     rollbackThread,

@@ -8,10 +8,23 @@ import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { asRecord, asString, spawnPiRpc } from "../provider/Layers/PiRpc.ts";
-import { REASONING_OPTION_ID, splitModelSlug, type PiFlavor } from "../provider/Layers/PiProvider.ts";
+import {
+  REASONING_OPTION_ID,
+  splitModelSlug,
+  type PiFlavor,
+} from "../provider/Layers/PiProvider.ts";
 import type * as TextGeneration from "./TextGeneration.ts";
-import { buildBranchNamePrompt, buildCommitMessagePrompt, buildPrContentPrompt, buildThreadTitlePrompt } from "./TextGenerationPrompts.ts";
-import { sanitizeCommitSubject, sanitizePrTitle, sanitizeThreadTitle } from "./TextGenerationUtils.ts";
+import {
+  buildBranchNamePrompt,
+  buildCommitMessagePrompt,
+  buildPrContentPrompt,
+  buildThreadTitlePrompt,
+} from "./TextGenerationPrompts.ts";
+import {
+  sanitizeCommitSubject,
+  sanitizePrTitle,
+  sanitizeThreadTitle,
+} from "./TextGenerationUtils.ts";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
 
@@ -36,7 +49,8 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
         args: ["--mode", "rpc", ...flavor.headlessArgs, "--no-tools"],
         cwd: input.cwd,
         env: environment,
-        onFrame: (frame) => (frame.type === flavor.settleEvent ? Deferred.succeed(settled, undefined) : Effect.void),
+        onFrame: (frame) =>
+          frame.type === flavor.settleEvent ? Deferred.succeed(settled, undefined) : Effect.void,
         onExit: (reason) => Deferred.fail(settled, reason),
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
       const parts = splitModelSlug(input.modelSelection.model);
@@ -45,16 +59,29 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
       if (effort) yield* rpc.request({ type: "set_thinking_level", level: effort });
       yield* rpc.request({ type: "prompt", message: built.prompt });
       yield* Deferred.await(settled).pipe(Effect.timeout(180_000));
-      const text = asString(asRecord((yield* rpc.request({ type: "get_last_assistant_text" })).data).text)?.trim();
+      const text = asString(
+        asRecord((yield* rpc.request({ type: "get_last_assistant_text" })).data).text,
+      )?.trim();
       if (!text) {
-        return yield* new TextGenerationError({ operation, detail: `${flavor.displayName} returned empty output.` });
+        return yield* new TextGenerationError({
+          operation,
+          detail: `${flavor.displayName} returned empty output.`,
+        });
       }
-      return finish(yield* Schema.decodeEffect(Schema.fromJsonString(built.outputSchema))(extractJsonObject(text)));
+      return finish(
+        yield* Schema.decodeEffect(Schema.fromJsonString(built.outputSchema))(
+          extractJsonObject(text),
+        ),
+      );
     }).pipe(
       Effect.mapError((cause) =>
         isTextGenerationError(cause)
           ? cause
-          : new TextGenerationError({ operation, detail: `${flavor.displayName} text generation failed.`, cause }),
+          : new TextGenerationError({
+              operation,
+              detail: `${flavor.displayName} text generation failed.`,
+              cause,
+            }),
       ),
       Effect.scoped,
     ) as Effect.Effect<A, TextGenerationError, S["DecodingServices"]>;
@@ -68,7 +95,9 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
         (generated) => ({
           subject: sanitizeCommitSubject(generated.subject),
           body: generated.body.trim(),
-          ...("branch" in generated && typeof generated.branch === "string" ? { branch: sanitizeFeatureBranchName(generated.branch) } : {}),
+          ...("branch" in generated && typeof generated.branch === "string"
+            ? { branch: sanitizeFeatureBranchName(generated.branch) }
+            : {}),
         }),
       ),
     generatePrContent: (input) =>
