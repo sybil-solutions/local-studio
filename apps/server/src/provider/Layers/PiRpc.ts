@@ -46,8 +46,19 @@ export const spawnPiRpc = Effect.fn("spawnPiRpc")(function* (input: {
   let stderrTail = "";
   let sequence = 0;
 
-  const handleLine = (line: string) => {
+  const chunks = new Map<string, Array<string>>();
+  const handleLine = (line: string): Effect.Effect<void> => {
     const frame = asRecord(JSON.parse(line));
+    if (frame.type === "rpc_chunk") {
+      const id = String(frame.chunkId);
+      const parts = [...(chunks.get(id) ?? []), String(frame.data)];
+      if (parts.length < Number(frame.count)) return Effect.sync(() => chunks.set(id, parts));
+      chunks.delete(id);
+      return handleLine(
+        Buffer.concat(parts.map((part) => Buffer.from(part, "base64"))).toString("utf8"),
+      );
+    }
+    if (frame.id === "t3-negotiate") return Effect.void;
     const waiter = frame.type === "response" ? pending.get(String(frame.id)) : undefined;
     if (!waiter) return input.onFrame(frame);
     return frame.success === false
@@ -117,5 +128,6 @@ export const spawnPiRpc = Effect.fn("spawnPiRpc")(function* (input: {
         Effect.ensuring(Effect.sync(() => pending.delete(id))),
       );
     });
+  yield* write({ type: "negotiate_protocol", protocolVersion: 2, id: "t3-negotiate" });
   return { request, write };
 });
