@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,37 +36,20 @@ const waitFor = async (fn, label, ms = 35_000) => {
 const call = (port, path, body, headers = auth) =>
   fetch(`http://127.0.0.1:${port}${path}`, {
     headers,
-    ...(body === undefined
-      ? {}
-      : { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body) }),
+    ...(body === undefined ? {} : { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body) }),
     signal: AbortSignal.timeout(10_000),
   });
 const snapshot = async (port) => (await call(port, "/api/snapshot")).json();
 
 try {
   mkdirSync(join(root, "dist"));
-  writeFileSync(
-    join(root, "dist/catalog.json"),
-    JSON.stringify({
-      cards: {},
-      recipes: {
-        captured: {
-          model: "preserved",
-          card: "unknown",
-          engine: "vllm",
-          weights: "baked-into-image",
-          launch: { kind: "host", port: 8000, ctx: 4096 },
-          proof: [{ captured: true }],
-        },
-      },
-    }),
-  );
+  const captured = { model: "preserved", card: "unknown", engine: "vllm", weights: "baked-into-image", launch: { kind: "host", port: 8000, ctx: 4096 }, proof: [{ captured: true }] };
+  writeFileSync(join(root, "dist/catalog.json"), JSON.stringify({ cards: {}, recipes: { captured } }));
   git("init", "-q");
   git("add", "dist/catalog.json");
   git("-c", "user.name=Local E2E", "-c", "user.email=e2e@localhost", "commit", "-qm", "fixture");
   const commit = git("rev-parse", "HEAD").toString().trim();
-  const stream =
-    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\\"x\\\":1}"}}]}}]}\n\ndata: [DONE]\n\n';
+  const stream = 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\\"x\\\":1}"}}]}}]}\n\ndata: [DONE]\n\n';
   const engine = async (models) =>
     listen(
       createServer(async (req, res) => {
@@ -78,6 +61,12 @@ try {
         for await (const chunk of req) raw += chunk;
         received.push({ raw, headers: req.headers, path: req.url });
         const body = JSON.parse(raw);
+        if (body.fixtureResponse) {
+          res.writeHead(200, { "content-type": body.stream ? "text/event-stream" : "application/json" });
+          const bytes = Buffer.from(body.fixtureResponse);
+          for (let offset = 0; offset < bytes.length; offset += 7) res.write(bytes.subarray(offset, offset + 7));
+          return res.end();
+        }
         if (req.url === "/v1/messages") {
           res.writeHead(422, { "content-type": "application/json", "x-engine-error": "native" });
           return res.end('{"error":{"type":"native_fixture_error"}}');
@@ -96,47 +85,22 @@ try {
   const ports = [];
   for (let i = 0; i < 3; i++) {
     const s = createServer();
-    const p = await listen(s);
+    ports.push(await listen(s));
     await new Promise((resolve) => s.close(resolve));
-    ports.push(p);
   }
   for (const [i, port] of ports.entries()) {
     const home = join(root, `controller-${i}`);
     mkdirSync(home);
-    writeFileSync(
-      join(home, "config.json"),
-      JSON.stringify({
-        id: `fixture-${i}`,
-        name: `Fixture ${i}`,
-        url: `http://127.0.0.1:${port}`,
-        fleetKey: key,
-        peers: [`http://127.0.0.1:${ports[(i + 1) % ports.length]}`],
-        excludePorts: [
-          ...ports,
-          ...(i === 0 ? [engineB] : i === 1 ? [engineA] : [engineA, engineB]),
-        ],
-        engineKeys: { [engineA]: "fixture-engine-secret" },
-        registry: { url: root, dir: root, ref: commit },
-        modelsDir: join(home, "models"),
-      }),
-      { mode: 0o600 },
-    );
-    const child = spawn("bun", ["apps/local-controller/src/main.ts"], {
-      env: {
-        ...process.env,
-        LOCAL_STUDIO_T3_HOME: home,
-        LOCAL_STUDIO_T3_PORT: String(port),
-        LOCAL_STUDIO_T3_HOST: "127.0.0.1",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    writeFileSync(join(home, "usage.json"), JSON.stringify({ legacy: { requests: 7, lastAt: "2025-01-01T00:00:00Z" } }));
+    const excludePorts = [...ports, ...(i === 0 ? [engineB] : i === 1 ? [engineA] : [engineA, engineB])];
+    const peers = [`http://127.0.0.1:${ports[(i + 1) % ports.length]}`];
+    const config = { id: `fixture-${i}`, name: `Fixture ${i}`, url: `http://127.0.0.1:${port}`, fleetKey: key, peers, excludePorts };
+    const registry = { url: root, dir: root, ref: commit };
+    writeFileSync(join(home, "config.json"), JSON.stringify({ ...config, engineKeys: { [engineA]: "fixture-engine-secret" }, registry, modelsDir: join(home, "models") }), { mode: 0o600 });
+    const env = { ...process.env, LOCAL_STUDIO_T3_HOME: home, LOCAL_STUDIO_T3_PORT: String(port), LOCAL_STUDIO_T3_HOST: "127.0.0.1" };
+    const child = spawn("bun", ["apps/local-controller/src/main.ts"], { env, stdio: ["ignore", "pipe", "pipe"] });
     let log = "";
-    child.stdout.on("data", (chunk) => {
-      log += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      log += chunk;
-    });
+    for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => (log += chunk));
     children.push(child);
     await waitFor(async () => {
       if (child.exitCode !== null) throw new Error(log);
@@ -147,11 +111,7 @@ try {
   assert.equal((await call(a, "/api/snapshot", undefined, {})).status, 401);
   await waitFor(async () => {
     const s = await snapshot(a);
-    return (
-      s.models.some((m) => m.id === "alpha" && m.live) &&
-      s.models.some((m) => m.id === "beta" && m.live) &&
-      s.controllers.length === 3
-    );
+    return ["alpha", "beta"].every((id) => s.models.some((m) => m.id === id && m.live)) && s.controllers.length === 3;
   }, "discovery and cyclic controller graph");
   const s = await snapshot(a);
   assert.equal(s.controllers.filter((x) => x.reachable).length, 3);
@@ -160,14 +120,8 @@ try {
   assert.equal((await call(a, "/api/peers", "{")).status, 400);
   assert.equal((await call(a, "/api/peers", { url: `http://127.0.0.1:${a}` })).status, 400);
   assert.equal((await call(a, "/v1/completions", { model: "not-live" })).status, 404);
-  const raw =
-    '{ "model": "alpha", "stream": true, "messages": [{"role":"user","content":"native"}], "extra_body": {"nested":[1,2,3]} }';
-  const streamed = await call(a, "/v1/chat/completions", raw, {
-    ...auth,
-    "x-api-key": "client-secret",
-    cookie: "private=value",
-    "anthropic-version": "2023-06-01",
-  });
+  const raw = '{ "model": "alpha", "stream": true, "messages": [{"role":"user","content":"native"}], "extra_body": {"nested":[1,2,3]} }';
+  const streamed = await call(a, "/v1/chat/completions", raw, { ...auth, "x-api-key": "client-secret", cookie: "private=value", "anthropic-version": "2023-06-01" });
   assert.equal(streamed.status, 200);
   assert.equal(streamed.headers.get("x-engine-stream"), "native");
   assert.equal(await streamed.text(), stream);
@@ -185,35 +139,46 @@ try {
     assert.equal(r.status, 200);
     assert.deepEqual(await r.json(), { model: "beta", fixture: true, path });
   }
-  await waitFor(
-    async () => (await snapshot(a)).auto === "beta",
-    "auto follows most-used live model",
-  );
+  await waitFor(async () => (await snapshot(a)).auto === "beta", "auto follows most-used live model");
   const auto = await call(a, "/v1/responses", { model: "auto", input: "route" });
   assert.equal((await auto.json()).model, "beta");
-  await waitFor(
-    async () => (await snapshot(a)).models.find((m) => m.id === "beta")?.requests === 4,
-    "usage counts once across graph",
-  );
+  await waitFor(async () => (await snapshot(a)).models.find((m) => m.id === "beta")?.requests === 4, "usage counts once across graph");
   assert.equal((await snapshot(b)).usage.find((u) => u.model === "beta").requests, 4);
-  await new Promise((resolve) =>
-    servers.find((server) => server.address()?.port === engineB).close(resolve),
-  );
-  await waitFor(
-    async () => (await snapshot(a)).auto === "alpha",
-    "auto excludes offline most-used model",
-  );
+  const event = (value) => `data: ${JSON.stringify(value)}\r\n\r\n`;
+  const cases = [
+    ["completions", false, JSON.stringify({ usage: { prompt_tokens: 11, completion_tokens: 5, total_tokens: 16 } }), 16],
+    ["chat/completions", true, event({ choices: [{ delta: { content: "π" } }], usage: null }) + event({ usage: { prompt_tokens: 17, completion_tokens: 3, total_tokens: 20 } }) + "data: [DONE]\r\n\r\n", 20],
+    ["responses", true, event({ type: "response.completed", response: { usage: { input_tokens: 19, output_tokens: 7, total_tokens: 26 } } }), 26],
+    ["messages", false, JSON.stringify({ usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 31, cache_creation_input_tokens: 7 } }), 43],
+    ["messages", true, event({ type: "message_start", message: { usage: { input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 37, cache_creation_input_tokens: 11 } } }) + event({ type: "message_delta", usage: { output_tokens: 3 } }) + event({ type: "message_delta", usage: { output_tokens: 13, cache_read_input_tokens: 37 } }) + event({ type: "message_stop" }), 66],
+    ["responses", false, JSON.stringify({ usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } }), 0],
+    ["chat/completions", true, event({ usage: { prompt_tokens: 3, completion_tokens: 4 } }), null],
+    ["messages", true, event({ type: "message_start", message: { usage: { input_tokens: 5, output_tokens: 1 } } }) + event({ type: "error", error: { type: "overloaded_error" } }) + event({ type: "message_stop" }), null],
+  ];
+  for (const [path, stream, fixtureResponse, expected] of cases) {
+    const before = (await (await call(b, "/api/node")).json()).usage.find((u) => u.model === "beta");
+    const response = await call(c, `/v1/${path}`, { model: "beta", stream, fixtureResponse });
+    assert.equal(await response.text(), fixtureResponse);
+    const after = (await (await call(b, "/api/node")).json()).usage.find((u) => u.model === "beta");
+    const sum = (row) => Object.values(row.tokens ?? {}).reduce((a, b) => a + b, 0);
+    assert.equal(sum(after) - sum(before), expected ?? 0, path);
+    assert.equal(after.measuredRequests - (before.measuredRequests ?? 0), Number(expected !== null), path);
+    assert.deepEqual(JSON.parse(readFileSync(join(root, "controller-1/usage.json"))).beta.tokens, after.tokens);
+  }
+  await waitFor(async () => (await snapshot(a)).usage.find((u) => u.model === "beta")?.measuredRequests === 6, "federated measured usage");
+  const tracked = (await snapshot(a)).usage;
+  assert.equal(Object.values(tracked.find((u) => u.model === "beta").tokens).reduce((a, b) => a + b, 0), 171);
+  assert.equal(tracked.find((u) => u.model === "legacy").requests, 21);
+  assert.equal(tracked.find((u) => u.model === "legacy").measuredRequests, 0);
+  await new Promise((resolve) => servers.find((server) => server.address()?.port === engineB).close(resolve));
+  await waitFor(async () => (await snapshot(a)).auto === "alpha", "auto excludes offline most-used model");
   const models = await (await call(a, "/v1/models")).json();
   assert(models.data.some((m) => m.id === "auto"));
   assert(!models.data.some((m) => m.id === "beta"));
-  console.log(
-    "PASS E2E: authentication, discovery, multi-API models, cyclic federation, native streams/errors, credential isolation, registry launch guard, auto and usage.",
-  );
+  console.log("PASS E2E: authentication, discovery, multi-API models, cyclic federation, native streams/errors, credential isolation, registry launch guard, auto and usage.");
 } finally {
   for (const child of children) child.kill("SIGTERM");
-  await Promise.all(
-    children.map((child) => (child.exitCode === null ? once(child, "exit") : undefined)),
-  );
+  await Promise.all(children.map((child) => (child.exitCode === null ? once(child, "exit") : undefined)));
   for (const server of servers) {
     server.closeAllConnections();
     server.close();

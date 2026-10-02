@@ -58,6 +58,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @t3tools/desktop typecheck
       - run: pnpm dist:desktop:artifact --platform mac --arch arm64 --target dir --output-dir release-ci

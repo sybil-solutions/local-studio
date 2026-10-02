@@ -21,6 +21,7 @@ import {
   Link2Icon,
   PaletteIcon,
   SearchIcon,
+  ServerIcon,
   Settings2Icon,
   XIcon,
 } from "lucide-react";
@@ -85,6 +86,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/integrations": BlocksIcon,
   "/settings/source-control": GitBranchIcon,
   "/settings/storage": HardDriveIcon,
+  "/settings/local": ServerIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
 };

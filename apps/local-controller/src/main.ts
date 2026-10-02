@@ -1,51 +1,35 @@
 import { timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import {
-  LOCAL_STUDIO_CONTROLLER_HEADER,
-  type LocalGpu,
-  type LocalModel,
-  type LocalNode,
-  LocalPeerRequest,
-  type LocalRecipes,
-  LocalRunRequest,
-  type LocalSnapshot,
-} from "../../../packages/contracts/src/localStudio.ts";
-import { errorResponse, HttpError, json, loadConfig, now, port, saveConfig, VERSION } from "./core.ts";
+import { LOCAL_STUDIO_CONTROLLER_HEADER, type LocalGpu, LocalDeployRequest, LocalNameRequest, type LocalNode, LocalPeerRequest, type LocalRecipes, LocalRunRequest, type LocalSnapshot } from "../../../packages/contracts/src/localStudio.ts";
+import { decodeJson, errorResponse, exec, fail, type HttpError, httpError, json, loadConfig, now, port, saveConfig, VERSION } from "./core.ts";
 import { listeners, makeScanner } from "./discovery.ts";
 import { autoModel, HOP_HEADER, listModels, passthrough, routes } from "./gateway.ts";
 import { graphUsage, makeGraph, makeUsage, normUrl } from "./graph.ts";
-import { gpuBusy, hardware, type RawGpu, readGpus } from "./hardware.ts";
+import { hardware, type RawGpu, readGpus } from "./hardware.ts";
 import { makeJobs } from "./jobs.ts";
-import { type Catalog, loadCatalog, matchCard, servedName, toLocalRecipe } from "./registry.ts";
+import { type Catalog, loadCatalog, matchCard, toLocalRecipe } from "./registry.ts";
+import { deployController, scanTailnet } from "./tailnet.ts";
 
 let config = loadConfig();
-const SCAN_MS = 10_000;
-const REGISTRY_MS = 30 * 60_000;
-
-let catalog: Catalog = { info: { source: config.registry.url, ref: config.registry.ref, commit: null, error: "loading" }, cards: {}, recipes: new Map(), archived: [], captured: [] };
+let catalog: Catalog = { info: { commit: null, error: "loading" }, cards: {}, recipes: new Map(), archived: [] };
 let rawGpus: RawGpu[] = [];
 const usage = makeUsage();
 
 const gpus = (): LocalGpu[] => {
   const reserved = jobs.reserved();
-  const owner = (i: number) => jobs.list().find((j) => j.gpus.includes(i) && reserved.has(i))?.id ?? null;
-  return rawGpus.map(({ apps: _apps, ...g }) => ({
-    ...g,
-    card: matchCard(catalog, g.name, g.memoryTotalMiB),
-    busy: gpuBusy({ ...g, apps: _apps }) || reserved.has(g.index),
-    jobId: owner(g.index),
-  }));
+  return rawGpus.map(({ uuid: _uuid, ...g }) => ({ ...g, card: matchCard(catalog, g.name, g.memoryTotalMiB), busy: g.busy || reserved.has(g.index) }));
 };
 
-const freeGpus = (): Map<string, number[]> => {
+const byCard = (all: boolean): Map<string, number[]> => {
   const out = new Map<string, number[]>();
-  for (const g of gpus()) if (g.card && !g.busy) out.set(g.card, [...(out.get(g.card) ?? []), g.index]);
+  for (const g of gpus()) if (g.card && (all || !g.busy)) out.set(g.card, [...(out.get(g.card) ?? []), g.index]);
   return out;
 };
+const freeGpus = () => byCard(false);
 
-const listening = () => Effect.map(listeners, (ls) => new Set(ls.map((l) => l.port)));
-const jobs = makeJobs({ config: () => config, catalog: () => catalog, freeGpus, listening });
+const jobs = makeJobs({ config: () => config, catalog: () => catalog, freeGpus, listening: () => Effect.map(listeners, (ls) => new Set(ls.map((l) => l.port))) });
 const scanner = makeScanner(config.id, (p) => jobs.jobPort(p));
 
 const selfNode = (): LocalNode => ({
@@ -60,10 +44,8 @@ const gw = { config: () => config, local: () => scanner.current(), usage: () => 
 const excluded = (): Set<number> => {
   const out = new Set([port, ...config.excludePorts]);
   for (const p of config.peers) {
-    try {
-      const u = new URL(p);
-      if (["127.0.0.1", "localhost", "::1", "[::1]"].includes(u.hostname)) out.add(Number(u.port || 80));
-    } catch {}
+    const u = URL.parse(p);
+    if (u && ["127.0.0.1", "localhost", "::1", "[::1]"].includes(u.hostname)) out.add(Number(u.port || 80));
   }
   return out;
 };
@@ -73,118 +55,139 @@ const tick = Effect.gen(function* () {
   yield* scanner.scan(excluded(), config.engineKeys);
 });
 
-const recipeMatches = (model: string): string[] =>
-  [...catalog.recipes].filter(([, e]) => servedName(e.launch) === model || e.model === model || e.weights.split("@")[0] === model).map(([k]) => k);
-
 const snapshot = async (): Promise<LocalSnapshot> => {
   const g = await graph.get();
-  const live = await routes(gw, false);
+  const live = await routes(gw);
   const totals = graphUsage(usage.list(), g);
   const endpoints = [...selfNode().endpoints, ...g.nodes.flatMap((n) => n.node.endpoints)];
   const ids = new Set([...endpoints.flatMap((e) => e.models), ...totals.keys()]);
-  const models: LocalModel[] = [...ids].sort().map((id) => {
-    const eps = endpoints.filter((e) => e.models.includes(id));
-    return {
-      id,
-      live: live.has(id),
-      requests: totals.get(id) ?? 0,
-      endpoints: eps.map((e) => e.id),
-      controllers: [...new Set(eps.map((e) => e.controllerId))],
-      recipes: recipeMatches(id),
-    };
-  });
   return {
     controller: selfNode().controller,
     generatedAt: now(),
     hardware: hardware(gpus()),
     auto: await autoModel(gw),
     endpoints,
-    models,
+    models: [...ids].sort().map((id) => ({ id, live: live.has(id), requests: totals.get(id)?.requests ?? 0 })),
     controllers: g.links,
     jobs: jobs.list(),
-    usage: usage.list(),
-    registry: catalog.info,
+    usage: [...totals.values()],
   };
 };
 
 const recipes = (archived: boolean): LocalRecipes => {
-  const free = freeGpus();
-  const list = [...catalog.recipes].map(([k, e]) => toLocalRecipe(k, e, free));
-  return {
-    registry: catalog.info,
-    archivedRecords: catalog.archived.length,
-    capturedConfigs: catalog.captured.length,
-    recipes: archived ? [...list, ...catalog.captured, ...catalog.archived] : list,
-  };
+  const all = byCard(true);
+  const list = [...catalog.recipes].map(([k, e]) => toLocalRecipe(k, e, freeGpus(), all));
+  return { recipes: archived ? [...list, ...catalog.archived].filter((r) => r.cards <= (all.get(r.card)?.length ?? 0)) : list };
 };
+
+const containerOf = (pid: number | null): string | null => {
+  try {
+    return pid ? (/([0-9a-f]{64})/.exec(readFileSync(`/proc/${pid}/cgroup`, "utf8"))?.[1] ?? null) : null;
+  } catch {
+    return null;
+  }
+};
+
+const unload = (p: number) =>
+  Effect.gen(function* () {
+    const ep = scanner.current().find((e) => e.port === p && e.live);
+    if (!ep) return yield* fail(404, "NOT_RUNNING", `nothing is serving on port ${p}`);
+    if (ep.jobId) return yield* jobs.stop(ep.jobId);
+    const published = (yield* exec(["docker", "ps", "-q", "--filter", `publish=${p}`], 10_000)).stdout.split("\n").filter(Boolean);
+    const ids = [...published, containerOf(ep.pid)].filter((id): id is string => !!id);
+    const pid = ep.pid;
+    if (ids.length) {
+      const r = yield* exec(["docker", "stop", "-t", "30", ...ids], 90_000);
+      if (r.code !== 0) return yield* fail(500, "UNLOAD_FAILED", r.stderr.trim().slice(0, 300));
+    } else if (pid) yield* Effect.try({ try: () => process.kill(pid, "SIGTERM"), catch: (e) => httpError(500, "UNLOAD_FAILED", String(e)) });
+    else return yield* fail(409, "UNLOAD_UNSUPPORTED", `can't find the process serving port ${p}`);
+    yield* tick;
+    return { port: p };
+  });
+
+const load = (recipeId: string, req: LocalRunRequest) =>
+  Effect.gen(function* () {
+    if (req.replace && !req.dryRun) {
+      for (const ep of scanner.current().filter((e) => e.live)) yield* unload(ep.port);
+      const entry = catalog.recipes.get(recipeId);
+      for (let i = 0; entry && i < 60 && (freeGpus().get(entry.card)?.length ?? 0) < (entry.launch.cards ?? 1); i++) {
+        yield* Effect.sleep("2 seconds");
+        rawGpus = yield* readGpus;
+      }
+    }
+    return yield* jobs.run(recipeId, req);
+  });
 
 const body = async <S extends Schema.Top>(req: Request, schema: S): Promise<S["Type"]> => {
   const text = await req.text();
-  let parsed: unknown = {};
-  try {
-    parsed = text ? JSON.parse(text) : {};
-  } catch {
-    throw new HttpError(400, "BAD_JSON", "request body is not valid JSON");
-  }
-  const r = Schema.decodeUnknownOption(schema as never)(parsed);
-  if (r._tag === "None") throw new HttpError(400, "BAD_REQUEST", "request body does not match the schema");
-  return r.value as S["Type"];
-};
-
-const safeEq = (a: string, b: string) => {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
+  const value = decodeJson(schema, text || "{}");
+  if (value === undefined) throw httpError(400, "BAD_REQUEST", "request body is not JSON matching the schema");
+  return value;
 };
 
 const authorized = (req: Request): boolean => {
   const bearer = /^Bearer\s+(.+)$/i.exec(req.headers.get("authorization") ?? "")?.[1];
-  const key = bearer ?? req.headers.get("x-api-key") ?? req.headers.get("x-local-studio-key") ?? "";
-  return safeEq(key, config.fleetKey);
+  const key = Buffer.from(bearer ?? req.headers.get("x-api-key") ?? req.headers.get("x-local-studio-key") ?? "");
+  const want = Buffer.from(config.fleetKey);
+  return key.length === want.length && timingSafeEqual(key, want);
 };
 
-const run = <A>(e: Effect.Effect<A, HttpError>) => Effect.runPromise(e.pipe(Effect.mapError((x) => x as unknown as Error)));
+const run = <A>(e: Effect.Effect<A, HttpError>) => Effect.runPromise(e);
+
+const saved = <A>(next: typeof config, result: A) => {
+  config = next;
+  saveConfig(config);
+  graph.invalidate();
+  return json(result);
+};
 
 const handle = async (req: Request): Promise<Response> => {
   const url = new URL(req.url);
   const p = url.pathname;
+  const post = req.method === "POST";
+  const match = (re: RegExp) => (post ? re.exec(p)?.[1] : undefined);
   if (req.method === "GET" && p === "/api/health") return json({ ok: true, id: config.id, name: config.name, version: VERSION });
   if (!authorized(req)) return json({ error: { code: "UNAUTHORIZED", message: "fleet key required" } }, 401);
   if (req.method === "GET" && (p === "/v1/models" || p === "/models")) return listModels(gw);
-  if (req.method === "POST" && /^\/v1\/(chat\/completions|completions|messages|responses)$/.test(p)) return passthrough(gw, req, p);
+  if (post && /^\/v1\/(chat\/completions|completions|messages|responses)$/.test(p)) return passthrough(gw, req, p);
   if (req.headers.get(HOP_HEADER)) return json({ error: { code: "NOT_FOUND", message: p } }, 404);
   if (req.method === "GET" && p === "/api/node") return json(selfNode());
   if (req.method === "GET" && p === "/api/snapshot") return json(await snapshot());
   if (req.method === "GET" && p === "/api/recipes") return json(recipes(url.searchParams.get("archived") === "1"));
-  const runMatch = /^\/api\/recipes\/(.+)\/run$/.exec(p);
-  if (req.method === "POST" && runMatch) return json(await run(jobs.run(decodeURIComponent(runMatch[1] ?? ""), await body(req, LocalRunRequest))));
-  const stopMatch = /^\/api\/runs\/([\w-]+)\/stop$/.exec(p);
-  if (req.method === "POST" && stopMatch) return json(await run(jobs.stop(stopMatch[1] ?? "")));
-  if (req.method === "POST" && p === "/api/peers") {
+  if (req.method === "GET" && p === "/api/tailnet") return json(await Effect.runPromise(scanTailnet(new Set((await graph.get()).links.map((l) => normUrl(l.url))))));
+  const recipe = match(/^\/api\/recipes\/(.+)\/run$/);
+  if (recipe) return json(await run(load(decodeURIComponent(recipe), await body(req, LocalRunRequest))));
+  const unloadPort = match(/^\/api\/ports\/(\d+)\/stop$/);
+  if (unloadPort) return json(await run(unload(Number(unloadPort))));
+  const stopId = match(/^\/api\/runs\/([\w-]+)\/stop$/);
+  if (stopId) return json(await run(jobs.stop(stopId)));
+  if (post && p === "/api/tailnet/deploy") {
+    const u = normUrl(await run(deployController(config, await body(req, LocalDeployRequest))));
+    return saved({ ...config, peers: [...new Set([...config.peers.map(normUrl), u])] }, { url: u });
+  }
+  if (post && p === "/api/name") {
+    const { name } = await body(req, LocalNameRequest);
+    return saved({ ...config, name }, { name });
+  }
+  if (post && p === "/api/peers") {
     const b = await body(req, LocalPeerRequest);
     const u = normUrl(b.url);
-    if (!/^https?:\/\/[^/]+$/.test(u)) throw new HttpError(400, "BAD_URL", "peer url must be http(s)://host:port");
-    if (u === normUrl(config.url)) throw new HttpError(400, "SELF_PEER", "a controller cannot peer with itself");
-    config = { ...config, peers: b.remove ? config.peers.filter((x) => normUrl(x) !== u) : [...new Set([...config.peers.map(normUrl), u])] };
-    saveConfig(config);
-    graph.invalidate();
-    return json({ peers: config.peers });
+    if (!/^https?:\/\/[^/]+$/.test(u)) throw httpError(400, "BAD_URL", "peer url must be http(s)://host:port");
+    if (u === normUrl(config.url)) throw httpError(400, "SELF_PEER", "a controller cannot peer with itself");
+    const peers = b.remove ? config.peers.filter((x) => normUrl(x) !== u) : [...new Set([...config.peers.map(normUrl), u])];
+    return saved({ ...config, peers }, { peers });
   }
   return json({ error: { code: "NOT_FOUND", message: `${req.method} ${p}` } }, 404);
 };
 
+const host = process.env.LOCAL_STUDIO_T3_HOST ?? "127.0.0.1";
 Bun.serve({
   port,
-  hostname: process.env.LOCAL_STUDIO_T3_HOST ?? "127.0.0.1",
+  hostname: host,
   idleTimeout: 0,
   maxRequestBodySize: 256 * 1024 * 1024,
   fetch: async (req) => {
-    let res: Response;
-    try {
-      res = await handle(req);
-    } catch (e) {
-      res = errorResponse(e);
-    }
+    const res = await handle(req).catch(errorResponse);
     res.headers.set(LOCAL_STUDIO_CONTROLLER_HEADER, config.id);
     return res;
   },
@@ -197,10 +200,10 @@ const loop = async (ms: number, f: () => Promise<unknown>) => {
   }
 };
 
-console.log(`local-controller ${config.id} listening on ${process.env.LOCAL_STUDIO_T3_HOST ?? "127.0.0.1"}:${port}`);
-void loop(REGISTRY_MS, async () => {
+console.log(`local-controller ${config.id} listening on ${host}:${port}`);
+void loop(30 * 60_000, async () => {
   catalog = await Effect.runPromise(loadCatalog(config.registry, true));
-  console.log(`registry ${catalog.info.commit ?? "-"} ${catalog.recipes.size} recipes, ${catalog.archived.length} archived records, ${catalog.captured.length} captured configs${catalog.info.error ? ` (${catalog.info.error})` : ""}`);
+  console.log(`registry ${catalog.info.commit ?? "-"} ${catalog.recipes.size} recipes, ${catalog.archived.length} archived records${catalog.info.error ? ` (${catalog.info.error})` : ""}`);
 });
 void Effect.runPromise(jobs.reconcile);
-void loop(SCAN_MS, () => Effect.runPromise(tick));
+void loop(10_000, () => Effect.runPromise(tick));

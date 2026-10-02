@@ -13,7 +13,7 @@ import {
   splitModelSlug,
   type PiFlavor,
 } from "../provider/Layers/PiProvider.ts";
-import * as TextGeneration from "./TextGeneration.ts";
+import type * as TextGeneration from "./TextGeneration.ts";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
@@ -26,15 +26,7 @@ import {
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 
-const PI_TIMEOUT_MS = 180_000;
-
 const isTextGenerationError = Schema.is(TextGenerationError);
-
-type Operation =
-  | "generateCommitMessage"
-  | "generatePrContent"
-  | "generateBranchName"
-  | "generateThreadTitle";
 
 export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* (
   flavor: PiFlavor,
@@ -43,13 +35,12 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 
-  const runPiJson = <S extends Schema.Top>(input: {
-    readonly operation: Operation;
-    readonly cwd: string;
-    readonly prompt: string;
-    readonly outputSchemaJson: S;
-    readonly modelSelection: ModelSelection;
-  }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
+  const generate = <S extends Schema.Top, A>(
+    operation: keyof TextGeneration.TextGeneration["Service"],
+    input: { readonly cwd: string; readonly modelSelection: ModelSelection },
+    built: { readonly prompt: string; readonly outputSchema: S },
+    finish: (generated: S["Type"]) => A,
+  ) =>
     Effect.gen(function* () {
       const settled = yield* Deferred.make<void, string>();
       const rpc = yield* spawnPiRpc({
@@ -62,64 +53,45 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
           frame.type === flavor.settleEvent ? Deferred.succeed(settled, undefined) : Effect.void,
         onExit: (reason) => Deferred.fail(settled, reason),
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
-
       const parts = splitModelSlug(input.modelSelection.model);
       if (parts) yield* rpc.request({ type: "set_model", ...parts });
       const effort = getModelSelectionStringOptionValue(input.modelSelection, REASONING_OPTION_ID);
       if (effort) yield* rpc.request({ type: "set_thinking_level", level: effort });
-
-      yield* rpc.request({ type: "prompt", message: input.prompt });
-      yield* Deferred.await(settled).pipe(Effect.timeout(PI_TIMEOUT_MS));
-      const response = yield* rpc.request({ type: "get_last_assistant_text" });
-      const text = asString(asRecord(response.data).text)?.trim();
+      yield* rpc.request({ type: "prompt", message: built.prompt });
+      yield* Deferred.await(settled).pipe(Effect.timeout(180_000));
+      const text = asString(
+        asRecord((yield* rpc.request({ type: "get_last_assistant_text" })).data).text,
+      )?.trim();
       if (!text) {
         return yield* new TextGenerationError({
-          operation: input.operation,
+          operation,
           detail: `${flavor.displayName} returned empty output.`,
         });
       }
-      return yield* Schema.decodeEffect(Schema.fromJsonString(input.outputSchemaJson))(
-        extractJsonObject(text),
+      return finish(
+        yield* Schema.decodeEffect(Schema.fromJsonString(built.outputSchema))(
+          extractJsonObject(text),
+        ),
       );
     }).pipe(
       Effect.mapError((cause) =>
         isTextGenerationError(cause)
           ? cause
           : new TextGenerationError({
-              operation: input.operation,
+              operation,
               detail: `${flavor.displayName} text generation failed.`,
               cause,
             }),
       ),
       Effect.scoped,
-    ) as Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]>;
-
-  const generate = <S extends Schema.Top, A>(
-    operation: Operation,
-    input: { readonly cwd: string; readonly modelSelection: ModelSelection },
-    built: { readonly prompt: string; readonly outputSchema: S },
-    finish: (generated: S["Type"]) => A,
-  ) =>
-    runPiJson({
-      operation,
-      cwd: input.cwd,
-      modelSelection: input.modelSelection,
-      prompt: built.prompt,
-      outputSchemaJson: built.outputSchema,
-    }).pipe(Effect.map(finish));
+    ) as Effect.Effect<A, TextGenerationError, S["DecodingServices"]>;
 
   return {
     generateCommitMessage: (input) =>
       generate(
         "generateCommitMessage",
         input,
-        buildCommitMessagePrompt({
-          branch: input.branch,
-          stagedSummary: input.stagedSummary,
-          stagedPatch: input.stagedPatch,
-          includeBranch: input.includeBranch === true,
-          policy: input.policy,
-        }),
+        buildCommitMessagePrompt({ ...input, includeBranch: input.includeBranch === true }),
         (generated) => ({
           subject: sanitizeCommitSubject(generated.subject),
           body: generated.body.trim(),
@@ -129,45 +101,23 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
         }),
       ),
     generatePrContent: (input) =>
-      generate(
-        "generatePrContent",
-        input,
-        buildPrContentPrompt({
-          baseBranch: input.baseBranch,
-          headBranch: input.headBranch,
-          commitSummary: input.commitSummary,
-          diffSummary: input.diffSummary,
-          diffPatch: input.diffPatch,
-          policy: input.policy,
-          changeRequestTemplate: input.changeRequestTemplate,
-        }),
-        (generated) => ({
-          title: sanitizePrTitle(generated.title),
-          body: generated.body.trim(),
-        }),
-      ),
+      generate("generatePrContent", input, buildPrContentPrompt(input), (generated) => ({
+        title: sanitizePrTitle(generated.title),
+        body: generated.body.trim(),
+      })),
     generateBranchName: (input) =>
-      generate(
-        "generateBranchName",
-        input,
-        buildBranchNamePrompt({ message: input.message, attachments: input.attachments }),
-        (generated) => ({ branch: sanitizeBranchFragment(generated.branch) }),
-      ),
+      generate("generateBranchName", input, buildBranchNamePrompt(input), (generated) => ({
+        branch: sanitizeBranchFragment(generated.branch),
+      })),
     generateThreadTitle: (input) =>
       generate(
         "generateThreadTitle",
         input,
-        buildThreadTitlePrompt({
-          message: input.message,
-          previousTitle: input.previousTitle,
-          linkedContext: input.linkedContext,
-          attachments: input.attachments,
+        buildThreadTitlePrompt(input),
+        (generated): TextGeneration.ThreadTitleGenerationResult => ({
+          title: sanitizeThreadTitle(generated.title),
+          ...(generated.needsRefinement ? { needsRefinement: true } : {}),
         }),
-        (generated) =>
-          ({
-            title: sanitizeThreadTitle(generated.title),
-            ...(generated.needsRefinement ? { needsRefinement: true } : {}),
-          }) satisfies TextGeneration.ThreadTitleGenerationResult,
       ),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

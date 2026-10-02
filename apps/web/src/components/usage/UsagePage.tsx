@@ -919,7 +919,7 @@ function ProviderMark({
   return <Mark className={cn("shrink-0", className)} aria-hidden />;
 }
 
-function Metric({ label, value }: { readonly label: string; readonly value: string }) {
+export function Metric({ label, value }: { readonly label: string; readonly value: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       <span className="text-xs text-muted-foreground">{label}</span>

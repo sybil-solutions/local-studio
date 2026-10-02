@@ -1,0 +1,440 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the leading v, for example 3.0.0"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  T3CODE_DESKTOP_UPDATE_REPOSITORY: sybil-solutions/local-studio
+  LEGACY_UPDATER_TAG: v2.16.0
+  BUN_VERSION: 1.3.14
+
+jobs:
+  preflight:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      ref: ${{ steps.version.outputs.ref }}
+    steps:
+      - id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            version="${REF_NAME#v}"
+          else
+            version="${INPUT_VERSION#v}"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release version must be X.Y.Z, got '$version'." >&2
+            exit 1
+          fi
+          if [[ "$version" == 2.* ]]; then
+            echo "2.x versions belong to the legacy Local Studio app." >&2
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "ref=$GITHUB_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+  controller:
+    name: Controller ${{ matrix.target }}
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: true
+      matrix:
+        target: [linux-x64, linux-arm64, darwin-arm64, darwin-x64, windows-x64]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: pnpm install --frozen-lockfile
+      - name: Compile controller
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-controller
+          suffix=""
+          if [[ "$TARGET" == windows-* ]]; then
+            suffix=".exe"
+          fi
+          bun build --compile --minify --target="bun-$TARGET" apps/local-controller/src/main.ts \
+            --outfile "release-controller/local-studio-controller-$TARGET$suffix"
+          ls -la release-controller
+      - name: Smoke-test linux-x64 controller
+        if: matrix.target == 'linux-x64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_home="$RUNNER_TEMP/controller-home"
+          mkdir -p "$smoke_home"
+          LOCAL_STUDIO_T3_HOME="$smoke_home" LOCAL_STUDIO_T3_PORT=18191 \
+            ./release-controller/local-studio-controller-linux-x64 > "$RUNNER_TEMP/controller.log" 2>&1 &
+          pid=$!
+          for _ in $(seq 1 20); do
+            if curl -fsS -m 2 http://127.0.0.1:18191/api/health >/dev/null; then
+              break
+            fi
+            sleep 0.5
+          done
+          curl -fsS -m 2 http://127.0.0.1:18191/api/health >/dev/null
+          kill "$pid"
+          cat "$RUNNER_TEMP/controller.log"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: controller-${{ matrix.target }}
+          path: release-controller/*
+          if-no-files-found: error
+          retention-days: 3
+
+  desktop-mac:
+    name: Desktop macOS ${{ matrix.arch }}
+    needs: preflight
+    runs-on: macos-15
+    timeout-minutes: 90
+    environment: release-signing
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: arm64
+            rust_target: aarch64-apple-darwin
+          - arch: x64
+            rust_target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+      - run: pnpm install --frozen-lockfile
+      - name: Align package versions to release version
+        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
+      - name: Build signed and notarized DMG
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing $name; configure the release-signing environment secrets." >&2
+              exit 1
+            fi
+          done
+          pnpm dist:desktop:artifact \
+            --platform mac \
+            --target dmg \
+            --arch "$ARCH" \
+            --build-version "$VERSION" \
+            --output-dir release \
+            --signed
+      - name: Verify signature and notarization
+        shell: bash
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          dmg="release/Local-Studio-$VERSION-$ARCH.dmg"
+          test -f "$dmg"
+          mount_dir="$(mktemp -d)"
+          hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mount_dir" >/dev/null
+          app="$mount_dir/Local Studio.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          spctl --assess --type execute --verbose=4 "$app"
+          xcrun stapler validate "$app"
+          hdiutil detach "$mount_dir" >/dev/null
+      - name: Collect release assets
+        shell: bash
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          shopt -s nullglob
+          for file in release/*.dmg release/*.zip release/*.blockmap release/*.yml; do
+            [[ "$file" == */builder-debug.yml ]] && continue
+            cp "$file" release-publish/
+          done
+          cp "release/Local-Studio-$VERSION-$ARCH.dmg" "release-publish/Local-Studio-mac-$ARCH.dmg"
+          if [[ "$ARCH" != "arm64" ]]; then
+            for manifest in release-publish/*-mac.yml; do
+              mv "$manifest" "${manifest%.yml}-$ARCH.yml"
+            done
+          fi
+          ls -la release-publish
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-mac-${{ matrix.arch }}
+          path: release-publish/*
+          if-no-files-found: error
+          retention-days: 3
+
+  desktop:
+    name: Desktop ${{ matrix.label }}
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - label: Windows x64
+            runner: windows-2025
+            platform: win
+            target: nsis
+            arch: x64
+            rust_target: x86_64-pc-windows-msvc
+            alias_glob: "*.exe"
+            alias: Local-Studio-win-x64.exe
+          - label: Linux x64
+            runner: ubuntu-24.04
+            platform: linux
+            target: AppImage
+            arch: x64
+            rust_target: x86_64-unknown-linux-gnu
+            alias_glob: "*.AppImage"
+            alias: Local-Studio-linux-x64.AppImage
+          - label: Linux arm64
+            runner: ubuntu-24.04-arm
+            platform: linux
+            target: AppImage
+            arch: arm64
+            rust_target: aarch64-unknown-linux-gnu
+            alias_glob: "*.AppImage"
+            alias: Local-Studio-linux-arm64.AppImage
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+      - name: Install Linux build libraries
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config imagemagick
+      - name: Install Spectre-mitigated MSVC libraries
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -products * -latest -property installationPath
+          $setupExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          $proc = Start-Process -FilePath $setupExe `
+            -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", `
+            "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre", "--quiet", "--norestart" `
+            -Wait -PassThru -NoNewWindow
+          if ($null -eq $proc -or $proc.ExitCode -ne 0) {
+            $code = if ($null -ne $proc) { $proc.ExitCode } else { 1 }
+            Write-Error "Visual Studio Installer failed with exit code $code"
+            exit $code
+          }
+      - run: pnpm install --frozen-lockfile
+      - name: Align package versions to release version
+        run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
+      - name: Build desktop artifact
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          VERSION: ${{ needs.preflight.outputs.version }}
+        run: |
+          set -euo pipefail
+          pnpm dist:desktop:artifact \
+            --platform "${{ matrix.platform }}" \
+            --target "${{ matrix.target }}" \
+            --arch "${{ matrix.arch }}" \
+            --build-version "$VERSION" \
+            --output-dir release
+      - name: Collect release assets
+        shell: bash
+        env:
+          ALIAS_GLOB: ${{ matrix.alias_glob }}
+          ALIAS: ${{ matrix.alias }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          shopt -s nullglob
+          for file in release/*.exe release/*.AppImage release/*.deb release/*.blockmap release/*.yml; do
+            [[ "$file" == */builder-debug.yml ]] && continue
+            cp "$file" release-publish/
+          done
+          mapfile -t installers < <(compgen -G "release/$ALIAS_GLOB" || true)
+          if [[ ${#installers[@]} -ne 1 ]]; then
+            echo "Expected exactly one $ALIAS_GLOB installer, found ${#installers[@]}." >&2
+            exit 1
+          fi
+          cp "${installers[0]}" "release-publish/$ALIAS"
+          ls -la release-publish
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-publish/*
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    name: Publish GitHub Release
+    needs: [preflight, controller, desktop-mac, desktop]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.preflight.outputs.ref }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: release-assets
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: controller-*
+          merge-multiple: true
+          path: release-assets
+      - name: Merge macOS updater manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f release-assets/latest-mac.yml
+          test -f release-assets/latest-mac-x64.yml
+          node scripts/merge-update-manifests.ts --platform mac release-assets/latest-mac.yml release-assets/latest-mac-x64.yml
+          rm release-assets/latest-mac-x64.yml
+      - name: Move updater manifests to the stable channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for manifest in release-assets/latest*.yml; do
+            name="$(basename "$manifest")"
+            mv "$manifest" "release-assets/stable${name#latest}"
+          done
+          for required in stable-mac.yml stable.yml stable-linux.yml stable-linux-arm64.yml; do
+            test -f "release-assets/$required"
+          done
+      - name: Pin legacy 2.x updater feed
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$LEGACY_UPDATER_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern latest-mac.yml \
+            --pattern Local-Studio-release.json \
+            --dir release-assets
+          grep -q "^version: 2\." release-assets/latest-mac.yml
+      - name: Write checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          find . -maxdepth 1 -type f -printf '%f\n' | sort | xargs sha256sum > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" SHA256SUMS
+          cat SHA256SUMS
+      - name: Write release manifest
+        shell: bash
+        env:
+          VERSION: ${{ needs.preflight.outputs.version }}
+          REF: ${{ needs.preflight.outputs.ref }}
+        run: |
+          set -euo pipefail
+          jq -Rn --arg version "$VERSION" --arg commit "$REF" '
+            {
+              schemaVersion: 2,
+              version: $version,
+              commit: $commit,
+              assets: ([inputs | capture("^(?<sha256>[0-9a-f]{64})  (?<name>.+)$") | {(.name): {sha256}}] | add)
+            }' < release-assets/SHA256SUMS > release-assets/Local-Studio-manifest.json
+          for alias in Local-Studio-mac-arm64.dmg Local-Studio-mac-x64.dmg Local-Studio-win-x64.exe Local-Studio-linux-x64.AppImage Local-Studio-linux-arm64.AppImage; do
+            jq -e --arg name "$alias" '.assets[$name].sha256' release-assets/Local-Studio-manifest.json >/dev/null
+          done
+          cat release-assets/Local-Studio-manifest.json
+      - name: Publish release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          REF: ${{ needs.preflight.outputs.ref }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists." >&2
+            exit 1
+          fi
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$REF" \
+            --title "Local Studio $TAG" \
+            --generate-notes \
+            --latest \
+            release-assets/*

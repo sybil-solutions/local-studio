@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, ChartNoAxesColumnIcon, ServerIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -6,7 +6,6 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { useEnvironments } from "../../state/environments";
-import { T3Wordmark } from "../T3Wordmark";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -85,17 +84,9 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      {/* Center the visible capitals, without the font's ascender/descender space. */}
-      <span className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight">
-        <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />
-        <span
-          className={cn(
-            "truncate [text-box:trim-both_cap_alphabetic]",
-            onBackdrop ? "text-white/70" : "text-muted-foreground",
-          )}
-        >
-          Code
-        </span>
+      <span className="inline-flex min-w-0 items-center gap-2 text-sm font-medium tracking-tight">
+        <img src="/local-studio.png" alt="" className="size-6 shrink-0" />
+        <span className="truncate">Local Studio</span>
       </span>
     </Link>
   );
@@ -195,14 +186,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"
             onClick={handleUsageClick}
-          />
-          <SidebarUtilityItem
-            icon={<ServerIcon />}
-            label="Local"
-            onClick={() => {
-              closeMobileSidebar();
-              void navigate({ to: "/local" });
-            }}
           />
         </>
       )}

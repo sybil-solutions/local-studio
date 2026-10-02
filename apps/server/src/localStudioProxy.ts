@@ -4,6 +4,7 @@ import { LocalSnapshot } from "@t3tools/contracts/local-studio";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import {
@@ -13,59 +14,53 @@ import {
   HttpServerRequest,
   HttpServerResponse,
 } from "effect/unstable/http";
-import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import {
-  failEnvironmentAuthInvalid,
-  failEnvironmentInternal,
-  failEnvironmentScopeRequired,
-} from "./auth/http.ts";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
+import { authenticateRawRouteWithScope } from "./http.ts";
 
-const controllerConfig = Schema.Struct({
-  url: Schema.String,
-  fleetKey: Schema.String,
-  peers: Schema.Array(Schema.String),
-});
-const allowed = /^(?:snapshot|recipes|recipes\/[^/]+\/run|runs\/[^/]+\/stop|peers)$/;
+const ControllerConfig = Schema.fromJsonString(
+  Schema.Struct({
+    url: Schema.String,
+    fleetKey: Schema.String,
+    peers: Schema.Array(Schema.String),
+  }),
+);
+const allowed =
+  /^(?:snapshot|tailnet|tailnet\/deploy|recipes|recipes\/[^/]+\/run|runs\/[^/]+\/stop|ports\/\d+\/stop|name|peers)$/;
 
 const handler = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
-  const auth = yield* EnvironmentAuth.EnvironmentAuth;
-  const session = yield* auth.authenticateHttpRequest(request).pipe(
-    Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
-      failEnvironmentAuthInvalid(
-        EnvironmentAuth.serverAuthCredentialReason(error),
-        EnvironmentAuth.serverAuthDpopFailureReason(error),
-      ),
-    ),
-    Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-      failEnvironmentInternal("internal_error", error),
-    ),
+  const post = request.method === "POST";
+  yield* authenticateRawRouteWithScope(
+    post ? AuthOrchestrationOperateScope : AuthOrchestrationReadScope,
   );
-  const scope =
-    request.method === "GET" ? AuthOrchestrationReadScope : AuthOrchestrationOperateScope;
-  if (!session.scopes.includes(scope)) return yield* failEnvironmentScopeRequired(scope);
   const url = new URL(request.url, "http://local.invalid");
   const path = url.pathname.slice("/api/local/".length);
-  if (!allowed.test(path) || !["GET", "POST"].includes(request.method)) {
+  if (!allowed.test(path) || !(post || request.method === "GET"))
     return HttpServerResponse.empty({ status: 404 });
-  }
   return yield* Effect.gen(function* () {
     const paths = yield* Path.Path;
     const home = yield* Config.String("LOCAL_STUDIO_T3_HOME").pipe(
       Config.withDefault(paths.join(homedir(), ".local-studio-t3")),
     );
-    const fs = yield* FileSystem.FileSystem;
-    const config = yield* fs
+    const config = yield* (yield* FileSystem.FileSystem)
       .readFileString(paths.join(home, "config.json"))
-      .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(controllerConfig))));
+      .pipe(Effect.flatMap(Schema.decodeUnknownEffect(ControllerConfig)));
     const target = url.searchParams.get("controller") ?? config.url;
     const client = HttpClient.withScope(yield* HttpClient.HttpClient);
-    if (target !== config.url && !config.peers.includes(target)) {
-      const root = yield* client.execute(
-        HttpClientRequest.get(new URL("/api/snapshot", config.url)).pipe(
+    const call = (
+      method: "GET" | "POST",
+      upstreamUrl: URL,
+      body?: HttpServerRequest.HttpServerRequest,
+    ) =>
+      client.execute(
+        HttpClientRequest.make(method)(upstreamUrl).pipe(
           HttpClientRequest.bearerToken(config.fleetKey),
+          HttpClientRequest.setHeader("content-type", "application/json"),
+          body ? HttpClientRequest.bodyStream(body.stream) : (self) => self,
         ),
       );
+    if (target !== config.url && !config.peers.includes(target)) {
+      const root = yield* call("GET", new URL("/api/snapshot", config.url));
       const graph = yield* root.json.pipe(
         Effect.flatMap(Schema.decodeUnknownEffect(LocalSnapshot)),
       );
@@ -75,24 +70,40 @@ const handler = Effect.gen(function* () {
     const upstreamUrl = new URL(`/api/${path}`, target);
     if (path === "recipes" && url.searchParams.get("archived") === "1")
       upstreamUrl.searchParams.set("archived", "1");
-    const upstream = yield* client.execute(
-      HttpClientRequest.make(request.method)(upstreamUrl).pipe(
-        HttpClientRequest.bearerToken(config.fleetKey),
-        HttpClientRequest.setHeader("content-type", "application/json"),
-        request.method === "POST" ? HttpClientRequest.bodyStream(request.stream) : (self) => self,
-      ),
-    );
+    const upstream = yield* call(post ? "POST" : "GET", upstreamUrl, post ? request : undefined);
     return HttpServerResponse.stream(upstream.stream, {
       status: upstream.status,
       contentType: upstream.headers["content-type"] ?? "application/json",
       headers: { "cache-control": "no-store" },
     });
   }).pipe(
-    Effect.timeout("30 seconds"),
+    Effect.timeout("3 minutes"),
     Effect.catch(() =>
       Effect.succeed(HttpServerResponse.text("Local controller unavailable", { status: 503 })),
     ),
   );
 });
 
-export const localStudioProxyRouteLayer = HttpRouter.add("*", "/api/local/*", handler);
+const startBundledController = Effect.gen(function* () {
+  const resources = (process as { resourcesPath?: string }).resourcesPath;
+  if (!resources) return;
+  const binary = (yield* Path.Path).join(
+    resources,
+    "local-controller",
+    process.platform === "win32" ? "local-studio-controller.exe" : "local-studio-controller",
+  );
+  if (!(yield* (yield* FileSystem.FileSystem).exists(binary))) return;
+  const port = yield* Config.Number("LOCAL_STUDIO_T3_PORT").pipe(Config.withDefault(18091));
+  const running = yield* (yield* HttpClient.HttpClient)
+    .get(`http://127.0.0.1:${port}/api/health`)
+    .pipe(Effect.timeout("1500 millis"), Effect.option);
+  if (running._tag === "Some") return;
+  yield* (yield* ChildProcessSpawner.ChildProcessSpawner).spawn(
+    ChildProcess.make(binary, [], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }),
+  );
+});
+
+export const localStudioProxyRouteLayer = Layer.mergeAll(
+  HttpRouter.add("*", "/api/local/*", handler),
+  Layer.effectDiscard(Effect.ignore(startBundledController)),
+);
