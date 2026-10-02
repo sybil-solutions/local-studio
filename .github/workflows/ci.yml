@@ -9,16 +9,37 @@ concurrency:
   group: local-studio-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 jobs:
-  check:
-    name: Check
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm run check:budget
+      - run: git diff --check "$(node -p 'require("./LOCAL_STUDIO_UPSTREAM.json").importCommit')" HEAD
+  checks:
+    name: ${{ matrix.gate }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - gate: controller
+            command: pnpm --filter @local-studio/controller typecheck && node scripts/local-e2e.mjs
+          - gate: agent-runtime
+            command: pnpm --filter @t3tools/contracts typecheck && pnpm --filter @t3tools/shared typecheck && pnpm --filter t3 typecheck && pnpm --filter t3 build:bundle
+          - gate: frontend
+            command: pnpm --filter @t3tools/web typecheck && pnpm --filter @t3tools/mobile typecheck && pnpm --filter @t3tools/web build
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -26,4 +47,65 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: pnpm install --frozen-lockfile
-      - run: npm run check
+      - run: ${{ matrix.command }}
+  desktop-package:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @t3tools/desktop typecheck
+      - run: pnpm dist:desktop:artifact --platform mac --arch arm64 --target dir --output-dir release-ci
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - run: tar -czf desktop-ci.tgz -C release-ci .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ github.sha }}
+          path: desktop-ci.tgz
+          if-no-files-found: error
+          retention-days: 7
+  trufflehog:
+    name: Secret Scanning (TruffleHog)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: trufflesecurity/trufflehog@v3.96.0
+        with:
+          path: ./
+          base: ${{ github.event.pull_request.base.sha || github.event.before }}
+          head: HEAD
+          extra_args: --only-verified --json
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:javascript-typescript
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: moderate
+          deny-licenses: GPL-3.0, AGPL-3.0
