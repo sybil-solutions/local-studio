@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["bun-types"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {
+          "nodeBuiltinImport": "off",
+          "globalDate": "off",
+          "globalDateInEffect": "off",
+          "globalConsole": "off",
+          "globalTimers": "off",
+          "globalTimersInEffect": "off",
+          "globalFetch": "off",
+          "globalFetchInEffect": "off",
+          "preferSchemaOverJson": "off"
+        }
+      }
+    ]
+  },
+  "include": ["src"]
+}
