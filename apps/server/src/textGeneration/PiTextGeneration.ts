@@ -10,12 +10,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import { asRecord, asString, spawnPiRpc } from "../provider/Layers/PiRpc.ts";
 import { REASONING_OPTION_ID, splitModelSlug, type PiFlavor } from "../provider/Layers/PiProvider.ts";
 import type * as TextGeneration from "./TextGeneration.ts";
-import {
-  buildBranchNamePrompt,
-  buildCommitMessagePrompt,
-  buildPrContentPrompt,
-  buildThreadTitlePrompt,
-} from "./TextGenerationPrompts.ts";
+import { buildBranchNamePrompt, buildCommitMessagePrompt, buildPrContentPrompt, buildThreadTitlePrompt } from "./TextGenerationPrompts.ts";
 import { sanitizeCommitSubject, sanitizePrTitle, sanitizeThreadTitle } from "./TextGenerationUtils.ts";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
@@ -73,9 +68,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
         (generated) => ({
           subject: sanitizeCommitSubject(generated.subject),
           body: generated.body.trim(),
-          ...("branch" in generated && typeof generated.branch === "string"
-            ? { branch: sanitizeFeatureBranchName(generated.branch) }
-            : {}),
+          ...("branch" in generated && typeof generated.branch === "string" ? { branch: sanitizeFeatureBranchName(generated.branch) } : {}),
         }),
       ),
     generatePrContent: (input) =>

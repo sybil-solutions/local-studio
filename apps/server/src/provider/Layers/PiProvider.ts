@@ -1,9 +1,4 @@
-import {
-  PI_DEFAULT_MODEL,
-  ProviderDriverKind,
-  type PiAgentSettings,
-  type ServerProviderModel,
-} from "@t3tools/contracts";
+import { PI_DEFAULT_MODEL, ProviderDriverKind, type PiAgentSettings, type ServerProviderModel } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as DateTime from "effect/DateTime";
@@ -132,9 +127,7 @@ export const buildInitialPiProviderSnapshot = (flavor: PiFlavor, settings: PiAge
       version: null,
       status: "warning",
       auth: unknownAuth,
-      message: settings.enabled
-        ? `Checking ${flavor.displayName} CLI availability...`
-        : disabled(flavor),
+      message: settings.enabled ? `Checking ${flavor.displayName} CLI availability...` : disabled(flavor),
     }),
   );
 
@@ -164,8 +157,7 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     ChildProcess.make(spawnCommand.command, spawnCommand.args, { env, shell: spawnCommand.shell }),
   ).pipe(Effect.timeout(4_000), Effect.result);
   if (versionResult._tag === "Failure" || versionResult.success.code !== 0) {
-    const missing =
-      versionResult._tag === "Failure" && isCommandMissingCause(versionResult.failure);
+    const missing = versionResult._tag === "Failure" && isCommandMissingCause(versionResult.failure);
     return result({
       installed: !missing,
       version: null,
@@ -177,9 +169,7 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     });
   }
 
-  const version = parseGenericCliVersion(
-    `${versionResult.success.stdout}\n${versionResult.success.stderr}`,
-  );
+  const version = parseGenericCliVersion(`${versionResult.success.stdout}\n${versionResult.success.stderr}`);
   const discovered = yield* Effect.scoped(
     Effect.gen(function* () {
       const rpc = yield* spawnPiRpc({
@@ -191,9 +181,7 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         onFrame: () => Effect.void,
         onExit: () => Effect.void,
       });
-      const models = asRecord(
-        (yield* rpc.request({ type: "get_available_models" }, 15_000)).data,
-      ).models;
+      const models = asRecord((yield* rpc.request({ type: "get_available_models" }, 15_000)).data).models;
       const discovered = (Array.isArray(models) ? models : []).flatMap(modelFromRpc(flavor));
       if (discovered.length === 0) return discovered;
       const state = asRecord((yield* rpc.request({ type: "get_state" }, 15_000)).data);
@@ -217,8 +205,5 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         auth: { status: "unauthenticated" },
         message: `${flavor.displayName} has no usable models. Run \`${command}\` and use /login to add a provider.`,
       })
-    : result(
-        { installed: true, version, status: "ready", auth: { status: "authenticated" } },
-        discovered,
-      );
+    : result({ installed: true, version, status: "ready", auth: { status: "authenticated" } }, discovered);
 });

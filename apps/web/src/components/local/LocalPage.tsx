@@ -20,15 +20,7 @@ import { primaryEnvironmentHttpLayer } from "../../environments/primary/httpLaye
 import { resolvePrimaryEnvironmentHttpUrl } from "../../environments/primary/target";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import {
-  Select,
-  SelectGroup,
-  SelectGroupLabel,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
+import { Select, SelectGroup, SelectGroupLabel, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "../settings/settingsLayout";
 import { Metric } from "../usage/UsagePage";
@@ -36,8 +28,7 @@ import { UsageProviderChart } from "../usage/UsageProviderChart";
 
 class LocalRequestError extends Data.TaggedError("LocalRequestError")<{ message: string }> {}
 
-const sum = <T,>(rows: ReadonlyArray<T>, value: (row: T) => number) =>
-  rows.reduce((total, row) => total + value(row), 0);
+const sum = <T,>(rows: ReadonlyArray<T>, value: (row: T) => number) => rows.reduce((total, row) => total + value(row), 0);
 const gib = (bytes: number) => `${(bytes / 2 ** 30).toFixed(0)} GiB`;
 const memory = (hardware: LocalHardware) => {
   const vram = sum(hardware.gpus, (gpu) => gpu.memoryTotalMiB) * 2 ** 20;
@@ -51,20 +42,12 @@ const memory = (hardware: LocalHardware) => {
 };
 const gpuSummary = (hardware: LocalHardware) => {
   const names = new Set(
-    hardware.gpus.map((gpu) =>
-      gpu.name.replace(/^NVIDIA (GeForce )?/, "").replace(/ (Blackwell )?Workstation Edition/, ""),
-    ),
+    hardware.gpus.map((gpu) => gpu.name.replace(/^NVIDIA (GeForce )?/, "").replace(/ (Blackwell )?Workstation Edition/, "")),
   );
-  return names.size
-    ? `${hardware.gpus.length}× ${[...names].join(" / ")}`
-    : `${hardware.cpus} CPUs`;
+  return names.size ? `${hardware.gpus.length}× ${[...names].join(" / ")}` : `${hardware.cpus} CPUs`;
 };
 const tokensOf = (usage: ReadonlyArray<LocalUsage> = [], since = "", until = "9999") =>
-  sum(usage, (row) =>
-    sum(Object.entries(row.tokens ?? {}), ([day, count]) =>
-      day >= since && day <= until ? count : 0,
-    ),
-  );
+  sum(usage, (row) => sum(Object.entries(row.tokens ?? {}), ([day, count]) => (day >= since && day <= until ? count : 0)));
 
 const request = (path: string, controller: string, body?: unknown) =>
   Effect.gen(function* () {
@@ -73,9 +56,7 @@ const request = (path: string, controller: string, body?: unknown) =>
     url.search = query ?? "";
     if (controller) url.searchParams.set("controller", controller);
     const response = yield* (yield* HttpClient.HttpClient).execute(
-      body === undefined
-        ? HttpClientRequest.get(url)
-        : HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
+      body === undefined ? HttpClientRequest.get(url) : HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
     );
     if (response.status < 400) return yield* response.json;
     const message = (yield* response.text) || `HTTP ${response.status}`;
@@ -95,9 +76,7 @@ const fetchEach = <A,>(path: string, schema: Schema.Codec<A, unknown>, controlle
   ).pipe(Effect.map((entries) => Object.fromEntries(entries.flatMap(Option.toArray))));
 
 const target = (device: LocalControllerLink) => (device.self ? "" : device.url);
-const dot = (className: string, tooltip: string) => (
-  <ConnectionStatusDot dotClassName={className} tooltipText={tooltip} />
-);
+const dot = (className: string, tooltip: string) => <ConnectionStatusDot dotClassName={className} tooltipText={tooltip} />;
 const stop = (event: { stopPropagation: () => void }) => event.stopPropagation();
 
 function Machine({
@@ -120,9 +99,7 @@ function Machine({
   const [armed, setArmed] = useState<string | null>(null);
   const hardware = snapshot?.hardware;
   const use = hardware ? memory(hardware) : null;
-  const running = (snapshot?.endpoints ?? []).filter(
-    (endpoint) => endpoint.live && endpoint.controllerId === device.id,
-  );
+  const running = (snapshot?.endpoints ?? []).filter((endpoint) => endpoint.live && endpoint.controllerId === device.id);
   const loaded = running.flatMap((endpoint) => endpoint.models).join(", ");
   const jobs = (snapshot?.jobs ?? []).filter((job) => !["ready", "stopped"].includes(job.phase));
   const rig = hardware?.gpus.length ?? 0;
@@ -132,9 +109,7 @@ function Machine({
   const options = all.filter((recipe) => recipe.fits);
   const reference = [
     ...new Map(
-      all
-        .filter((recipe) => !recipe.fits)
-        .map((recipe) => [`${recipe.model} ${recipe.cards} ${recipe.engine}`, recipe] as const),
+      all.filter((recipe) => !recipe.fits).map((recipe) => [`${recipe.model} ${recipe.cards} ${recipe.engine}`, recipe] as const),
     ).values(),
   ];
   const picked = options.find((recipe) => recipe.id === choice) ?? options[0];
@@ -157,14 +132,7 @@ function Machine({
     setArmed(armed === key ? null : key);
     if (armed === key) run();
   };
-  const load = () =>
-    picked &&
-    act(
-      loadKey,
-      `recipes/${encodeURIComponent(picked.id)}/run`,
-      { replace: running.length > 0 },
-      controller,
-    );
+  const load = () => picked && act(loadKey, `recipes/${encodeURIComponent(picked.id)}/run`, { replace: running.length > 0 }, controller);
   return (
     <div className="group border-t border-border/60 first:border-t-0">
       <div
@@ -172,9 +140,7 @@ function Machine({
         tabIndex={0}
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        onKeyDown={(event) =>
-          event.key === "Enter" && event.target === event.currentTarget && setOpen(!open)
-        }
+        onKeyDown={(event) => event.key === "Enter" && event.target === event.currentTarget && setOpen(!open)}
         className="flex cursor-pointer items-center gap-3 px-3 py-3 hover:bg-accent/40 sm:px-4"
       >
         <ChevronRightIcon
@@ -210,8 +176,7 @@ function Machine({
                 onClick={stop}
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (editing.trim() && editing !== name)
-                    act(`name ${device.url}`, "name", { name: editing.trim() }, controller);
+                  if (editing.trim() && editing !== name) act(`name ${device.url}`, "name", { name: editing.trim() }, controller);
                   setEditing(null);
                 }}
               >
@@ -241,18 +206,13 @@ function Machine({
             </button>
           </div>
           <span className="truncate text-xs text-muted-foreground">
-            {!device.reachable
-              ? (device.error ?? "Offline")
-              : loaded || (jobs[0] ? `Loading ${jobs[0].recipeId}` : "No model loaded")}
+            {!device.reachable ? (device.error ?? "Offline") : loaded || (jobs[0] ? `Loading ${jobs[0].recipeId}` : "No model loaded")}
           </span>
         </div>
         {use && (
           <div className="hidden w-48 shrink-0 flex-col gap-1 sm:flex">
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-foreground"
-                style={{ width: `${Math.min(100, (use.used / use.total) * 100)}%` }}
-              />
+              <div className="h-full rounded-full bg-foreground" style={{ width: `${Math.min(100, (use.used / use.total) * 100)}%` }} />
             </div>
             <span className="text-right text-xs text-muted-foreground tabular-nums">
               {gib(use.used)} / {gib(use.total)} {use.label}
@@ -265,16 +225,9 @@ function Machine({
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Metric
               label="Tokens served"
-              value={
-                device.usage?.some((row) => row.measuredRequests)
-                  ? formatTokens(tokensOf(device.usage))
-                  : "—"
-              }
+              value={device.usage?.some((row) => row.measuredRequests) ? formatTokens(tokensOf(device.usage)) : "—"}
             />
-            <Metric
-              label="Requests"
-              value={sum(device.usage ?? [], (row) => row.requests).toLocaleString()}
-            />
+            <Metric label="Requests" value={sum(device.usage ?? [], (row) => row.requests).toLocaleString()} />
             <Metric label="Hardware" value={hardware ? gpuSummary(hardware) : "—"} />
             <Metric label="Models loaded" value={String(running.length)} />
           </div>
@@ -287,25 +240,15 @@ function Machine({
                 size="xs"
                 variant={armed === endpoint.id ? "destructive" : "outline"}
                 disabled={busy !== null}
-                onClick={() =>
-                  confirm(endpoint.id, () =>
-                    act(endpoint.id, `ports/${endpoint.port}/stop`, {}, controller),
-                  )
-                }
+                onClick={() => confirm(endpoint.id, () => act(endpoint.id, `ports/${endpoint.port}/stop`, {}, controller))}
               >
-                {busy === endpoint.id
-                  ? "Unloading…"
-                  : armed === endpoint.id
-                    ? "Confirm unload"
-                    : "Unload"}
+                {busy === endpoint.id ? "Unloading…" : armed === endpoint.id ? "Confirm unload" : "Unload"}
               </Button>
             </div>
           ))}
           {jobs.map((job) => (
             <div key={job.id} className="flex items-center gap-2 text-sm">
-              {job.phase === "failed"
-                ? dot("bg-destructive", "Failed")
-                : dot("bg-warning", "Loading")}
+              {job.phase === "failed" ? dot("bg-destructive", "Failed") : dot("bg-warning", "Loading")}
               <span className="min-w-0 flex-1 truncate">
                 {job.recipeId}
                 <span className="ms-2 text-xs text-muted-foreground">
@@ -335,11 +278,7 @@ function Machine({
                   value={picked?.id ?? null}
                   onValueChange={setChoice}
                 >
-                  <SelectTrigger
-                    size="sm"
-                    className="w-full sm:w-auto sm:min-w-64 sm:flex-1"
-                    aria-label="Model to load"
-                  >
+                  <SelectTrigger size="sm" className="w-full sm:w-auto sm:min-w-64 sm:flex-1" aria-label="Model to load">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectPopup align="start" alignItemWithTrigger={false}>
@@ -362,9 +301,7 @@ function Machine({
                               <SelectItem key={recipe.id} value={recipe.id} disabled={!recipe.fits}>
                                 <span className="flex flex-col">
                                   {recipe.model}
-                                  <span className="text-xs text-muted-foreground">
-                                    {group.detail(recipe)}
-                                  </span>
+                                  <span className="text-xs text-muted-foreground">{group.detail(recipe)}</span>
                                 </span>
                               </SelectItem>
                             ))}
@@ -379,11 +316,7 @@ function Machine({
                   disabled={busy !== null || !picked}
                   onClick={() => (running.length ? confirm(loadKey, load) : load())}
                 >
-                  {busy === loadKey
-                    ? "Loading…"
-                    : armed === loadKey
-                      ? `Unload ${running.length} and load`
-                      : "Load"}
+                  {busy === loadKey ? "Loading…" : armed === loadKey ? `Unload ${running.length} and load` : "Load"}
                 </Button>
               </div>
               <p className="text-xs break-all text-muted-foreground">
@@ -395,9 +328,7 @@ function Machine({
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">
-              {recipes
-                ? "The registry has no recipes for this hardware yet."
-                : "Reading the registry…"}
+              {recipes ? "The registry has no recipes for this hardware yet." : "Reading the registry…"}
             </p>
           )}
         </div>
@@ -420,26 +351,18 @@ export function LocalSettingsPanel() {
     .map(target)
     .join(" ");
 
-  const perform = useCallback(
-    <A,>(key: string, effect: Effect.Effect<A, Error>, then: (value: A) => void) => {
-      setBusy(key);
-      setError(null);
-      void Effect.runPromise(effect)
-        .then(then)
-        .catch((cause: unknown) => setError(String(cause)))
-        .finally(() => setBusy(null));
-    },
-    [],
-  );
+  const perform = useCallback(<A,>(key: string, effect: Effect.Effect<A, Error>, then: (value: A) => void) => {
+    setBusy(key);
+    setError(null);
+    void Effect.runPromise(effect)
+      .then(then)
+      .catch((cause: unknown) => setError(String(cause)))
+      .finally(() => setBusy(null));
+  }, []);
   const act = (key: string, path: string, body: unknown, controller: string) =>
     perform(key, request(path, controller, body), () => setRevision((value) => value + 1));
   const scan = useCallback(
-    () =>
-      perform(
-        "scan",
-        request("tailnet", "").pipe(Effect.flatMap(Schema.decodeUnknownEffect(LocalTailnet))),
-        setTailnet,
-      ),
+    () => perform("scan", request("tailnet", "").pipe(Effect.flatMap(Schema.decodeUnknownEffect(LocalTailnet))), setTailnet),
     [perform],
   );
   useEffect(scan, [scan]);
@@ -447,15 +370,11 @@ export function LocalSettingsPanel() {
   useEffect(() => {
     const abort = new AbortController();
     const poll = Effect.gen(function* () {
-      const state = yield* request("snapshot", "").pipe(
-        Effect.flatMap(Schema.decodeUnknownEffect(LocalSnapshot)),
-      );
+      const state = yield* request("snapshot", "").pipe(Effect.flatMap(Schema.decodeUnknownEffect(LocalSnapshot)));
       const reachableUrls = state.controllers.filter((device) => device.reachable).map(target);
       const each = yield* fetchEach("snapshot", LocalSnapshot, reachableUrls);
       setRoot(state);
-      setSnapshots(
-        Object.fromEntries(state.controllers.map((device) => [device.url, each[target(device)]])),
-      );
+      setSnapshots(Object.fromEntries(state.controllers.map((device) => [device.url, each[target(device)]])));
     }).pipe(
       Effect.catch((cause) => Effect.sync(() => setError(String(cause)))),
       Effect.repeat(Schedule.spaced("5 seconds")),
@@ -465,18 +384,14 @@ export function LocalSettingsPanel() {
   }, [revision]);
 
   useEffect(() => {
-    void Effect.runPromise(
-      fetchEach("recipes?archived=1", LocalRecipes, reachable ? reachable.split(" ") : [""]),
-    ).then(setRecipes);
+    void Effect.runPromise(fetchEach("recipes?archived=1", LocalRecipes, reachable ? reachable.split(" ") : [""])).then(setRecipes);
   }, [reachable, revision]);
 
   const usage = root?.usage ?? [];
   const now = new Date(root?.generatedAt ?? Date.now());
   const today = now.toISOString().slice(0, 10);
   const monday = new Date(now.getTime() - ((now.getUTCDay() + 6) % 7) * 86_400_000);
-  const days = Array.from({ length: 30 }, (_, index) =>
-    new Date(now.getTime() - (29 - index) * 86_400_000).toISOString().slice(0, 10),
-  );
+  const days = Array.from({ length: 30 }, (_, index) => new Date(now.getTime() - (29 - index) * 86_400_000).toISOString().slice(0, 10));
   const daily = days.map((day) => {
     const totalTokens = tokensOf(usage, day, day);
     return {
@@ -537,19 +452,14 @@ export function LocalSettingsPanel() {
               }
             />
           ))}
-        {!root && !error && (
-          <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">Contacting controller…</p>
-        )}
+        {!root && !error && <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">Contacting controller…</p>}
       </SettingsSection>
 
       <SettingsSection title="Usage">
         <div className="flex flex-col gap-5 px-3 py-4 sm:px-4">
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Metric label="Today" value={shown(tokensOf(usage, today))} />
-            <Metric
-              label="This week"
-              value={shown(tokensOf(usage, monday.toISOString().slice(0, 10)))}
-            />
+            <Metric label="This week" value={shown(tokensOf(usage, monday.toISOString().slice(0, 10)))} />
             <Metric label="All time" value={shown(tokensOf(usage))} />
             <Metric label="Requests" value={requests.toLocaleString()} />
           </div>
@@ -591,18 +501,15 @@ export function LocalSettingsPanel() {
                   <td className="truncate py-2 text-foreground">{row.model}</td>
                   <td className={cell}>{row.requests.toLocaleString()}</td>
                   <td className={cell}>{((row.requests / requests) * 100).toFixed(0)}%</td>
-                  <td className={cell}>
-                    {row.measuredRequests ? formatTokens(tokensOf([row])) : "—"}
-                  </td>
+                  <td className={cell}>{row.measuredRequests ? formatTokens(tokensOf([row])) : "—"}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           <p className="text-xs text-muted-foreground">
             {models.length === 0 && "No requests yet. "}
-            Input + output tokens, including cached input, counted in UTC with weeks starting
-            Monday. Tokens are known for {measured.toLocaleString()} of {requests.toLocaleString()}{" "}
-            requests; traffic sent straight to an engine is not seen.
+            Input + output tokens, including cached input, counted in UTC with weeks starting Monday. Tokens are known for{" "}
+            {measured.toLocaleString()} of {requests.toLocaleString()} requests; traffic sent straight to an engine is not seen.
           </p>
         </div>
       </SettingsSection>
@@ -610,16 +517,14 @@ export function LocalSettingsPanel() {
       <SettingsSection title="About Local">
         <div className="flex flex-col gap-3 px-3 py-4 text-sm text-muted-foreground sm:px-4">
           <p>
-            Local runs open models on machines you own. Each machine runs a small Local Studio
-            controller; connected machines share their models, so any model loaded anywhere is
-            available to every chat here. Machines on your Tailscale network are found
+            Local runs open models on machines you own. Each machine runs a small Local Studio controller; connected machines share their
+            models, so any model loaded anywhere is available to every chat here. Machines on your Tailscale network are found
             automatically.
           </p>
           <p>
-            Models load from the Local AI Registry: recipes tested on specific hardware, pinned to
-            an exact image and weights. Loading works on Linux machines with NVIDIA GPUs and Docker,
-            including RTX 3090, 4090, 5090, RTX PRO 6000 and DGX Spark. Macs can connect and serve
-            models they already run.
+            Models load from the Local AI Registry: recipes tested on specific hardware, pinned to an exact image and weights. Loading works
+            on Linux machines with NVIDIA GPUs and Docker, including RTX 3090, 4090, 5090, RTX PRO 6000 and DGX Spark. Macs can connect and
+            serve models they already run.
           </p>
           <a
             href="https://local-ai-registry.vercel.app/?topic=hardware"

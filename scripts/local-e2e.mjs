@@ -36,37 +36,20 @@ const waitFor = async (fn, label, ms = 35_000) => {
 const call = (port, path, body, headers = auth) =>
   fetch(`http://127.0.0.1:${port}${path}`, {
     headers,
-    ...(body === undefined
-      ? {}
-      : { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body) }),
+    ...(body === undefined ? {} : { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body) }),
     signal: AbortSignal.timeout(10_000),
   });
 const snapshot = async (port) => (await call(port, "/api/snapshot")).json();
 
 try {
   mkdirSync(join(root, "dist"));
-  writeFileSync(
-    join(root, "dist/catalog.json"),
-    JSON.stringify({
-      cards: {},
-      recipes: {
-        captured: {
-          model: "preserved",
-          card: "unknown",
-          engine: "vllm",
-          weights: "baked-into-image",
-          launch: { kind: "host", port: 8000, ctx: 4096 },
-          proof: [{ captured: true }],
-        },
-      },
-    }),
-  );
+  const captured = { model: "preserved", card: "unknown", engine: "vllm", weights: "baked-into-image", launch: { kind: "host", port: 8000, ctx: 4096 }, proof: [{ captured: true }] };
+  writeFileSync(join(root, "dist/catalog.json"), JSON.stringify({ cards: {}, recipes: { captured } }));
   git("init", "-q");
   git("add", "dist/catalog.json");
   git("-c", "user.name=Local E2E", "-c", "user.email=e2e@localhost", "commit", "-qm", "fixture");
   const commit = git("rev-parse", "HEAD").toString().trim();
-  const stream =
-    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\\"x\\\":1}"}}]}}]}\n\ndata: [DONE]\n\n';
+  const stream = 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\\"x\\\":1}"}}]}}]}\n\ndata: [DONE]\n\n';
   const engine = async (models) =>
     listen(
       createServer(async (req, res) => {
@@ -102,48 +85,22 @@ try {
   const ports = [];
   for (let i = 0; i < 3; i++) {
     const s = createServer();
-    const p = await listen(s);
+    ports.push(await listen(s));
     await new Promise((resolve) => s.close(resolve));
-    ports.push(p);
   }
   for (const [i, port] of ports.entries()) {
     const home = join(root, `controller-${i}`);
     mkdirSync(home);
     writeFileSync(join(home, "usage.json"), JSON.stringify({ legacy: { requests: 7, lastAt: "2025-01-01T00:00:00Z" } }));
-    writeFileSync(
-      join(home, "config.json"),
-      JSON.stringify({
-        id: `fixture-${i}`,
-        name: `Fixture ${i}`,
-        url: `http://127.0.0.1:${port}`,
-        fleetKey: key,
-        peers: [`http://127.0.0.1:${ports[(i + 1) % ports.length]}`],
-        excludePorts: [
-          ...ports,
-          ...(i === 0 ? [engineB] : i === 1 ? [engineA] : [engineA, engineB]),
-        ],
-        engineKeys: { [engineA]: "fixture-engine-secret" },
-        registry: { url: root, dir: root, ref: commit },
-        modelsDir: join(home, "models"),
-      }),
-      { mode: 0o600 },
-    );
-    const child = spawn("bun", ["apps/local-controller/src/main.ts"], {
-      env: {
-        ...process.env,
-        LOCAL_STUDIO_T3_HOME: home,
-        LOCAL_STUDIO_T3_PORT: String(port),
-        LOCAL_STUDIO_T3_HOST: "127.0.0.1",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const excludePorts = [...ports, ...(i === 0 ? [engineB] : i === 1 ? [engineA] : [engineA, engineB])];
+    const peers = [`http://127.0.0.1:${ports[(i + 1) % ports.length]}`];
+    const config = { id: `fixture-${i}`, name: `Fixture ${i}`, url: `http://127.0.0.1:${port}`, fleetKey: key, peers, excludePorts };
+    const registry = { url: root, dir: root, ref: commit };
+    writeFileSync(join(home, "config.json"), JSON.stringify({ ...config, engineKeys: { [engineA]: "fixture-engine-secret" }, registry, modelsDir: join(home, "models") }), { mode: 0o600 });
+    const env = { ...process.env, LOCAL_STUDIO_T3_HOME: home, LOCAL_STUDIO_T3_PORT: String(port), LOCAL_STUDIO_T3_HOST: "127.0.0.1" };
+    const child = spawn("bun", ["apps/local-controller/src/main.ts"], { env, stdio: ["ignore", "pipe", "pipe"] });
     let log = "";
-    child.stdout.on("data", (chunk) => {
-      log += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      log += chunk;
-    });
+    for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => (log += chunk));
     children.push(child);
     await waitFor(async () => {
       if (child.exitCode !== null) throw new Error(log);
@@ -154,11 +111,7 @@ try {
   assert.equal((await call(a, "/api/snapshot", undefined, {})).status, 401);
   await waitFor(async () => {
     const s = await snapshot(a);
-    return (
-      s.models.some((m) => m.id === "alpha" && m.live) &&
-      s.models.some((m) => m.id === "beta" && m.live) &&
-      s.controllers.length === 3
-    );
+    return ["alpha", "beta"].every((id) => s.models.some((m) => m.id === id && m.live)) && s.controllers.length === 3;
   }, "discovery and cyclic controller graph");
   const s = await snapshot(a);
   assert.equal(s.controllers.filter((x) => x.reachable).length, 3);
@@ -167,14 +120,8 @@ try {
   assert.equal((await call(a, "/api/peers", "{")).status, 400);
   assert.equal((await call(a, "/api/peers", { url: `http://127.0.0.1:${a}` })).status, 400);
   assert.equal((await call(a, "/v1/completions", { model: "not-live" })).status, 404);
-  const raw =
-    '{ "model": "alpha", "stream": true, "messages": [{"role":"user","content":"native"}], "extra_body": {"nested":[1,2,3]} }';
-  const streamed = await call(a, "/v1/chat/completions", raw, {
-    ...auth,
-    "x-api-key": "client-secret",
-    cookie: "private=value",
-    "anthropic-version": "2023-06-01",
-  });
+  const raw = '{ "model": "alpha", "stream": true, "messages": [{"role":"user","content":"native"}], "extra_body": {"nested":[1,2,3]} }';
+  const streamed = await call(a, "/v1/chat/completions", raw, { ...auth, "x-api-key": "client-secret", cookie: "private=value", "anthropic-version": "2023-06-01" });
   assert.equal(streamed.status, 200);
   assert.equal(streamed.headers.get("x-engine-stream"), "native");
   assert.equal(await streamed.text(), stream);
@@ -192,16 +139,10 @@ try {
     assert.equal(r.status, 200);
     assert.deepEqual(await r.json(), { model: "beta", fixture: true, path });
   }
-  await waitFor(
-    async () => (await snapshot(a)).auto === "beta",
-    "auto follows most-used live model",
-  );
+  await waitFor(async () => (await snapshot(a)).auto === "beta", "auto follows most-used live model");
   const auto = await call(a, "/v1/responses", { model: "auto", input: "route" });
   assert.equal((await auto.json()).model, "beta");
-  await waitFor(
-    async () => (await snapshot(a)).models.find((m) => m.id === "beta")?.requests === 4,
-    "usage counts once across graph",
-  );
+  await waitFor(async () => (await snapshot(a)).models.find((m) => m.id === "beta")?.requests === 4, "usage counts once across graph");
   assert.equal((await snapshot(b)).usage.find((u) => u.model === "beta").requests, 4);
   const event = (value) => `data: ${JSON.stringify(value)}\r\n\r\n`;
   const cases = [
@@ -229,24 +170,15 @@ try {
   assert.equal(Object.values(tracked.find((u) => u.model === "beta").tokens).reduce((a, b) => a + b, 0), 171);
   assert.equal(tracked.find((u) => u.model === "legacy").requests, 21);
   assert.equal(tracked.find((u) => u.model === "legacy").measuredRequests, 0);
-  await new Promise((resolve) =>
-    servers.find((server) => server.address()?.port === engineB).close(resolve),
-  );
-  await waitFor(
-    async () => (await snapshot(a)).auto === "alpha",
-    "auto excludes offline most-used model",
-  );
+  await new Promise((resolve) => servers.find((server) => server.address()?.port === engineB).close(resolve));
+  await waitFor(async () => (await snapshot(a)).auto === "alpha", "auto excludes offline most-used model");
   const models = await (await call(a, "/v1/models")).json();
   assert(models.data.some((m) => m.id === "auto"));
   assert(!models.data.some((m) => m.id === "beta"));
-  console.log(
-    "PASS E2E: authentication, discovery, multi-API models, cyclic federation, native streams/errors, credential isolation, registry launch guard, auto and usage.",
-  );
+  console.log("PASS E2E: authentication, discovery, multi-API models, cyclic federation, native streams/errors, credential isolation, registry launch guard, auto and usage.");
 } finally {
   for (const child of children) child.kill("SIGTERM");
-  await Promise.all(
-    children.map((child) => (child.exitCode === null ? once(child, "exit") : undefined)),
-  );
+  await Promise.all(children.map((child) => (child.exitCode === null ? once(child, "exit") : undefined)));
   for (const server of servers) {
     server.closeAllConnections();
     server.close();

@@ -14,8 +14,7 @@ export type PiFrame = Readonly<Record<string, unknown>>;
 export const asRecord = (value: unknown): PiFrame =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as PiFrame) : {};
 
-export const asString = (value: unknown): string | undefined =>
-  typeof value === "string" && value.length > 0 ? value : undefined;
+export const asString = (value: unknown): string | undefined => (typeof value === "string" && value.length > 0 ? value : undefined);
 
 export type PiRpc = Effect.Success<ReturnType<typeof spawnPiRpc>>;
 
@@ -41,8 +40,7 @@ export const spawnPiRpc = Effect.fn("spawnPiRpc")(function* (input: {
     }),
   );
   const pending = new Map<string, Deferred.Deferred<PiFrame, ProviderAdapterRequestError>>();
-  const requestError = (method: string, detail: string) =>
-    new ProviderAdapterRequestError({ provider: input.provider, method, detail });
+  const requestError = (method: string, detail: string) => new ProviderAdapterRequestError({ provider: input.provider, method, detail });
   let stderrTail = "";
   let sequence = 0;
 
@@ -77,9 +75,7 @@ export const spawnPiRpc = Effect.fn("spawnPiRpc")(function* (input: {
     }),
     Effect.forkIn(scope),
   );
-  yield* Effect.addFinalizer(() =>
-    Queue.end(inbox).pipe(Effect.andThen(child.kill({ forceKillAfter: "1 second" })), Effect.ignore),
-  );
+  yield* Effect.addFinalizer(() => Queue.end(inbox).pipe(Effect.andThen(child.kill({ forceKillAfter: "1 second" })), Effect.ignore));
 
   const write = (frame: PiFrame) => Queue.offer(inbox, `${JSON.stringify(frame)}\n`).pipe(Effect.asVoid);
   const request = (command: PiFrame, timeoutMs = 30_000) =>
