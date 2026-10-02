@@ -589,13 +589,57 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       return { threadId, turns };
     });
 
+  const rollbackThread: Shape["rollbackThread"] = (threadId, numTurns) =>
+    Effect.gen(function* () {
+      const fail = (detail: string) => requestError("thread/rollback", detail);
+      if (!Number.isInteger(numTurns) || numTurns < 1) {
+        return yield* validationError("rollbackThread", "numTurns must be an integer >= 1.");
+      }
+      const ctx = yield* requireSession(threadId);
+      const rpc = yield* rpcOf(ctx, "thread/rollback");
+      const state = asRecord((yield* rpc.request({ type: "get_state" })).data);
+      if (ctx.turnId || state.isStreaming === true || state.isCompacting === true) {
+        return yield* fail("Wait for the active turn to settle before rolling back.");
+      }
+      const history = asRecord((yield* rpc.request({ type: "get_entries" }, 60_000)).data);
+      if (!Array.isArray(history.entries)) return yield* fail("Session entries are unavailable.");
+      const entries = new Map(history.entries.map((raw) => [asString(asRecord(raw).id), asRecord(raw)]));
+      const users: string[] = [];
+      const visited = new Set<string>();
+      for (let id = asString(history.leafId); id; id = asString(entries.get(id)?.parentId)) {
+        const entry = entries.get(id);
+        if (!entry || visited.has(id)) return yield* fail("Invalid session ancestry.");
+        visited.add(id);
+        if (entry.type === "message" && asRecord(entry.message).role === "user") users.push(id);
+      }
+      const entryId = users[Math.min(numTurns, users.length) - 1];
+      if (!entryId) return yield* readThread(threadId);
+      const result = asRecord((yield* rpc.request({ type: flavor.rollbackCommand, entryId }, 60_000)).data);
+      if (result.cancelled !== false) return yield* fail("Conversation rollback was cancelled or not confirmed.");
+      const previous = ctx.sessionFile;
+      ctx.sessionFile = undefined;
+      yield* syncState(ctx, rpc);
+      if (!ctx.sessionFile) {
+        ctx.sessionFile = previous;
+        return yield* fail("The rolled-back session file is unavailable.");
+      }
+      ctx.session = {
+        ...ctx.session,
+        ...(ctx.model ? { model: ctx.model } : {}),
+        resumeCursor: { schemaVersion: 1, sessionFile: ctx.sessionFile },
+        updatedAt: yield* nowIso,
+      };
+      yield* emit(ctx, { type: "session.started", payload: { resume: ctx.session.resumeCursor } });
+      return yield* readThread(threadId);
+    });
+
   const stopAll = () =>
     Effect.forEach([...sessions.values()], (ctx) => endSession(ctx), { discard: true });
   yield* Effect.addFinalizer(() => Effect.andThen(stopAll(), PubSub.shutdown(events)));
 
   return {
     provider: PROVIDER,
-    capabilities: { sessionModelSwitch: "in-session", supportsConversationRollback: false },
+    capabilities: { sessionModelSwitch: "in-session", supportsConversationRollback: true },
     compaction: {
       type: "native",
       start: (threadId) =>
@@ -641,12 +685,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       Effect.sync(() => [...sessions.values()].map((ctx) => ({ ...ctx.session }))),
     hasSession: (threadId) => Effect.sync(() => sessions.has(threadId)),
     readThread,
-    rollbackThread: (threadId) =>
-      Effect.flatMap(requireSession(threadId), () =>
-        Effect.fail(
-          requestError("thread/rollback", `${flavor.displayName} sessions cannot be rolled back.`),
-        ),
-      ),
+    rollbackThread,
     stopAll,
     streamEvents: Stream.fromPubSub(events),
   } satisfies Shape;

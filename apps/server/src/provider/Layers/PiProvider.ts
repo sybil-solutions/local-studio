@@ -29,6 +29,7 @@ export interface PiFlavor {
   readonly npmPackage: string;
   readonly resumeFlag: string;
   readonly settleEvent: string;
+  readonly rollbackCommand: "fork" | "branch";
   readonly sessionArgs: ReadonlyArray<string>;
   readonly headlessArgs: ReadonlyArray<string>;
 }
@@ -40,6 +41,7 @@ export const PI_FLAVOR: PiFlavor = {
   npmPackage: "@earendil-works/pi-coding-agent",
   resumeFlag: "--session",
   settleEvent: "agent_settled",
+  rollbackCommand: "fork",
   sessionArgs: [],
   headlessArgs: ["--no-session", "--no-extensions", "--offline"],
 };
@@ -51,6 +53,7 @@ export const OMP_FLAVOR: PiFlavor = {
   npmPackage: "@oh-my-pi/pi-coding-agent",
   resumeFlag: "--resume",
   settleEvent: "session_settled",
+  rollbackCommand: "branch",
   sessionArgs: ["--auto-approve"],
   headlessArgs: ["--no-session", "--no-extensions"],
 };
@@ -99,7 +102,7 @@ const draft = (
   buildServerProvider({
     presentation: {
       displayName: flavor.displayName,
-      supportsConversationRollback: false,
+      supportsConversationRollback: true,
       showInteractionModeToggle: false,
       reportsContextWindow: true,
     },
