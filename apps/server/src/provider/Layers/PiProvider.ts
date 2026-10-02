@@ -2,7 +2,6 @@ import {
   PI_DEFAULT_MODEL,
   ProviderDriverKind,
   type PiAgentSettings,
-  type RuntimeMode,
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
@@ -30,7 +29,7 @@ export interface PiFlavor {
   readonly npmPackage: string;
   readonly resumeFlag: string;
   readonly settleEvent: string;
-  readonly approvalArgs: (mode: RuntimeMode) => ReadonlyArray<string>;
+  readonly sessionArgs: ReadonlyArray<string>;
   readonly headlessArgs: ReadonlyArray<string>;
 }
 
@@ -41,15 +40,8 @@ export const PI_FLAVOR: PiFlavor = {
   npmPackage: "@earendil-works/pi-coding-agent",
   resumeFlag: "--session",
   settleEvent: "agent_settled",
-  approvalArgs: () => [],
+  sessionArgs: [],
   headlessArgs: ["--no-session", "--no-extensions", "--offline"],
-};
-
-const OMP_APPROVAL_MODE: Record<RuntimeMode, string> = {
-  "approval-required": "always-ask",
-  "auto-accept-edits": "write",
-  auto: "write",
-  "full-access": "yolo",
 };
 
 export const OMP_FLAVOR: PiFlavor = {
@@ -59,7 +51,7 @@ export const OMP_FLAVOR: PiFlavor = {
   npmPackage: "@oh-my-pi/pi-coding-agent",
   resumeFlag: "--resume",
   settleEvent: "session_settled",
-  approvalArgs: (mode) => ["--approval-mode", OMP_APPROVAL_MODE[mode]],
+  sessionArgs: ["--auto-approve"],
   headlessArgs: ["--no-session", "--no-extensions"],
 };
 
@@ -82,7 +74,11 @@ const modelFromRpc = (raw: unknown): ServerProviderModel[] => {
       ? ["minimal", "low", "medium", "high"]
       : [];
   const options = ["off", ...efforts].map((value) => ({ value, label: value }));
-  const reasoning = buildSelectOptionDescriptor({ id: REASONING_OPTION_ID, label: "Reasoning", options });
+  const reasoning = buildSelectOptionDescriptor({
+    id: REASONING_OPTION_ID,
+    label: "Reasoning",
+    options,
+  });
   if (!provider || !id) return [];
   return [
     {
@@ -90,7 +86,9 @@ const modelFromRpc = (raw: unknown): ServerProviderModel[] => {
       name: asString(model.name) ?? id,
       subProvider: provider,
       isCustom: false,
-      capabilities: createModelCapabilities({ optionDescriptors: efforts.length > 0 ? [reasoning] : [] }),
+      capabilities: createModelCapabilities({
+        optionDescriptors: efforts.length > 0 ? [reasoning] : [],
+      }),
     },
   ];
 };
@@ -112,7 +110,15 @@ const draft = (
     enabled: settings.enabled,
     checkedAt,
     models: providerModelsFromSettings(
-      [{ slug: PI_DEFAULT_MODEL, name: "Harness default", isCustom: false, capabilities: NO_OPTIONS }, ...models],
+      [
+        {
+          slug: PI_DEFAULT_MODEL,
+          name: "Harness default",
+          isCustom: false,
+          capabilities: NO_OPTIONS,
+        },
+        ...models,
+      ],
       settings.customModels,
       NO_OPTIONS,
     ),
@@ -129,7 +135,9 @@ export const buildInitialPiProviderSnapshot = (flavor: PiFlavor, settings: PiAge
       version: null,
       status: "warning",
       auth: unknownAuth,
-      message: settings.enabled ? `Checking ${flavor.displayName} CLI availability...` : disabled(flavor),
+      message: settings.enabled
+        ? `Checking ${flavor.displayName} CLI availability...`
+        : disabled(flavor),
     }),
   );
 
@@ -144,7 +152,13 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
   const result = (probe: ProviderProbeResult, models?: ReadonlyArray<ServerProviderModel>) =>
     draft(flavor, settings, checkedAt, probe, models);
   if (!settings.enabled) {
-    return result({ installed: false, version: null, status: "warning", auth: unknownAuth, message: disabled(flavor) });
+    return result({
+      installed: false,
+      version: null,
+      status: "warning",
+      auth: unknownAuth,
+      message: disabled(flavor),
+    });
   }
 
   const spawnCommand = yield* resolveSpawnCommand(command, ["--version"], { env });
@@ -153,7 +167,8 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     ChildProcess.make(spawnCommand.command, spawnCommand.args, { env, shell: spawnCommand.shell }),
   ).pipe(Effect.timeout(4_000), Effect.result);
   if (versionResult._tag === "Failure" || versionResult.success.code !== 0) {
-    const missing = versionResult._tag === "Failure" && isCommandMissingCause(versionResult.failure);
+    const missing =
+      versionResult._tag === "Failure" && isCommandMissingCause(versionResult.failure);
     return result({
       installed: !missing,
       version: null,
@@ -165,7 +180,9 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     });
   }
 
-  const version = parseGenericCliVersion(`${versionResult.success.stdout}\n${versionResult.success.stderr}`);
+  const version = parseGenericCliVersion(
+    `${versionResult.success.stdout}\n${versionResult.success.stderr}`,
+  );
   const discovered = yield* Effect.scoped(
     Effect.gen(function* () {
       const rpc = yield* spawnPiRpc({
@@ -177,7 +194,9 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         onFrame: () => Effect.void,
         onExit: () => Effect.void,
       });
-      const models = asRecord((yield* rpc.request({ type: "get_available_models" }, 15_000)).data).models;
+      const models = asRecord(
+        (yield* rpc.request({ type: "get_available_models" }, 15_000)).data,
+      ).models;
       return (Array.isArray(models) ? models : []).flatMap(modelFromRpc);
     }),
   ).pipe(Effect.orElseSucceed(() => undefined));
@@ -198,5 +217,8 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
         auth: { status: "unauthenticated" },
         message: `${flavor.displayName} has no usable models. Run \`${command}\` and use /login to add a provider.`,
       })
-    : result({ installed: true, version, status: "ready", auth: { status: "authenticated" } }, discovered);
+    : result(
+        { installed: true, version, status: "ready", auth: { status: "authenticated" } },
+        discovered,
+      );
 });
