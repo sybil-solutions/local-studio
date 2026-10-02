@@ -202,7 +202,7 @@ export function LocalPage() {
           <section className="space-y-3">
             <h2 className="text-sm font-medium">Models</h2>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-sm [&_td]:pr-4 [&_th]:pr-4">
                 <thead className="text-muted-foreground">
                   <tr>
                     <th>Model</th>
@@ -303,7 +303,7 @@ export function LocalPage() {
               </div>
             )}
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
+              <table className="w-full text-left text-sm [&_td]:pr-4 [&_th]:pr-4">
                 <thead className="text-muted-foreground">
                   <tr>
                     <th>Model / hardware</th>
