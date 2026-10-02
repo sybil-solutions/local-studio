@@ -19,7 +19,9 @@ class LocalRequestError extends Data.TaggedError("LocalRequestError")<{ message:
 const request = (path: string, controller: string, body?: unknown) =>
   Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient;
-    const url = new URL(resolvePrimaryEnvironmentHttpUrl(`/api/local/${path}`));
+    const [route, query] = path.split("?");
+    const url = new URL(resolvePrimaryEnvironmentHttpUrl(`/api/local/${route}`));
+    url.search = query ?? "";
     if (controller) url.searchParams.set("controller", controller);
     const response = yield* client.execute(
       body === undefined
@@ -27,7 +29,9 @@ const request = (path: string, controller: string, body?: unknown) =>
         : HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(body)),
     );
     if (response.status >= 400)
-      return yield* Effect.fail(new LocalRequestError({ message: yield* response.text }));
+      return yield* Effect.fail(
+        new LocalRequestError({ message: (yield* response.text) || `HTTP ${response.status}` }),
+      );
     return yield* response.json;
   }).pipe(Effect.scoped, Effect.timeout("35 seconds"), Effect.provide(primaryEnvironmentHttpLayer));
 

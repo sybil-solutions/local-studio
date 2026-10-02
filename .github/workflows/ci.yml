@@ -109,3 +109,4 @@ jobs:
         with:
           fail-on-severity: moderate
           deny-licenses: GPL-3.0, AGPL-3.0
+          allow-dependencies-licenses: pkg:npm/%40pierre/diffs
