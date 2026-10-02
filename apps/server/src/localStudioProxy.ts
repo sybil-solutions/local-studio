@@ -4,6 +4,7 @@ import { LocalSnapshot } from "@t3tools/contracts/local-studio";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import {
@@ -13,6 +14,7 @@ import {
   HttpServerRequest,
   HttpServerResponse,
 } from "effect/unstable/http";
+import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { authenticateRawRouteWithScope } from "./http.ts";
 
 const ControllerConfig = Schema.fromJsonString(
@@ -23,7 +25,7 @@ const ControllerConfig = Schema.fromJsonString(
   }),
 );
 const allowed =
-  /^(?:snapshot|tailnet|recipes|recipes\/[^/]+\/run|runs\/[^/]+\/stop|ports\/\d+\/stop|name|peers)$/;
+  /^(?:snapshot|tailnet|tailnet\/deploy|recipes|recipes\/[^/]+\/run|runs\/[^/]+\/stop|ports\/\d+\/stop|name|peers)$/;
 
 const handler = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
@@ -82,4 +84,26 @@ const handler = Effect.gen(function* () {
   );
 });
 
-export const localStudioProxyRouteLayer = HttpRouter.add("*", "/api/local/*", handler);
+const startBundledController = Effect.gen(function* () {
+  const resources = (process as { resourcesPath?: string }).resourcesPath;
+  if (!resources) return;
+  const binary = (yield* Path.Path).join(
+    resources,
+    "local-controller",
+    process.platform === "win32" ? "local-studio-controller.exe" : "local-studio-controller",
+  );
+  if (!(yield* (yield* FileSystem.FileSystem).exists(binary))) return;
+  const port = yield* Config.Number("LOCAL_STUDIO_T3_PORT").pipe(Config.withDefault(18091));
+  const running = yield* (yield* HttpClient.HttpClient)
+    .get(`http://127.0.0.1:${port}/api/health`)
+    .pipe(Effect.timeout("1500 millis"), Effect.option);
+  if (running._tag === "Some") return;
+  yield* (yield* ChildProcessSpawner.ChildProcessSpawner).spawn(
+    ChildProcess.make(binary, [], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }),
+  );
+});
+
+export const localStudioProxyRouteLayer = Layer.mergeAll(
+  HttpRouter.add("*", "/api/local/*", handler),
+  Layer.effectDiscard(Effect.ignore(startBundledController)),
+);

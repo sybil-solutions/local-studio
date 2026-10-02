@@ -519,20 +519,30 @@ export function LocalSettingsPanel() {
           />
         ))}
         {tailnet?.devices
-          .filter((device) => device.controller && !device.linked)
+          .filter(
+            (device) => !device.linked && (device.controller || /^(linux|macOS)$/.test(device.os)),
+          )
           .map((device) => (
             <SettingsRow
               key={device.ip}
               title={device.name}
-              description="Found on your tailnet"
+              description={
+                device.controller
+                  ? "Controller found on your tailnet"
+                  : `${device.os} · no controller yet`
+              }
               control={
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={busy !== null}
-                  onClick={() => act(device.ip, "peers", { url: device.controller?.url }, "")}
+                  onClick={() =>
+                    device.controller
+                      ? act(device.ip, "peers", { url: device.controller.url }, "")
+                      : act(device.ip, "tailnet/deploy", { ip: device.ip, name: device.name }, "")
+                  }
                 >
-                  Connect
+                  {busy === device.ip ? "Installing…" : device.controller ? "Connect" : "Install"}
                 </Button>
               }
             />

@@ -102,6 +102,7 @@ export const LocalRunRequest = Schema.Struct({
 export type LocalRunRequest = typeof LocalRunRequest.Type;
 
 export const LocalPeerRequest = Schema.Struct({ url: Schema.String, remove: Schema.optionalKey(Schema.Boolean) });
+export const LocalDeployRequest = Schema.Struct({ ip: Schema.String, name: Schema.String, user: Schema.optionalKey(Schema.String) });
 export const LocalNameRequest = Schema.Struct({ name: Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(64)) });
 
 export const LocalTailnet = Schema.Struct({
@@ -110,6 +111,7 @@ export const LocalTailnet = Schema.Struct({
     Schema.Struct({
       name: Schema.String,
       ip: Schema.String,
+      os: Schema.String,
       controller: Schema.NullOr(Schema.Struct({ id: Schema.String, name: Schema.String, url: Schema.String })),
       linked: Schema.Boolean,
     }),

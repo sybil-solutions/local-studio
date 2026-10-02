@@ -2186,6 +2186,51 @@ export const stageLinuxCaptureHelper = Effect.fn("stageLinuxCaptureHelper")(func
   }
 });
 
+export const stageLocalController = Effect.fn("stageLocalController")(function* (input: {
+  readonly repoRoot: string;
+  readonly stageResourcesDir: string;
+  readonly platform: typeof BuildPlatform.Type;
+  readonly arch: typeof BuildArch.Type;
+  readonly verbose: boolean;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const os = input.platform === "win" ? "windows" : input.platform === "mac" ? "darwin" : "linux";
+  const name = input.platform === "win" ? "local-studio-controller.exe" : "local-studio-controller";
+  const directory = path.join(input.stageResourcesDir, "local-controller");
+  yield* fs.remove(directory, { recursive: true, force: true }).pipe(Effect.ignore);
+  yield* fs.makeDirectory(directory, { recursive: true });
+  const arches = input.arch === "universal" ? (["arm64", "x64"] as const) : [input.arch];
+  const outputs = arches.map((arch) =>
+    path.join(directory, arches.length === 1 ? name : `${name}-${arch}`),
+  );
+  for (const [index, arch] of arches.entries()) {
+    const spawnCommand = yield* resolveSpawnCommand("bun", [
+      "build",
+      "--compile",
+      "--minify",
+      `--target=bun-${os}-${arch}`,
+      "apps/local-controller/src/main.ts",
+      "--outfile",
+      outputs[index]!,
+    ]);
+    yield* runCommand(
+      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+        cwd: input.repoRoot,
+        shell: spawnCommand.shell,
+      }),
+      { label: `bun build local controller (${os}-${arch})`, verbose: input.verbose },
+    );
+  }
+  if (outputs.length > 1) {
+    yield* runCommand(
+      ChildProcess.make("lipo", ["-create", ...outputs, "-output", path.join(directory, name)]),
+      { label: "lipo local controller universal binary", verbose: input.verbose },
+    );
+    yield* Effect.forEach(outputs, (output) => fs.remove(output), { discard: true });
+  }
+});
+
 export const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input: {
   readonly repoRoot: string;
   readonly stageResourcesDir: string;
@@ -2662,6 +2707,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       : {}),
     extraResources: [
       ...DESKTOP_EXTRA_RESOURCES,
+      { from: "apps/desktop/prod-resources/local-controller", to: "local-controller" },
       ...(platform === "linux" ? LINUX_CAPTURE_EXTRA_RESOURCES : []),
       ...(platform === "linux" ? LINUX_BROWSER_SECRET_EXTRA_RESOURCES : []),
       ...(platform === "win" ? WINDOWS_SERVER_EXTRA_RESOURCES : []),
@@ -3573,6 +3619,13 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   }
   yield* stageResourceMonitor({
+    repoRoot,
+    stageResourcesDir,
+    platform: options.platform,
+    arch: options.arch,
+    verbose: options.verbose,
+  });
+  yield* stageLocalController({
     repoRoot,
     stageResourcesDir,
     platform: options.platform,

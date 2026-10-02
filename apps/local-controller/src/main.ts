@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { LOCAL_STUDIO_CONTROLLER_HEADER, type LocalGpu, LocalNameRequest, type LocalNode, LocalPeerRequest, type LocalRecipes, LocalRunRequest, type LocalSnapshot } from "../../../packages/contracts/src/localStudio.ts";
+import { LOCAL_STUDIO_CONTROLLER_HEADER, type LocalGpu, LocalDeployRequest, LocalNameRequest, type LocalNode, LocalPeerRequest, type LocalRecipes, LocalRunRequest, type LocalSnapshot } from "../../../packages/contracts/src/localStudio.ts";
 import { decodeJson, errorResponse, exec, fail, type HttpError, httpError, json, loadConfig, now, port, saveConfig, VERSION } from "./core.ts";
 import { listeners, makeScanner } from "./discovery.ts";
 import { autoModel, HOP_HEADER, listModels, passthrough, routes } from "./gateway.ts";
@@ -10,7 +10,7 @@ import { graphUsage, makeGraph, makeUsage, normUrl } from "./graph.ts";
 import { hardware, type RawGpu, readGpus } from "./hardware.ts";
 import { makeJobs } from "./jobs.ts";
 import { type Catalog, loadCatalog, matchCard, toLocalRecipe } from "./registry.ts";
-import { scanTailnet } from "./tailnet.ts";
+import { deployController, scanTailnet } from "./tailnet.ts";
 
 let config = loadConfig();
 let catalog: Catalog = { info: { commit: null, error: "loading" }, cards: {}, recipes: new Map(), archived: [] };
@@ -161,6 +161,10 @@ const handle = async (req: Request): Promise<Response> => {
   if (unloadPort) return json(await run(unload(Number(unloadPort))));
   const stopId = match(/^\/api\/runs\/([\w-]+)\/stop$/);
   if (stopId) return json(await run(jobs.stop(stopId)));
+  if (post && p === "/api/tailnet/deploy") {
+    const u = normUrl(await run(deployController(config, await body(req, LocalDeployRequest))));
+    return saved({ ...config, peers: [...new Set([...config.peers.map(normUrl), u])] }, { url: u });
+  }
   if (post && p === "/api/name") {
     const { name } = await body(req, LocalNameRequest);
     return saved({ ...config, name }, { name });
