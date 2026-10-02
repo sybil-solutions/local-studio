@@ -1,12 +1,12 @@
 import { OmpSettings, PiAgentSettings } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
+import type * as FileSystem from "effect/FileSystem";
+import type * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
-import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
+import type * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { makePiTextGeneration } from "../../textGeneration/PiTextGeneration.ts";
@@ -54,47 +54,29 @@ const makePiFamilyDriver = (
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const serverSettings = yield* ServerSettingsService;
-      const serverConfig = yield* ServerConfig;
       const processEnv = mergeProviderInstanceEnvironment(environment);
-      const continuationIdentity = defaultProviderContinuationIdentity({
-        driverKind: flavor.kind,
-        instanceId,
-      });
+      const driverKind = flavor.kind;
+      const continuationIdentity = defaultProviderContinuationIdentity({ driverKind, instanceId });
       const stampIdentity = withInstanceIdentity({
         instanceId,
-        driverKind: flavor.kind,
+        driverKind,
         displayName,
         accentColor,
         continuationGroupKey: continuationIdentity.continuationKey,
       });
-      const effectiveConfig = { ...config, enabled } satisfies PiAgentSettings;
-      const adapter = yield* makePiAdapter(flavor, effectiveConfig, {
-        environment: processEnv,
-        instanceId,
-      });
-      const textGeneration = yield* makePiTextGeneration(flavor, effectiveConfig, processEnv);
-
-      const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
+      const settings = { ...config, enabled } satisfies PiAgentSettings;
+      const snapshotSettings = makeProviderSnapshotSettingsSource(settings, yield* ServerSettingsService);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<PiAgentSettings>>({
         resolveMaintenance: () =>
           Effect.succeed(
-            makeManualOnlyProviderMaintenanceCapabilities({
-              provider: flavor.kind,
-              packageName: flavor.npmPackage,
-            }),
+            makeManualOnlyProviderMaintenanceCapabilities({ provider: driverKind, packageName: flavor.npmPackage }),
           ),
         getSettings: snapshotSettings.getSettings,
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-        initialSnapshot: (settings) =>
-          buildInitialPiProviderSnapshot(flavor, settings.provider).pipe(Effect.map(stampIdentity)),
-        checkProvider: checkPiProviderStatus(
-          flavor,
-          effectiveConfig,
-          processEnv,
-          serverConfig.cwd,
-        ).pipe(
+        initialSnapshot: (current) =>
+          buildInitialPiProviderSnapshot(flavor, current.provider).pipe(Effect.map(stampIdentity)),
+        checkProvider: checkPiProviderStatus(flavor, settings, processEnv, (yield* ServerConfig).cwd).pipe(
           Effect.map(stampIdentity),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         ),
@@ -102,24 +84,23 @@ const makePiFamilyDriver = (
         Effect.mapError(
           (cause) =>
             new ProviderDriverError({
-              driver: flavor.kind,
+              driver: driverKind,
               instanceId,
               detail: `Failed to build ${flavor.displayName} snapshot: ${cause.message ?? String(cause)}`,
               cause,
             }),
         ),
       );
-
       return {
         instanceId,
-        driverKind: flavor.kind,
+        driverKind,
         continuationIdentity,
         displayName,
         accentColor,
         enabled,
         snapshot,
-        adapter,
-        textGeneration,
+        adapter: yield* makePiAdapter(flavor, settings, { environment: processEnv, instanceId }),
+        textGeneration: yield* makePiTextGeneration(flavor, settings, processEnv),
       } satisfies ProviderInstance;
     }),
 });
