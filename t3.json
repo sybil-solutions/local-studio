@@ -1,6 +1,6 @@
 {
   "$schema": "https://t3.codes/schema/t3.json",
-  "iconPath": "assets/dev/blueprint-web-apple-touch-180.png",
+  "iconPath": "apps/web/public/local-studio.png",
   "scripts": [
     {
       "name": "Setup Worktree",

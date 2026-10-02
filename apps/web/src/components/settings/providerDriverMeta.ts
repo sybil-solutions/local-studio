@@ -16,6 +16,7 @@ import {
   CursorIcon,
   GrokIcon,
   type Icon,
+  OmpIcon,
   OpenAI,
   OpenCodeIcon,
   PiAgentIcon,
@@ -95,7 +96,7 @@ const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
   {
     value: ProviderDriverKind.make("omp"),
     label: "Oh My Pi",
-    icon: PiAgentIcon,
+    icon: OmpIcon,
     badgeLabel: "Early Access",
     settingsSchema: OmpSettings,
   },

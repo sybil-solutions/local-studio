@@ -5,6 +5,7 @@ import {
   CursorIcon,
   GrokIcon,
   Icon,
+  OmpIcon,
   OpenAI,
   OpenCodeIcon,
   PiAgentIcon,
@@ -18,7 +19,7 @@ export const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>
   [ProviderDriverKind.make("grok")]: GrokIcon,
   [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
   [ProviderDriverKind.make("piAgent")]: PiAgentIcon,
-  [ProviderDriverKind.make("omp")]: PiAgentIcon,
+  [ProviderDriverKind.make("omp")]: OmpIcon,
 };
 
 export type ModelEsque = {
