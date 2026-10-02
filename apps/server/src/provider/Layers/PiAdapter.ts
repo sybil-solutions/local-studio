@@ -372,28 +372,42 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
       : Effect.void;
   };
 
+  const syncState = (ctx: PiSessionContext, rpc: PiRpc) =>
+    Effect.gen(function* () {
+      const state = asRecord((yield* rpc.request({ type: "get_state" })).data);
+      const model = asRecord(state.model);
+      const provider = asString(model.provider);
+      const modelId = asString(model.id);
+      ctx.model = provider && modelId ? `${provider}/${modelId}` : undefined;
+      ctx.contextWindow = Number(model.contextWindow) || undefined;
+      ctx.effort = asString(state.thinkingLevel);
+      ctx.sessionFile = asString(state.sessionFile) ?? ctx.sessionFile;
+      return state;
+    });
+
   const applySelection = (ctx: PiSessionContext, selection: ModelSelection | undefined) =>
     Effect.gen(function* () {
       const rpc = yield* rpcOf(ctx, "set_model");
       const slug = selection?.model;
       if (slug && slug !== PI_DEFAULT_MODEL && slug !== ctx.model) {
         const parts = splitModelSlug(slug);
-        if (!parts)
-          return yield* validationError(
-            "set_model",
-            `Model '${slug}' must look like provider/model-id.`,
-          );
-        const response = yield* rpc.request({ type: "set_model", ...parts });
-        ctx.model = slug;
+        if (!parts) return yield* validationError("set_model", `Model '${slug}' must look like provider/model-id.`);
+        yield* rpc.request({ type: "set_model", ...parts });
         ctx.effort = undefined;
-        ctx.contextWindow = Number(asRecord(response.data).contextWindow) || undefined;
       }
       const effort = getModelSelectionStringOptionValue(selection, REASONING_OPTION_ID);
+      if (effort && effort !== ctx.effort) yield* rpc.request({ type: "set_thinking_level", level: effort });
+      yield* syncState(ctx, rpc);
       if (effort && effort !== ctx.effort) {
-        yield* rpc.request({ type: "set_thinking_level", level: effort });
-        ctx.effort = effort;
+        yield* emit(ctx, {
+          type: "runtime.warning",
+          payload: {
+            message: `${flavor.displayName} applied thinking level '${ctx.effort ?? "off"}' instead of '${effort}' for '${ctx.model ?? PI_DEFAULT_MODEL}'.`,
+          },
+        });
       }
     });
+
 
   const startSession: Shape["startSession"] = (input) =>
     Effect.gen(function* () {
@@ -449,13 +463,7 @@ export const makePiAdapter = Effect.fn("makePiAdapter")(function* (
           onExit: (reason) => endSession(ctx, reason),
         }).pipe(Effect.mapError(processError(input.threadId, `Failed to start ${flavor.binary}.`)));
         ctx.rpc = rpc;
-        const state = asRecord((yield* rpc.request({ type: "get_state" })).data);
-        const model = asRecord(state.model);
-        const provider = asString(model.provider);
-        const modelId = asString(model.id);
-        ctx.model = provider && modelId ? `${provider}/${modelId}` : undefined;
-        ctx.contextWindow = Number(model.contextWindow) || undefined;
-        ctx.sessionFile = asString(state.sessionFile) ?? ctx.sessionFile;
+        const state = yield* syncState(ctx, rpc);
         yield* applySelection(ctx, input.modelSelection);
         return asString(state.sessionId);
       }).pipe(

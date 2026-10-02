@@ -20,7 +20,7 @@ import {
   type ProviderProbeResult,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
-import { asRecord, asString, spawnPiRpc } from "./PiRpc.ts";
+import { asRecord, asString, spawnPiRpc, type PiFrame } from "./PiRpc.ts";
 
 export interface PiFlavor {
   readonly kind: ProviderDriverKind;
@@ -63,35 +63,31 @@ export const splitModelSlug = (slug: string) => {
   return index > 0 ? { provider: slug.slice(0, index), modelId: slug.slice(index + 1) } : undefined;
 };
 
-const modelFromRpc = (raw: unknown): ServerProviderModel[] => {
-  const model = asRecord(raw);
-  const provider = asString(model.provider);
-  const id = asString(model.id);
+const capabilitiesOf = (flavor: PiFlavor, model: PiFrame) => {
   const reported = asRecord(model.thinking).efforts;
+  const levels = asRecord(model.thinkingLevelMap);
   const efforts = Array.isArray(reported)
     ? reported.filter((effort): effort is string => typeof effort === "string")
-    : model.reasoning === true
-      ? ["minimal", "low", "medium", "high"]
+    : model.reasoning === true && flavor.kind === PI_FLAVOR.kind
+      ? ["minimal", "low", "medium", "high", "xhigh", "max"].filter(
+          (effort, index) => levels[effort] !== null && (index < 4 || levels[effort] !== undefined),
+        )
       : [];
-  const options = ["off", ...efforts].map((value) => ({ value, label: value }));
-  const reasoning = buildSelectOptionDescriptor({
-    id: REASONING_OPTION_ID,
-    label: "Reasoning",
-    options,
-  });
-  if (!provider || !id) return [];
-  return [
-    {
-      slug: `${provider}/${id}`,
-      name: asString(model.name) ?? id,
-      subProvider: provider,
-      isCustom: false,
-      capabilities: createModelCapabilities({
-        optionDescriptors: efforts.length > 0 ? [reasoning] : [],
-      }),
-    },
-  ];
+  const options = [...new Set(["off", ...efforts])].map((value) => ({ value, label: value }));
+  const reasoning = buildSelectOptionDescriptor({ id: REASONING_OPTION_ID, label: "Reasoning", options });
+  return createModelCapabilities({ optionDescriptors: efforts.length > 0 ? [reasoning] : [] });
 };
+
+const modelFromRpc =
+  (flavor: PiFlavor) =>
+  (raw: unknown): ServerProviderModel[] => {
+    const model = asRecord(raw);
+    const provider = asString(model.provider);
+    const id = asString(model.id);
+    if (!provider || !id) return [];
+    const name = asString(model.name) ?? id;
+    return [{ slug: `${provider}/${id}`, name, subProvider: provider, isCustom: false, capabilities: capabilitiesOf(flavor, model) }];
+  };
 
 const draft = (
   flavor: PiFlavor,
@@ -110,21 +106,19 @@ const draft = (
     enabled: settings.enabled,
     checkedAt,
     models: providerModelsFromSettings(
-      [
-        {
-          slug: PI_DEFAULT_MODEL,
-          name: "Harness default",
-          isCustom: false,
-          capabilities: NO_OPTIONS,
-        },
-        ...models,
-      ],
+      models.some((model) => model.slug === PI_DEFAULT_MODEL) ? models : [harnessDefault(NO_OPTIONS), ...models],
       settings.customModels,
       NO_OPTIONS,
     ),
     probe,
   });
 
+const harnessDefault = (capabilities: ServerProviderModel["capabilities"]): ServerProviderModel => ({
+  slug: PI_DEFAULT_MODEL,
+  name: "Harness default",
+  isCustom: false,
+  capabilities,
+});
 const unknownAuth = { status: "unknown" } as const;
 const disabled = (flavor: PiFlavor) => `${flavor.displayName} is disabled in T3 Code settings.`;
 
@@ -197,7 +191,10 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
       const models = asRecord(
         (yield* rpc.request({ type: "get_available_models" }, 15_000)).data,
       ).models;
-      return (Array.isArray(models) ? models : []).flatMap(modelFromRpc);
+      const discovered = (Array.isArray(models) ? models : []).flatMap(modelFromRpc(flavor));
+      if (discovered.length === 0) return discovered;
+      const state = asRecord((yield* rpc.request({ type: "get_state" }, 15_000)).data);
+      return [harnessDefault(capabilitiesOf(flavor, asRecord(state.model))), ...discovered];
     }),
   ).pipe(Effect.orElseSucceed(() => undefined));
   if (!discovered) {
