@@ -53,10 +53,7 @@ const makePiFamilyDriver = (
   defaultConfig: () => Schema.decodeSync(configSchema)({}),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
     Effect.gen(function* () {
-      const crypto = yield* Crypto.Crypto;
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
       const serverSettings = yield* ServerSettingsService;
       const serverConfig = yield* ServerConfig;
       const processEnv = mergeProviderInstanceEnvironment(environment);
@@ -75,16 +72,8 @@ const makePiFamilyDriver = (
       const adapter = yield* makePiAdapter(flavor, effectiveConfig, {
         environment: processEnv,
         instanceId,
-      }).pipe(
-        Effect.provideService(Crypto.Crypto, crypto),
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(Path.Path, path),
-        Effect.provideService(ServerConfig, serverConfig),
-      );
-      const textGeneration = yield* makePiTextGeneration(flavor, effectiveConfig, processEnv).pipe(
-        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-      );
+      });
+      const textGeneration = yield* makePiTextGeneration(flavor, effectiveConfig, processEnv);
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<PiAgentSettings>>({

@@ -30,11 +30,7 @@ const PI_TIMEOUT_MS = 180_000;
 
 const isTextGenerationError = Schema.is(TextGenerationError);
 
-type Operation =
-  | "generateCommitMessage"
-  | "generatePrContent"
-  | "generateBranchName"
-  | "generateThreadTitle";
+type Operation = keyof TextGeneration.TextGeneration["Service"];
 
 export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* (
   flavor: PiFlavor,
@@ -47,7 +43,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
     readonly operation: Operation;
     readonly cwd: string;
     readonly prompt: string;
-    readonly outputSchemaJson: S;
+    readonly outputSchema: S;
     readonly modelSelection: ModelSelection;
   }): Effect.Effect<S["Type"], TextGenerationError, S["DecodingServices"]> =>
     Effect.gen(function* () {
@@ -78,7 +74,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
           detail: `${flavor.displayName} returned empty output.`,
         });
       }
-      return yield* Schema.decodeEffect(Schema.fromJsonString(input.outputSchemaJson))(
+      return yield* Schema.decodeEffect(Schema.fromJsonString(input.outputSchema))(
         extractJsonObject(text),
       );
     }).pipe(
@@ -100,26 +96,14 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
     built: { readonly prompt: string; readonly outputSchema: S },
     finish: (generated: S["Type"]) => A,
   ) =>
-    runPiJson({
-      operation,
-      cwd: input.cwd,
-      modelSelection: input.modelSelection,
-      prompt: built.prompt,
-      outputSchemaJson: built.outputSchema,
-    }).pipe(Effect.map(finish));
+    runPiJson({ operation, ...input, ...built }).pipe(Effect.map(finish));
 
   return {
     generateCommitMessage: (input) =>
       generate(
         "generateCommitMessage",
         input,
-        buildCommitMessagePrompt({
-          branch: input.branch,
-          stagedSummary: input.stagedSummary,
-          stagedPatch: input.stagedPatch,
-          includeBranch: input.includeBranch === true,
-          policy: input.policy,
-        }),
+        buildCommitMessagePrompt({ ...input, includeBranch: input.includeBranch === true }),
         (generated) => ({
           subject: sanitizeCommitSubject(generated.subject),
           body: generated.body.trim(),
@@ -132,15 +116,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
       generate(
         "generatePrContent",
         input,
-        buildPrContentPrompt({
-          baseBranch: input.baseBranch,
-          headBranch: input.headBranch,
-          commitSummary: input.commitSummary,
-          diffSummary: input.diffSummary,
-          diffPatch: input.diffPatch,
-          policy: input.policy,
-          changeRequestTemplate: input.changeRequestTemplate,
-        }),
+        buildPrContentPrompt(input),
         (generated) => ({
           title: sanitizePrTitle(generated.title),
           body: generated.body.trim(),
@@ -150,19 +126,14 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
       generate(
         "generateBranchName",
         input,
-        buildBranchNamePrompt({ message: input.message, attachments: input.attachments }),
+        buildBranchNamePrompt(input),
         (generated) => ({ branch: sanitizeBranchFragment(generated.branch) }),
       ),
     generateThreadTitle: (input) =>
       generate(
         "generateThreadTitle",
         input,
-        buildThreadTitlePrompt({
-          message: input.message,
-          previousTitle: input.previousTitle,
-          linkedContext: input.linkedContext,
-          attachments: input.attachments,
-        }),
+        buildThreadTitlePrompt(input),
         (generated) =>
           ({
             title: sanitizeThreadTitle(generated.title),

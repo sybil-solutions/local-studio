@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -24,38 +25,36 @@ export const home = process.env.LOCAL_STUDIO_T3_HOME ?? join(homedir(), ".local-
 export const port = Number(process.env.LOCAL_STUDIO_T3_PORT ?? 18091);
 const configPath = join(home, "config.json");
 
-export const writeJson = (path: string, value: unknown, mode = 0o600): void => {
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(value, null, 1)}\n`, { mode });
-  renameSync(tmp, path);
+export const writeJson = (path: string, value: unknown): void => {
+  writeFileSync(`${path}.${process.pid}.tmp`, `${JSON.stringify(value, null, 1)}\n`, { mode: 0o600 });
+  renameSync(`${path}.${process.pid}.tmp`, path);
 };
 
-export const readJson = <S extends Schema.Top>(path: string, schema: S, fallback: S["Type"]): S["Type"] => {
-  try {
-    return Schema.decodeUnknownSync(schema as never)(JSON.parse(readFileSync(path, "utf8"))) as S["Type"];
-  } catch {
-    return fallback;
-  }
+export const decodeJson = <S extends Schema.Top>(schema: S, text: string): S["Type"] | undefined => {
+  const r = Schema.decodeUnknownOption(Schema.fromJsonString(schema as never))(text);
+  return r._tag === "Some" ? (r.value as S["Type"]) : undefined;
 };
 
-const defaults = (): Config => ({
-  id: `${hostname().split(".")[0]}-${randomBytes(3).toString("hex")}`,
-  name: hostname().split(".")[0] ?? "local",
-  url: `http://127.0.0.1:${port}`,
-  fleetKey: randomBytes(24).toString("base64url"),
-  peers: [],
-  excludePorts: [],
-  engineKeys: {},
-  registry: { url: "https://github.com/0xSero/local-ai-registry.git", dir: join(home, "registry"), ref: "origin/main" },
-  modelsDir: join(homedir(), "models"),
-});
+export const readJson = <S extends Schema.Top>(path: string, schema: S, fallback: S["Type"]): S["Type"] =>
+  (existsSync(path) ? decodeJson(schema, readFileSync(path, "utf8")) : undefined) ?? fallback;
 
 export const loadConfig = (): Config => {
+  const name = hostname().split(".")[0] || "local";
+  const defaults = {
+    id: `${name}-${randomBytes(3).toString("hex")}`,
+    name,
+    url: `http://127.0.0.1:${port}`,
+    fleetKey: randomBytes(24).toString("base64url"),
+    peers: [],
+    excludePorts: [],
+    engineKeys: {},
+    registry: { url: "https://github.com/0xSero/local-ai-registry.git", dir: join(home, "registry"), ref: "origin/main" },
+    modelsDir: join(homedir(), "models"),
+  };
   mkdirSync(home, { recursive: true, mode: 0o700 });
-  if (!existsSync(configPath)) writeJson(configPath, defaults());
+  if (!existsSync(configPath)) writeJson(configPath, defaults);
   chmodSync(configPath, 0o600);
-  const raw = JSON.parse(readFileSync(configPath, "utf8")) as Record<string, unknown>;
-  return Schema.decodeUnknownSync(Config)({ ...defaults(), ...raw });
+  return Schema.decodeUnknownSync(Config)({ ...defaults, ...(JSON.parse(readFileSync(configPath, "utf8")) as object) });
 };
 
 export const saveConfig = (c: Config): void => writeJson(configPath, c);
@@ -64,18 +63,15 @@ export interface ExecResult {
   code: number;
   stdout: string;
   stderr: string;
-  timedOut: boolean;
 }
 
-const MAX_BYTES = 16 * 1024 * 1024;
-
-export const exec = (argv: string[], timeoutMs: number, opts: { cwd?: string; signal?: AbortSignal; env?: Record<string, string> } = {}): Effect.Effect<ExecResult> =>
+export const exec = (argv: string[], timeoutMs: number, opts: { signal?: AbortSignal; env?: Record<string, string>; stdin?: string } = {}): Effect.Effect<ExecResult> =>
   Effect.promise(async () => {
-    let proc: ReturnType<typeof Bun.spawn>;
+    let proc: Bun.Subprocess<"pipe" | "ignore", "pipe", "pipe">;
     try {
-      proc = Bun.spawn(argv, { ...(opts.cwd ? { cwd: opts.cwd } : {}), stdout: "pipe", stderr: "pipe", stdin: "ignore", env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...opts.env } });
+      proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", stdin: opts.stdin === undefined ? "ignore" : new TextEncoder().encode(opts.stdin), env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...opts.env } }) as never;
     } catch (e) {
-      return { code: 127, stdout: "", stderr: String(e), timedOut: false };
+      return { code: 127, stdout: "", stderr: String(e) };
     }
     let timedOut = false;
     const timer = setTimeout(() => {
@@ -84,45 +80,29 @@ export const exec = (argv: string[], timeoutMs: number, opts: { cwd?: string; si
     }, timeoutMs);
     const onAbort = () => proc.kill("SIGTERM");
     opts.signal?.addEventListener("abort", onAbort);
-    const read = async (s: ReadableStream<Uint8Array> | number | undefined) => {
-      if (!(s instanceof ReadableStream)) return "";
-      const text = await new Response(s).text();
-      return text.length > MAX_BYTES ? text.slice(0, MAX_BYTES) : text;
-    };
-    const [stdout, stderr, code] = await Promise.all([read(proc.stdout), read(proc.stderr), proc.exited]);
+    const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
     clearTimeout(timer);
     opts.signal?.removeEventListener("abort", onAbort);
-    return { code: timedOut ? 124 : code, stdout, stderr, timedOut };
+    return { code: timedOut ? 124 : code, stdout, stderr };
   });
 
-export class HttpError extends Error {
-  readonly status: number;
-  readonly code: string;
-  constructor(status: number, code: string, message: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
-  }
-}
+export const lastLine = (r: ExecResult): string => r.stderr.trim().split("\n").pop() || String(r.code);
 
-export const json = (body: unknown, status = 200): Response =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+export class HttpError extends Data.Error<{ readonly status: number; readonly code: string; readonly message: string }> {}
+
+export const httpError = (status: number, code: string, message: string) => new HttpError({ status, code, message });
+export const fail = (status: number, code: string, message: string) => Effect.fail(httpError(status, code, message));
+
+export const json = (body: unknown, status = 200): Response => Response.json(body, { status });
 
 export const errorResponse = (e: unknown): Response =>
-  e instanceof HttpError
-    ? json({ error: { code: e.code, message: e.message } }, e.status)
-    : json({ error: { code: "INTERNAL", message: e instanceof Error ? e.message : String(e) } }, 500);
+  e instanceof HttpError ? json({ error: { code: e.code, message: e.message } }, e.status) : json({ error: { code: "INTERNAL", message: e instanceof Error ? e.message : String(e) } }, 500);
 
 export const fetchJson = (url: string, timeoutMs: number, headers: Record<string, string> = {}): Effect.Effect<{ status: number; body: unknown; headers: Headers }, string> =>
   Effect.tryPromise({
     try: async () => {
       const r = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs), redirect: "manual" });
-      const text = await r.text();
-      let body: unknown = null;
-      try {
-        body = JSON.parse(text);
-      } catch {}
-      return { status: r.status, body, headers: r.headers };
+      return { status: r.status, body: await r.json().catch(() => null), headers: r.headers };
     },
     catch: (e) => (e instanceof Error ? e.message : String(e)),
   });

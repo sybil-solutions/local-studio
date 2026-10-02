@@ -28,6 +28,7 @@ interface UsageProviderChartProps {
   readonly referenceTime: string | undefined;
   readonly resolution: "day" | "hour";
   readonly timeZone: string;
+  readonly presentation?: Partial<typeof PROVIDER_PRESENTATION>;
 }
 
 /** One day's per-provider values, shared by the paths and the hover readout. */
@@ -179,7 +180,9 @@ export function UsageProviderChart({
   referenceTime,
   resolution,
   timeZone,
+  presentation,
 }: UsageProviderChartProps) {
+  const present = { ...PROVIDER_PRESENTATION, ...presentation };
   const periods = resolution === "hour" ? hours : days;
   const byPeriod = useMemo(
     () =>
@@ -365,19 +368,14 @@ export function UsageProviderChart({
 
             {/* Fills first, then every stroke, so no series covers another's line. */}
             {paths.map(({ provider, area }) => (
-              <path
-                key={provider}
-                d={area}
-                fill={PROVIDER_PRESENTATION[provider].color}
-                fillOpacity={0.12}
-              />
+              <path key={provider} d={area} fill={present[provider].color} fillOpacity={0.12} />
             ))}
             {paths.map(({ provider, line }) => (
               <path
                 key={provider}
                 d={line}
                 fill="none"
-                stroke={PROVIDER_PRESENTATION[provider].color}
+                stroke={present[provider].color}
                 strokeWidth={2}
                 vectorEffect="non-scaling-stroke"
               />
@@ -408,7 +406,7 @@ export function UsageProviderChart({
             >
               <div className="mb-1 text-muted-foreground">{formatTooltipPeriod(hoveredPeriod)}</div>
               {providers.map((provider) => {
-                const { label, mark: Mark } = PROVIDER_PRESENTATION[provider];
+                const { label, mark: Mark } = present[provider];
                 return (
                   <div key={provider} className="flex items-center justify-between gap-3">
                     <span className="flex items-center gap-1.5 text-muted-foreground">

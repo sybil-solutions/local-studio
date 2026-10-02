@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -78,6 +78,12 @@ try {
         for await (const chunk of req) raw += chunk;
         received.push({ raw, headers: req.headers, path: req.url });
         const body = JSON.parse(raw);
+        if (body.fixtureResponse) {
+          res.writeHead(200, { "content-type": body.stream ? "text/event-stream" : "application/json" });
+          const bytes = Buffer.from(body.fixtureResponse);
+          for (let offset = 0; offset < bytes.length; offset += 7) res.write(bytes.subarray(offset, offset + 7));
+          return res.end();
+        }
         if (req.url === "/v1/messages") {
           res.writeHead(422, { "content-type": "application/json", "x-engine-error": "native" });
           return res.end('{"error":{"type":"native_fixture_error"}}');
@@ -103,6 +109,7 @@ try {
   for (const [i, port] of ports.entries()) {
     const home = join(root, `controller-${i}`);
     mkdirSync(home);
+    writeFileSync(join(home, "usage.json"), JSON.stringify({ legacy: { requests: 7, lastAt: "2025-01-01T00:00:00Z" } }));
     writeFileSync(
       join(home, "config.json"),
       JSON.stringify({
@@ -196,6 +203,32 @@ try {
     "usage counts once across graph",
   );
   assert.equal((await snapshot(b)).usage.find((u) => u.model === "beta").requests, 4);
+  const event = (value) => `data: ${JSON.stringify(value)}\r\n\r\n`;
+  const cases = [
+    ["completions", false, JSON.stringify({ usage: { prompt_tokens: 11, completion_tokens: 5, total_tokens: 16 } }), 16],
+    ["chat/completions", true, event({ choices: [{ delta: { content: "π" } }], usage: null }) + event({ usage: { prompt_tokens: 17, completion_tokens: 3, total_tokens: 20 } }) + "data: [DONE]\r\n\r\n", 20],
+    ["responses", true, event({ type: "response.completed", response: { usage: { input_tokens: 19, output_tokens: 7, total_tokens: 26 } } }), 26],
+    ["messages", false, JSON.stringify({ usage: { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 31, cache_creation_input_tokens: 7 } }), 43],
+    ["messages", true, event({ type: "message_start", message: { usage: { input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 37, cache_creation_input_tokens: 11 } } }) + event({ type: "message_delta", usage: { output_tokens: 3 } }) + event({ type: "message_delta", usage: { output_tokens: 13, cache_read_input_tokens: 37 } }) + event({ type: "message_stop" }), 66],
+    ["responses", false, JSON.stringify({ usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 } }), 0],
+    ["chat/completions", true, event({ usage: { prompt_tokens: 3, completion_tokens: 4 } }), null],
+    ["messages", true, event({ type: "message_start", message: { usage: { input_tokens: 5, output_tokens: 1 } } }) + event({ type: "error", error: { type: "overloaded_error" } }) + event({ type: "message_stop" }), null],
+  ];
+  for (const [path, stream, fixtureResponse, expected] of cases) {
+    const before = (await (await call(b, "/api/node")).json()).usage.find((u) => u.model === "beta");
+    const response = await call(c, `/v1/${path}`, { model: "beta", stream, fixtureResponse });
+    assert.equal(await response.text(), fixtureResponse);
+    const after = (await (await call(b, "/api/node")).json()).usage.find((u) => u.model === "beta");
+    const sum = (row) => Object.values(row.tokens ?? {}).reduce((a, b) => a + b, 0);
+    assert.equal(sum(after) - sum(before), expected ?? 0, path);
+    assert.equal(after.measuredRequests - (before.measuredRequests ?? 0), Number(expected !== null), path);
+    assert.deepEqual(JSON.parse(readFileSync(join(root, "controller-1/usage.json"))).beta.tokens, after.tokens);
+  }
+  await waitFor(async () => (await snapshot(a)).usage.find((u) => u.model === "beta")?.measuredRequests === 6, "federated measured usage");
+  const tracked = (await snapshot(a)).usage;
+  assert.equal(Object.values(tracked.find((u) => u.model === "beta").tokens).reduce((a, b) => a + b, 0), 171);
+  assert.equal(tracked.find((u) => u.model === "legacy").requests, 21);
+  assert.equal(tracked.find((u) => u.model === "legacy").measuredRequests, 0);
   await new Promise((resolve) =>
     servers.find((server) => server.address()?.port === engineB).close(resolve),
   );
