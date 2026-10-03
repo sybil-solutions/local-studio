@@ -13,15 +13,15 @@ Local Studio is T3 Code for people who run their own models. It adds:
 
 ## Download
 
-Get the latest release from **[localstudio.ai](https://localstudio.ai)** or [GitHub Releases](https://github.com/sybil-solutions/local-studio/releases/latest):
+Get the latest release from [GitHub Releases](https://github.com/sybil-solutions/local-studio/releases/latest). Every installer, `.deb` package and controller binary is listed there:
 
 | Platform             | Installer                                                                        |
 | -------------------- | -------------------------------------------------------------------------------- |
-| macOS, Apple silicon | [Local-Studio-mac-arm64.dmg](https://localstudio.ai/download/macos-arm64)        |
-| macOS, Intel         | [Local-Studio-mac-x64.dmg](https://localstudio.ai/download/macos-x64)            |
-| Windows x64          | [Local-Studio-win-x64.exe](https://localstudio.ai/download/windows)              |
-| Linux x64            | [Local-Studio-linux-x64.AppImage](https://localstudio.ai/download/linux)         |
-| Linux arm64          | [Local-Studio-linux-arm64.AppImage](https://localstudio.ai/download/linux-arm64) |
+| macOS, Apple silicon | [Local-Studio-mac-arm64.dmg](https://github.com/sybil-solutions/local-studio/releases/latest/download/Local-Studio-mac-arm64.dmg)        |
+| macOS, Intel         | [Local-Studio-mac-x64.dmg](https://github.com/sybil-solutions/local-studio/releases/latest/download/Local-Studio-mac-x64.dmg)            |
+| Windows x64          | [Local-Studio-win-x64.exe](https://github.com/sybil-solutions/local-studio/releases/latest/download/Local-Studio-win-x64.exe)              |
+| Linux x64            | [Local-Studio-linux-x64.AppImage](https://github.com/sybil-solutions/local-studio/releases/latest/download/Local-Studio-linux-x64.AppImage)         |
+| Linux arm64          | [Local-Studio-linux-arm64.AppImage](https://github.com/sybil-solutions/local-studio/releases/latest/download/Local-Studio-linux-arm64.AppImage) |
 
 macOS builds are signed and notarized. Windows builds are not yet code-signed, so SmartScreen asks for confirmation. Each release also attaches `SHA256SUMS` and standalone controller binaries for Linux, macOS and Windows.
 
