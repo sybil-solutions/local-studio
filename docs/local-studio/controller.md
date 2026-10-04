@@ -66,7 +66,10 @@ All routes except `/api/health` require the fleet key.
 | `GET /api/tailnet`, `POST /api/tailnet/deploy`                                                    | Tailnet scan and install                                              |
 | `POST /api/recipes/<id>/run`, `/api/runs/<id>/stop`, `/api/ports/<port>/stop`                     | Launch and stop engines                                               |
 | `POST /api/name`, `/api/peers`                                                                    | Rename, link and unlink                                               |
+| `GET /api/registry`, `/api/registry/records/<id>`, `POST /api/registry/download`                  | Registry models matched to this machine's hardware, records, weights  |
 
 Registry launches use pinned container images and weight revisions on free matching NVIDIA GPUs, on ports 18100–18299. They never evict running engines.
 
 The registry backs captured fleet configurations up next to the catalog. They are shown but stay read-only, as do host-specific, privileged and multi-machine launches; the UI says why instead of quietly rewriting them. Missing weights or scripts are reported, never invented. Cancelling a request is forwarded to the engine, but an engine that ignores client disconnects (the tested SGLang build, for example) may keep generating. `auto` ranks successful requests these controllers have observed, not an engine's earlier traffic.
+
+The Registry section on **Settings → Local** reads `data/registry` from the same checkout. It matches each machine's GPUs, or an Apple Silicon chip and its unified memory, to registry hardware records within 1 GB, groups recipes by Hugging Face repository, and keeps one variant per hardware, engine, format and precision. **All hardware** lists every model. **Inspect** shows the full recipe, model instance, model and hardware records; **Use config** copies the launch command and **Download weights** runs `hf download` at the pinned revision on that machine.

@@ -33,6 +33,7 @@ import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "../settings/settingsLayout";
 import { Metric } from "../usage/UsagePage";
 import { UsageProviderChart } from "../usage/UsageProviderChart";
+import { RegistrySection } from "./RegistrySection";
 
 class LocalRequestError extends Data.TaggedError("LocalRequestError")<{ message: string }> {}
 
@@ -551,6 +552,16 @@ export function LocalSettingsPanel() {
           <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">Contacting controller…</p>
         )}
       </SettingsSection>
+
+      <RegistrySection
+        devices={devices
+          .filter((device) => device.reachable)
+          .map((device) => ({
+            label: device.name ?? URL.parse(device.url)?.hostname ?? device.url,
+            controller: target(device),
+          }))}
+        call={request}
+      />
 
       <SettingsSection title="Usage">
         <div className="flex flex-col gap-5 px-3 py-4 sm:px-4">
