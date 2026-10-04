@@ -74,7 +74,7 @@ const Manifest = Schema.Struct({
 
 const reference = (id: string, model: string, card: string, engine: string, cards: number, ctx: number, blocked: string): LocalRecipe => ({ id, model, card, engine, cards, ctx, tps: null, fits: false, blocked });
 
-const blobs = (dir: string, commit: string, root: string, pattern: RegExp) =>
+export const blobs = (dir: string, commit: string, root: string, pattern: RegExp) =>
   Effect.gen(function* () {
     const ls = yield* exec(["git", "-C", dir, "ls-tree", "-r", commit, "--", root], 30_000);
     const oids = ls.stdout.split("\n").flatMap((l) => {
@@ -154,7 +154,7 @@ export const launchBlock = (e: Entry): string | null => {
   return l.setup ? `manual setup required: ${l.setup}` : null;
 };
 
-const norm = (s: string): string =>
+export const norm = (s: string): string =>
   s
     .toLowerCase()
     .replace(/nvidia|geforce|intel|amd|radeon|generation|workstation|edition|\d+\s*gb/g, "")

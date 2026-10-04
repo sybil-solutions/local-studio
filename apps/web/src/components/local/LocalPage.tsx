@@ -33,6 +33,7 @@ import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "../settings/settingsLayout";
 import { Metric } from "../usage/UsagePage";
 import { UsageProviderChart } from "../usage/UsageProviderChart";
+import { RegistrySection, SharePanel } from "./RegistrySection";
 
 class LocalRequestError extends Data.TaggedError("LocalRequestError")<{ message: string }> {}
 
@@ -118,6 +119,7 @@ function Machine({
   const [editing, setEditing] = useState<string | null>(null);
   const [choice, setChoice] = useState<string | null>(null);
   const [armed, setArmed] = useState<string | null>(null);
+  const [sharing, setSharing] = useState<number | null>(null);
   const hardware = snapshot?.hardware;
   const use = hardware ? memory(hardware) : null;
   const running = (snapshot?.endpoints ?? []).filter(
@@ -279,26 +281,43 @@ function Machine({
             <Metric label="Models loaded" value={String(running.length)} />
           </div>
           {running.map((endpoint) => (
-            <div key={endpoint.id} className="flex items-center gap-2 text-sm">
-              {dot("bg-success", "Serving")}
-              <span className="min-w-0 flex-1 truncate">{endpoint.models.join(", ")}</span>
-              <span className="text-xs text-muted-foreground tabular-nums">:{endpoint.port}</span>
-              <Button
-                size="xs"
-                variant={armed === endpoint.id ? "destructive" : "outline"}
-                disabled={busy !== null}
-                onClick={() =>
-                  confirm(endpoint.id, () =>
-                    act(endpoint.id, `ports/${endpoint.port}/stop`, {}, controller),
-                  )
-                }
-              >
-                {busy === endpoint.id
-                  ? "Unloading…"
-                  : armed === endpoint.id
-                    ? "Confirm unload"
-                    : "Unload"}
-              </Button>
+            <div key={endpoint.id} className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-sm">
+                {dot("bg-success", "Serving")}
+                <span className="min-w-0 flex-1 truncate">{endpoint.models.join(", ")}</span>
+                <span className="text-xs text-muted-foreground tabular-nums">:{endpoint.port}</span>
+                <Button
+                  size="xs"
+                  variant={armed === endpoint.id ? "destructive" : "outline"}
+                  disabled={busy !== null}
+                  onClick={() =>
+                    confirm(endpoint.id, () =>
+                      act(endpoint.id, `ports/${endpoint.port}/stop`, {}, controller),
+                    )
+                  }
+                >
+                  {busy === endpoint.id
+                    ? "Unloading…"
+                    : armed === endpoint.id
+                      ? "Confirm unload"
+                      : "Unload"}
+                </Button>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => setSharing(sharing === endpoint.port ? null : endpoint.port)}
+                >
+                  Share
+                </Button>
+              </div>
+              {sharing === endpoint.port && (
+                <SharePanel
+                  port={endpoint.port}
+                  controller={controller}
+                  call={request}
+                  onClose={() => setSharing(null)}
+                />
+              )}
             </div>
           ))}
           {jobs.map((job) => (
@@ -551,6 +570,16 @@ export function LocalSettingsPanel() {
           <p className="px-3 py-3 text-sm text-muted-foreground sm:px-4">Contacting controller…</p>
         )}
       </SettingsSection>
+
+      <RegistrySection
+        devices={devices
+          .filter((device) => device.reachable)
+          .map((device) => ({
+            label: device.name ?? URL.parse(device.url)?.hostname ?? device.url,
+            controller: target(device),
+          }))}
+        call={request}
+      />
 
       <SettingsSection title="Usage">
         <div className="flex flex-col gap-5 px-3 py-4 sm:px-4">

@@ -2,19 +2,23 @@ import { timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { LOCAL_STUDIO_CONTROLLER_HEADER, type LocalGpu, LocalDeployRequest, LocalNameRequest, type LocalNode, LocalPeerRequest, type LocalRecipes, LocalRunRequest, type LocalSnapshot } from "../../../packages/contracts/src/localStudio.ts";
+import { LOCAL_STUDIO_CONTROLLER_HEADER, type LocalGpu, LocalDeployRequest, LocalDownloadRequest, type LocalSharePreview, LocalShareRequest, LocalNameRequest, type LocalNode, LocalPeerRequest, type LocalRecipes, LocalRunRequest, type LocalSnapshot } from "../../../packages/contracts/src/localStudio.ts";
 import { decodeJson, errorResponse, exec, fail, type HttpError, httpError, json, loadConfig, now, port, saveConfig, VERSION } from "./core.ts";
 import { listeners, makeScanner } from "./discovery.ts";
 import { autoModel, HOP_HEADER, listModels, passthrough, routes } from "./gateway.ts";
 import { graphUsage, makeGraph, makeUsage, normUrl } from "./graph.ts";
 import { hardware, type RawGpu, readGpus } from "./hardware.ts";
 import { makeJobs } from "./jobs.ts";
+import { browse, detect, download, type Library, loadLibrary, matchHardware, record } from "./library.ts";
 import { type Catalog, loadCatalog, matchCard, toLocalRecipe } from "./registry.ts";
+import { createPr, previewShare, secretValues } from "./share.ts";
 import { deployController, scanTailnet } from "./tailnet.ts";
 
 let config = loadConfig();
 let catalog: Catalog = { info: { commit: null, error: "loading" }, cards: {}, recipes: new Map(), archived: [] };
 let rawGpus: RawGpu[] = [];
+let library: Library | null = null;
+const shares = new Map<number, { preview: LocalSharePreview; at: number }>();
 const usage = makeUsage();
 
 const gpus = (): LocalGpu[] => {
@@ -118,6 +122,29 @@ const load = (recipeId: string, req: LocalRunRequest) =>
     return yield* jobs.run(recipeId, req);
   });
 
+const lib = () => (library ? Effect.succeed(library) : fail(503, "REGISTRY_LOADING", catalog.info.error ?? "the registry is still loading"));
+const matches = (l: Library) => Effect.map(detect(rawGpus), (d) => matchHardware(l, d));
+
+const share = (port: number) =>
+  Effect.gen(function* () {
+    const ep = scanner.current().find((e) => e.port === port && e.live);
+    if (!ep) return yield* fail(404, "NOT_RUNNING", `nothing is serving on port ${port}`);
+    const recipeId = jobs.list().find((j) => j.id === ep.jobId)?.recipeId;
+    const l = yield* lib();
+    const preview = yield* previewShare(l, ep, (recipeId && catalog.recipes.get(recipeId)) || null, yield* matches(l), secretValues([config.fleetKey, ...Object.values(config.engineKeys)]), config.engineKeys[String(port)]);
+    shares.set(port, { preview, at: Date.now() });
+    return preview;
+  });
+
+const publish = (req: LocalShareRequest) =>
+  Effect.gen(function* () {
+    const cached = shares.get(req.port);
+    if (!cached || Date.now() - cached.at > 15 * 60_000) return yield* fail(409, "PREVIEW_REQUIRED", "preview the share first");
+    if (cached.preview.blockers.length || cached.preview.issues.length) return yield* fail(409, "SHARE_BLOCKED", [...cached.preview.blockers, ...cached.preview.issues].join("; "));
+    if (!req.dryRun && !req.confirm) return yield* fail(400, "CONFIRMATION_REQUIRED", "sharing needs explicit confirmation");
+    return yield* createPr(cached.preview, req.dryRun === true);
+  });
+
 const body = async <S extends Schema.Top>(req: Request, schema: S): Promise<S["Type"]> => {
   const text = await req.text();
   const value = decodeJson(schema, text || "{}");
@@ -155,6 +182,18 @@ const handle = async (req: Request): Promise<Response> => {
   if (req.method === "GET" && p === "/api/snapshot") return json(await snapshot());
   if (req.method === "GET" && p === "/api/recipes") return json(recipes(url.searchParams.get("archived") === "1"));
   if (req.method === "GET" && p === "/api/tailnet") return json(await Effect.runPromise(scanTailnet(new Set((await graph.get()).links.map((l) => normUrl(l.url))))));
+  if (req.method === "GET" && p === "/api/registry") return json(await run(Effect.gen(function* () {
+    const l = yield* lib();
+    return browse(l, yield* matches(l), url.searchParams.get("all") === "1");
+  })));
+  const recordId = req.method === "GET" ? /^\/api\/registry\/records\/([^/]+)$/.exec(p)?.[1] : undefined;
+  if (recordId) return json(await run(Effect.flatMap(lib(), (l) => record(l, decodeURIComponent(recordId)))));
+  if (post && p === "/api/registry/download") {
+    const { recipeId } = await body(req, LocalDownloadRequest);
+    return json(await run(Effect.flatMap(lib(), (l) => download(l, recipeId))));
+  }
+  if (req.method === "GET" && p === "/api/registry/share") return json(await run(share(Number(url.searchParams.get("port")))));
+  if (post && p === "/api/registry/share") return json(await run(publish(await body(req, LocalShareRequest))));
   const recipe = match(/^\/api\/recipes\/(.+)\/run$/);
   if (recipe) return json(await run(load(decodeURIComponent(recipe), await body(req, LocalRunRequest))));
   const unloadPort = match(/^\/api\/ports\/(\d+)\/stop$/);
@@ -203,7 +242,8 @@ const loop = async (ms: number, f: () => Promise<unknown>) => {
 console.log(`local-controller ${config.id} listening on ${host}:${port}`);
 void loop(30 * 60_000, async () => {
   catalog = await Effect.runPromise(loadCatalog(config.registry, true));
-  console.log(`registry ${catalog.info.commit ?? "-"} ${catalog.recipes.size} recipes, ${catalog.archived.length} archived records${catalog.info.error ? ` (${catalog.info.error})` : ""}`);
+  if (catalog.info.commit && catalog.info.commit !== library?.commit) library = await Effect.runPromise(loadLibrary(config.registry.dir, catalog.info.commit));
+  console.log(`registry ${catalog.info.commit ?? "-"} ${catalog.recipes.size} recipes, ${catalog.archived.length} archived records, ${library?.rows.length ?? 0} indexed${catalog.info.error ? ` (${catalog.info.error})` : ""}`);
 });
 void Effect.runPromise(jobs.reconcile);
 void loop(10_000, () => Effect.runPromise(tick));

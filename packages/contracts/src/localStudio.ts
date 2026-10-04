@@ -14,7 +14,12 @@ export const LocalGpu = Schema.Struct({
 });
 export type LocalGpu = typeof LocalGpu.Type;
 
-export const LocalHardware = Schema.Struct({ cpus: Schema.Number, memTotalBytes: Schema.Number, memFreeBytes: Schema.Number, gpus: Schema.Array(LocalGpu) });
+export const LocalHardware = Schema.Struct({
+  cpus: Schema.Number,
+  memTotalBytes: Schema.Number,
+  memFreeBytes: Schema.Number,
+  gpus: Schema.Array(LocalGpu),
+});
 export type LocalHardware = typeof LocalHardware.Type;
 
 export const LocalEndpoint = Schema.Struct({
@@ -55,7 +60,15 @@ export const LocalJob = Schema.Struct({
   gpus: Schema.Array(Schema.Number),
   port: Schema.Number,
   container: Schema.String,
-  phase: Schema.Literals(["pending", "pulling", "downloading", "starting", "ready", "failed", "stopped"]),
+  phase: Schema.Literals([
+    "pending",
+    "pulling",
+    "downloading",
+    "starting",
+    "ready",
+    "failed",
+    "stopped",
+  ]),
   progress: Schema.NullOr(Schema.Number),
   message: OptionalString,
   startedAt: Schema.String,
@@ -63,7 +76,12 @@ export const LocalJob = Schema.Struct({
 });
 export type LocalJob = typeof LocalJob.Type;
 
-const LocalControllerInfo = Schema.Struct({ id: Schema.String, name: Schema.String, url: Schema.String, version: Schema.String });
+const LocalControllerInfo = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  url: Schema.String,
+  version: Schema.String,
+});
 
 export const LocalSnapshot = Schema.Struct({
   controller: LocalControllerInfo,
@@ -71,7 +89,9 @@ export const LocalSnapshot = Schema.Struct({
   hardware: LocalHardware,
   auto: OptionalString,
   endpoints: Schema.Array(LocalEndpoint),
-  models: Schema.Array(Schema.Struct({ id: Schema.String, live: Schema.Boolean, requests: Schema.Number })),
+  models: Schema.Array(
+    Schema.Struct({ id: Schema.String, live: Schema.Boolean, requests: Schema.Number }),
+  ),
   controllers: Schema.Array(LocalControllerLink),
   jobs: Schema.Array(LocalJob),
   usage: Schema.Array(LocalUsage),
@@ -101,9 +121,18 @@ export const LocalRunRequest = Schema.Struct({
 });
 export type LocalRunRequest = typeof LocalRunRequest.Type;
 
-export const LocalPeerRequest = Schema.Struct({ url: Schema.String, remove: Schema.optionalKey(Schema.Boolean) });
-export const LocalDeployRequest = Schema.Struct({ ip: Schema.String, name: Schema.String, user: Schema.optionalKey(Schema.String) });
-export const LocalNameRequest = Schema.Struct({ name: Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(64)) });
+export const LocalPeerRequest = Schema.Struct({
+  url: Schema.String,
+  remove: Schema.optionalKey(Schema.Boolean),
+});
+export const LocalDeployRequest = Schema.Struct({
+  ip: Schema.String,
+  name: Schema.String,
+  user: Schema.optionalKey(Schema.String),
+});
+export const LocalNameRequest = Schema.Struct({
+  name: Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(64)),
+});
 
 export const LocalTailnet = Schema.Struct({
   available: Schema.Boolean,
@@ -112,7 +141,9 @@ export const LocalTailnet = Schema.Struct({
       name: Schema.String,
       ip: Schema.String,
       os: Schema.String,
-      controller: Schema.NullOr(Schema.Struct({ id: Schema.String, name: Schema.String, url: Schema.String })),
+      controller: Schema.NullOr(
+        Schema.Struct({ id: Schema.String, name: Schema.String, url: Schema.String }),
+      ),
       linked: Schema.Boolean,
     }),
   ),
@@ -126,3 +157,79 @@ export const LocalNode = Schema.Struct({
   peers: Schema.Array(Schema.String),
 });
 export type LocalNode = typeof LocalNode.Type;
+
+export const LocalRegistryVariant = Schema.Struct({
+  id: Schema.String,
+  status: Schema.String,
+  engine: Schema.String,
+  hardwareId: Schema.String,
+  hardwareCount: Schema.Number,
+  format: OptionalString,
+  precision: OptionalString,
+  sizeGb: Schema.NullOr(Schema.Number),
+  launchKind: Schema.String,
+  evidence: Schema.Boolean,
+  recommended: Schema.Boolean,
+  fits: Schema.Boolean,
+});
+export type LocalRegistryVariant = typeof LocalRegistryVariant.Type;
+
+export const LocalRegistryMatch = Schema.Struct({
+  name: Schema.String,
+  memoryGb: Schema.NullOr(Schema.Number),
+  count: Schema.Number,
+  hardwareId: OptionalString,
+  hardwareName: OptionalString,
+});
+export type LocalRegistryMatch = typeof LocalRegistryMatch.Type;
+
+export const LocalRegistry = Schema.Struct({
+  commit: OptionalString,
+  error: OptionalString,
+  matches: Schema.Array(LocalRegistryMatch),
+  total: Schema.Number,
+  models: Schema.Array(
+    Schema.Struct({ repo: Schema.String, variants: Schema.Array(LocalRegistryVariant) }),
+  ),
+  downloads: Schema.Record(Schema.String, Schema.String),
+});
+export type LocalRegistry = typeof LocalRegistry.Type;
+
+export const LocalRegistryRecord = Schema.Struct({
+  recipe: Schema.Unknown,
+  modelInstance: Schema.Unknown,
+  model: Schema.Unknown,
+  hardware: Schema.Unknown,
+  command: OptionalString,
+  weights: Schema.NullOr(
+    Schema.Struct({ repo: Schema.String, revision: OptionalString, include: OptionalString }),
+  ),
+});
+export type LocalRegistryRecord = typeof LocalRegistryRecord.Type;
+
+export const LocalDownloadRequest = Schema.Struct({ recipeId: Schema.String });
+export const LocalShareRequest = Schema.Struct({
+  port: Schema.Number,
+  confirm: Schema.optionalKey(Schema.Boolean),
+  dryRun: Schema.optionalKey(Schema.Boolean),
+});
+export type LocalShareRequest = typeof LocalShareRequest.Type;
+
+export const LocalSharePreview = Schema.Struct({
+  target: Schema.String,
+  branch: Schema.String,
+  title: Schema.String,
+  body: Schema.String,
+  files: Schema.Array(Schema.Struct({ path: Schema.String, record: Schema.Unknown })),
+  reused: Schema.Array(Schema.String),
+  redactions: Schema.Array(Schema.String),
+  issues: Schema.Array(Schema.String),
+  blockers: Schema.Array(Schema.String),
+});
+export type LocalSharePreview = typeof LocalSharePreview.Type;
+
+export const LocalShareResult = Schema.Struct({
+  url: OptionalString,
+  commands: Schema.Array(Schema.String),
+});
+export type LocalShareResult = typeof LocalShareResult.Type;
