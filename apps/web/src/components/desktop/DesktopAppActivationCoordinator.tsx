@@ -63,7 +63,7 @@ export function DesktopAppActivationCoordinator() {
         });
         if (result._tag === "Failure") {
           const error = squashAtomCommandFailure(result);
-          throw error instanceof Error ? error : new Error("T3 Code could not add the project.");
+          throw error instanceof Error ? error : new Error("Local Studio could not add the project.");
         }
         return projectId;
       },

@@ -85,7 +85,7 @@ export async function handleDesktopAppActivationRequest(
       return failure(
         request.requestId,
         "project-create-failed",
-        errorMessage(error, "T3 Code could not add the project."),
+        errorMessage(error, "Local Studio could not add the project."),
       );
     }
   }
