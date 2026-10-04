@@ -45,7 +45,7 @@ export class DesktopAppActivationBroker {
   request(request: DesktopAppActivationRequest): Promise<DesktopAppActivationResponse> {
     if (this.#closed) {
       return Promise.resolve(
-        failure(request.requestId, "renderer-unavailable", "T3 Code is shutting down."),
+        failure(request.requestId, "renderer-unavailable", "Local Studio is shutting down."),
       );
     }
     if (this.#pending.has(request.requestId)) {
@@ -112,7 +112,7 @@ export class DesktopAppActivationBroker {
     this.#renderer = null;
     for (const pending of this.#pending.values()) {
       this.#settle(
-        failure(pending.request.requestId, "renderer-unavailable", "T3 Code is shutting down."),
+        failure(pending.request.requestId, "renderer-unavailable", "Local Studio is shutting down."),
       );
     }
   }
