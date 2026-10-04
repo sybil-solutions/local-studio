@@ -25,7 +25,7 @@ const ControllerConfig = Schema.fromJsonString(
   }),
 );
 const allowed =
-  /^(?:snapshot|tailnet|tailnet\/deploy|recipes|recipes\/[^/]+\/run|runs\/[^/]+\/stop|ports\/\d+\/stop|name|peers|registry|registry\/records\/[^/]+|registry\/download)$/;
+  /^(?:snapshot|tailnet|tailnet\/deploy|recipes|recipes\/[^/]+\/run|runs\/[^/]+\/stop|ports\/\d+\/stop|name|peers|registry|registry\/records\/[^/]+|registry\/download|registry\/share)$/;
 
 const handler = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
@@ -68,7 +68,7 @@ const handler = Effect.gen(function* () {
         return HttpServerResponse.empty({ status: 403 });
     }
     const upstreamUrl = new URL(`/api/${path}`, target);
-    for (const name of ["archived", "all"])
+    for (const name of ["archived", "all", "port"])
       if (url.searchParams.has(name))
         upstreamUrl.searchParams.set(name, url.searchParams.get(name) ?? "");
     const upstream = yield* call(post ? "POST" : "GET", upstreamUrl, post ? request : undefined);

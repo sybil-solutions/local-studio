@@ -5,6 +5,8 @@ import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import {
   LocalRegistry,
   LocalRegistryRecord,
+  LocalSharePreview,
+  LocalShareResult,
   type LocalRegistryVariant,
 } from "@t3tools/contracts/local-studio";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
@@ -279,5 +281,101 @@ export function RegistrySection({
         )}
       </div>
     </SettingsSection>
+  );
+}
+
+export function SharePanel({
+  port,
+  controller,
+  call,
+  onClose,
+}: {
+  port: number;
+  controller: string;
+  call: Call;
+  onClose: () => void;
+}) {
+  const [preview, setPreview] = useState<LocalSharePreview | null>(null);
+  const [step, setStep] = useState<"preview" | "confirm" | "creating">("preview");
+  const [url, setUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(
+    () =>
+      load(
+        call(`registry/share?port=${port}`, controller),
+        LocalSharePreview,
+        setPreview,
+        setError,
+      ),
+    [port, controller, call],
+  );
+  const blocked = !preview || preview.blockers.length > 0 || preview.issues.length > 0;
+  const create = () => {
+    setStep("creating");
+    load(
+      call("registry/share", controller, { port, confirm: true }),
+      LocalShareResult,
+      (r) => setUrl(r.url),
+      (message) => {
+        setError(message);
+        setStep("confirm");
+      },
+    );
+  };
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-border/60 p-3 text-xs">
+      {!preview && !error && (
+        <p className="text-muted-foreground">
+          Preparing registry records. A short validation request is sent to this server.
+        </p>
+      )}
+      {error && <p className="break-all text-destructive">{error}</p>}
+      {preview && (
+        <>
+          <p className="text-foreground">{preview.title}</p>
+          {[...preview.blockers, ...preview.issues].map((issue) => (
+            <p key={issue} className="text-destructive">
+              {issue}
+            </p>
+          ))}
+          <p className="text-muted-foreground">
+            Scrubbed: {preview.redactions.join(", ") || "nothing needed"}
+            {preview.reused.length ? ` · Reuses ${preview.reused.join(", ")}` : ""}
+          </p>
+          {preview.files.map((file) => (
+            <Json key={file.path} label={file.path} value={file.record} />
+          ))}
+        </>
+      )}
+      {url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 font-medium text-foreground hover:underline"
+        >
+          Pull request opened
+          <ExternalLinkIcon className="size-3" />
+        </a>
+      ) : (
+        <>
+          {step !== "preview" && preview && (
+            <p className="text-foreground">This will create a PR to {preview.target}</p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              size="xs"
+              disabled={blocked || step === "creating"}
+              onClick={() => (step === "preview" ? setStep("confirm") : create())}
+            >
+              {step === "preview" ? "Share" : step === "creating" ? "Creating PR…" : "Create PR"}
+            </Button>
+            <Button size="xs" variant="outline" disabled={step === "creating"} onClick={onClose}>
+              Decline
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

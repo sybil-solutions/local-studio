@@ -208,3 +208,28 @@ export const LocalRegistryRecord = Schema.Struct({
 export type LocalRegistryRecord = typeof LocalRegistryRecord.Type;
 
 export const LocalDownloadRequest = Schema.Struct({ recipeId: Schema.String });
+export const LocalShareRequest = Schema.Struct({
+  port: Schema.Number,
+  confirm: Schema.optionalKey(Schema.Boolean),
+  dryRun: Schema.optionalKey(Schema.Boolean),
+});
+export type LocalShareRequest = typeof LocalShareRequest.Type;
+
+export const LocalSharePreview = Schema.Struct({
+  target: Schema.String,
+  branch: Schema.String,
+  title: Schema.String,
+  body: Schema.String,
+  files: Schema.Array(Schema.Struct({ path: Schema.String, record: Schema.Unknown })),
+  reused: Schema.Array(Schema.String),
+  redactions: Schema.Array(Schema.String),
+  issues: Schema.Array(Schema.String),
+  blockers: Schema.Array(Schema.String),
+});
+export type LocalSharePreview = typeof LocalSharePreview.Type;
+
+export const LocalShareResult = Schema.Struct({
+  url: OptionalString,
+  commands: Schema.Array(Schema.String),
+});
+export type LocalShareResult = typeof LocalShareResult.Type;
