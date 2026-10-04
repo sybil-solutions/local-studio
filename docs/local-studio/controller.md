@@ -68,3 +68,5 @@ All routes except `/api/health` require the fleet key.
 | `POST /api/name`, `/api/peers`                                                                    | Rename, link and unlink                                               |
 
 Registry launches use pinned container images and weight revisions on free matching NVIDIA GPUs, on ports 18100–18299. They never evict running engines.
+
+The registry backs captured fleet configurations up next to the catalog. They are shown but stay read-only, as do host-specific, privileged and multi-machine launches; the UI says why instead of quietly rewriting them. Missing weights or scripts are reported, never invented. Cancelling a request is forwarded to the engine, but an engine that ignores client disconnects (the tested SGLang build, for example) may keep generating. `auto` ranks successful requests these controllers have observed, not an engine's earlier traffic.
