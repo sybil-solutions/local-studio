@@ -173,7 +173,7 @@ const handle = async (req: Request): Promise<Response> => {
   const p = url.pathname;
   const post = req.method === "POST";
   const match = (re: RegExp) => (post ? re.exec(p)?.[1] : undefined);
-  if (req.method === "GET" && p === "/api/health") return json({ ok: true, id: config.id, name: config.name, version: VERSION });
+  if (req.method === "GET" && p === "/api/health") return json({ ok: true, id: config.id, name: config.name, version: VERSION, api: 2 });
   if (!authorized(req)) return json({ error: { code: "UNAUTHORIZED", message: "fleet key required" } }, 401);
   if (req.method === "GET" && (p === "/v1/models" || p === "/models")) return listModels(gw);
   if (post && /^\/v1\/(chat\/completions|completions|messages|responses)$/.test(p)) return passthrough(gw, req, p);

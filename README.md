@@ -56,7 +56,7 @@ pnpm dev:desktop --port 18773 --home-dir .t3
 
 ```bash
 pnpm build:desktop
-T3CODE_HOME="$PWD/.t3" pnpm start:desktop
+T3CODE_HOME="$PWD/.t3" pnpm start:desktop   # installed builds keep data in ~/.local-studio
 ```
 
 `node scripts/local-check.mjs` runs the type checks, the web build, the controller end-to-end checks and the source budget. Upstream development notes are in [docs/operations/development.md](./docs/operations/development.md).

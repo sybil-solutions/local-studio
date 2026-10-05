@@ -52,6 +52,22 @@ export class DesktopPreReadyElectronOptions extends Context.Service<
 export const make = Effect.gen(function* () {
   const platform = yield* HostProcessPlatform;
   return yield* Effect.sync((): DesktopPreReadyElectronOptions["Service"] => {
+    const home = NodeOS.homedir();
+    const legacy = NodePath.join(home, ".t3", "userdata");
+    const next = NodePath.join(home, ".local-studio");
+    if (
+      Electron.app.isPackaged &&
+      !process.env.T3CODE_HOME?.trim() &&
+      !NodeFS.existsSync(next) &&
+      NodeFS.existsSync(NodePath.join(legacy, "state.sqlite"))
+    ) {
+      try {
+        NodeFS.cpSync(legacy, NodePath.join(next, "userdata"), {
+          recursive: true,
+          filter: (source) => !source.startsWith(NodePath.join(legacy, "logs")),
+        });
+      } catch {}
+    }
     const linuxPasswordStoreCommandLine =
       platform === "linux"
         ? readCommandLineSwitchValue(Electron.app.commandLine, "password-store")
