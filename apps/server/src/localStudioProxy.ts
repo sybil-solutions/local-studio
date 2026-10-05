@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import {
   HttpClient,
@@ -85,26 +86,71 @@ const handler = Effect.gen(function* () {
   );
 });
 
-const startBundledController = Effect.gen(function* () {
-  const resources = (process as { resourcesPath?: string }).resourcesPath;
-  if (!resources) return;
-  const binary = (yield* Path.Path).join(
-    resources,
-    "local-controller",
-    process.platform === "win32" ? "local-studio-controller.exe" : "local-studio-controller",
-  );
-  if (!(yield* (yield* FileSystem.FileSystem).exists(binary))) return;
+const CONTROLLER_API = 2;
+const ControllerHealth = Schema.Struct({
+  ok: Schema.Boolean,
+  id: Schema.String,
+  version: Schema.String,
+  api: Schema.optionalKey(Schema.Number),
+});
+
+const ensureController = Effect.gen(function* () {
+  const paths = yield* Path.Path;
+  const fs = yield* FileSystem.FileSystem;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const client = yield* HttpClient.HttpClient;
   const port = yield* Config.Number("LOCAL_STUDIO_T3_PORT").pipe(Config.withDefault(18091));
-  const running = yield* (yield* HttpClient.HttpClient)
-    .get(`http://127.0.0.1:${port}/api/health`)
-    .pipe(Effect.timeout("1500 millis"), Effect.option);
-  if (running._tag === "Some") return;
-  yield* (yield* ChildProcessSpawner.ChildProcessSpawner).spawn(
-    ChildProcess.make(binary, [], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }),
+  const health = client.get(`http://127.0.0.1:${port}/api/health`).pipe(
+    Effect.flatMap((response) => response.json),
+    Effect.flatMap(Schema.decodeUnknownEffect(ControllerHealth)),
+    Effect.timeout("1500 millis"),
+    Effect.option,
+  );
+  const current = yield* health;
+  if (current._tag === "Some" && (current.value.api ?? 0) >= CONTROLLER_API) return;
+  if (current._tag === "Some" && process.platform !== "win32") {
+    const pids = (yield* spawner.string(
+      ChildProcess.make("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
+        stdin: "ignore",
+        stderr: "ignore",
+      }),
+    ))
+      .split(/\s+/)
+      .filter(Boolean);
+    for (const pid of pids) process.kill(Number(pid), "SIGTERM");
+    yield* health.pipe(
+      Effect.flatMap((result) => (result._tag === "Some" ? Effect.fail("busy") : Effect.void)),
+      Effect.retry({ schedule: Schedule.spaced("250 millis"), times: 20 }),
+    );
+  }
+  const resources = (process as { resourcesPath?: string }).resourcesPath;
+  const binary = resources
+    ? paths.join(
+        resources,
+        "local-controller",
+        process.platform === "win32" ? "local-studio-controller.exe" : "local-studio-controller",
+      )
+    : "";
+  const source = paths.resolve(import.meta.dirname, "../../local-controller/src/main.ts");
+  const bun = [
+    paths.join(homedir(), ".bun/bin/bun"),
+    "/opt/homebrew/bin/bun",
+    "/usr/local/bin/bun",
+  ];
+  const runtime = (yield* Effect.filter(bun, (candidate) => fs.exists(candidate)))[0] ?? "bun";
+  const [command, args] =
+    binary && (yield* fs.exists(binary))
+      ? [binary, []]
+      : (yield* fs.exists(source))
+        ? [runtime, [source]]
+        : [undefined, []];
+  if (!command) return;
+  yield* spawner.spawn(
+    ChildProcess.make(command, args, { stdin: "ignore", stdout: "ignore", stderr: "ignore" }),
   );
 });
 
 export const localStudioProxyRouteLayer = Layer.mergeAll(
   HttpRouter.add("*", "/api/local/*", handler),
-  Layer.effectDiscard(Effect.ignore(startBundledController)),
+  Layer.effectDiscard(Effect.ignore(ensureController)),
 );
