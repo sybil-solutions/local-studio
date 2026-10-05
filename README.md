@@ -29,7 +29,7 @@ Install and log in to at least one agent CLI before first use. For Pi, install `
 
 ## Local models and the fleet
 
-The desktop app starts its bundled controller on `127.0.0.1:18091` unless one is already running. Its configuration lives in `~/.local-studio-t3/config.json` (mode 0600). That file holds the machine name, the controller URL, the private `fleetKey` and the linked peers.
+The desktop app runs its own controller on `127.0.0.1:18091`, replacing any older Local Studio controller it finds there. Its configuration lives in `~/.local-studio-t3/config.json` (mode 0600). That file holds the machine name, the controller URL, the private `fleetKey` and the linked peers.
 
 Open **Settings → Local** to see every connected machine with its GPUs, live models, launchable recipes and usage. Machines on your tailnet appear automatically:
 
@@ -56,7 +56,7 @@ pnpm dev:desktop --port 18773 --home-dir .t3
 
 ```bash
 pnpm build:desktop
-T3CODE_HOME="$PWD/.t3" pnpm start:desktop   # installed builds keep data in ~/.local-studio
+T3CODE_HOME="$PWD/.t3" pnpm start:desktop   # installed builds keep data in ~/.local-studio-t3
 ```
 
 `node scripts/local-check.mjs` runs the type checks, the web build, the controller end-to-end checks and the source budget. Upstream development notes are in [docs/operations/development.md](./docs/operations/development.md).
