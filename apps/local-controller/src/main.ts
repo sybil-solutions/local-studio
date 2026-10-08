@@ -23,7 +23,8 @@ const usage = makeUsage();
 
 const gpus = (): LocalGpu[] => {
   const reserved = jobs.reserved();
-  return rawGpus.map(({ uuid: _uuid, ...g }) => ({ ...g, card: matchCard(catalog, g.name, g.memoryTotalMiB), busy: g.busy || reserved.has(g.index) }));
+  const serving = scanner.current().some((ep) => ep.live && !ep.jobId);
+  return rawGpus.map(({ uuid: _uuid, wddm, ...g }) => ({ ...g, card: matchCard(catalog, g.name, g.memoryTotalMiB), busy: g.busy || reserved.has(g.index) || (wddm && serving) }));
 };
 
 const byCard = (all: boolean): Map<string, number[]> => {
@@ -55,8 +56,8 @@ const excluded = (): Set<number> => {
 };
 
 const tick = Effect.gen(function* () {
-  rawGpus = yield* readGpus;
   yield* scanner.scan(excluded(), config.engineKeys);
+  rawGpus = yield* readGpus;
 });
 
 const snapshot = async (): Promise<LocalSnapshot> => {

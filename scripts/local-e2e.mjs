@@ -13,6 +13,19 @@ const children = [];
 const servers = [];
 const received = [];
 const auth = { authorization: `Bearer ${key}`, "content-type": "application/json" };
+const gpuStatePath = join(root, "gpu.json");
+const gpuState = { used: 1483, driver: "WDDM", compute: true };
+const setGpu = (patch) => writeFileSync(gpuStatePath, JSON.stringify(Object.assign(gpuState, patch)));
+const fixtureEnv = {};
+if (process.platform === "win32") {
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  setGpu({});
+  writeFileSync(join(bin, "nvidia.cjs"), `const s = JSON.parse(require('node:fs').readFileSync(${JSON.stringify(gpuStatePath)}, 'utf8')); console.log(process.argv.some(a => a.startsWith('--query-gpu=')) ? '0, GPU-fixture, NVIDIA GeForce RTX 3090, ' + s.used + ', 24576, ' + s.driver : s.compute ? 'GPU-fixture, 42' : '');`);
+  writeFileSync(join(bin, "nvidia-smi.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0nvidia.cjs" %*\r\n`);
+  const pathKey = Object.keys(process.env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+  fixtureEnv[pathKey] = `${bin};${process.env[pathKey] ?? ""}`;
+}
 const git = (...args) => execFileSync("git", args, { cwd: root, stdio: "pipe", timeout: 10_000 });
 const listen = async (server) => {
   servers.push(server);
@@ -97,7 +110,7 @@ try {
     const config = { id: `fixture-${i}`, name: `Fixture ${i}`, url: `http://127.0.0.1:${port}`, fleetKey: key, peers, excludePorts };
     const registry = { url: root, dir: root, ref: commit };
     writeFileSync(join(home, "config.json"), JSON.stringify({ ...config, engineKeys: { [engineA]: "fixture-engine-secret" }, registry, modelsDir: join(home, "models") }), { mode: 0o600 });
-    const env = { ...process.env, LOCAL_STUDIO_T3_HOME: home, LOCAL_STUDIO_T3_PORT: String(port), LOCAL_STUDIO_T3_HOST: "127.0.0.1" };
+    const env = { ...process.env, ...fixtureEnv, LOCAL_STUDIO_T3_HOME: home, LOCAL_STUDIO_T3_PORT: String(port), LOCAL_STUDIO_T3_HOST: "127.0.0.1" };
     const child = spawn("bun", ["apps/local-controller/src/main.ts"], { env, stdio: ["ignore", "pipe", "pipe"] });
     let log = "";
     for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk) => (log += chunk));
@@ -116,6 +129,22 @@ try {
   const s = await snapshot(a);
   assert.equal(s.controllers.filter((x) => x.reachable).length, 3);
   assert.equal(s.endpoints.filter((x) => x.models.includes("shared")).length, 2);
+  if (process.platform === "win32") {
+    const gpu = async (port) => (await snapshot(port)).hardware.gpus[0];
+    await waitFor(async () => (await gpu(c))?.busy === false, "WDDM desktop processes do not reserve GPU");
+    assert.equal((await gpu(a)).busy, true, "a local inference endpoint protects a WDDM GPU even below 2 GiB");
+    setGpu({ used: 4096 });
+    await waitFor(async () => (await gpu(c))?.busy === true, "WDDM memory guard");
+    setGpu({ used: 1483, driver: "TCC" });
+    await waitFor(async () => {
+      const g = await gpu(c);
+      return g?.memoryUsedMiB === 1483 && g.busy;
+    }, "TCC compute processes still reserve GPU");
+    setGpu({ compute: false });
+    await waitFor(async () => (await gpu(c))?.busy === false, "idle TCC GPU is available");
+    setGpu({ driver: "WDDM", compute: true });
+    console.log("PASS Windows GPU E2E: WDDM desktop activity, live inference guard, memory guard, TCC compute and idle states.");
+  }
   assert.equal((await call(a, "/api/recipes/captured/run", {})).status, 409);
   assert.equal((await call(a, "/api/peers", "{")).status, 400);
   assert.equal((await call(a, "/api/peers", { url: `http://127.0.0.1:${a}` })).status, 400);
