@@ -40,9 +40,24 @@ const parseLsof = (out: string): Listener[] => {
   });
 };
 
+const decodeWindowsListeners = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.Struct({
+  LocalAddress: Schema.String,
+  LocalPort: Schema.Int,
+  OwningProcess: Schema.Int,
+}))));
+
+const windowsListeners = Effect.gen(function* () {
+  const result = yield* exec(["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "$ErrorActionPreference = 'Stop'; ConvertTo-Json -Compress -InputObject @(Get-NetTCPConnection -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess)"], 8_000);
+  const decoded = result.code === 0 ? decodeWindowsListeners(result.stdout.trim()) : null;
+  if (!decoded || decoded._tag === "None") throw new Error("Unable to enumerate Windows TCP listeners");
+  return decoded.value.flatMap((l) => l.LocalPort <= 65535 && l.OwningProcess > 0 ? listener(`${l.LocalAddress}:${l.LocalPort}`, l.OwningProcess) : []);
+});
+
 export const listeners: Effect.Effect<Listener[]> = Effect.gen(function* () {
   const raw =
-    process.platform === "linux"
+    process.platform === "win32"
+      ? yield* windowsListeners
+      : process.platform === "linux"
       ? parseSs((yield* exec(["ss", "-H", "-ltnp"], 5_000)).stdout)
       : parseLsof((yield* exec(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pn"], 8_000)).stdout);
   const seen = new Map<number, Listener>();
