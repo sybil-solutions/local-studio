@@ -1,0 +1,7 @@
+Portions of this renderer are adapted from eve, Copyright 2026 Vercel, Inc. and contributors.
+Licensed under the Apache License, Version 2.0: https://www.apache.org/licenses/LICENSE-2.0
+Source: https://github.com/vercel/eve/tree/f3f4f4a/apps/docs/app/%5Blang%5D/(home)/components/eve-logo-shader
+
+The renderer uses cropped, transformed environment-map derivatives supplied by the project owner.
+Day reflection source: “Cloud Study, Stormy Sunset” (accession 1998.20.1).
+Night reflection source: “Elblandschaft bei Dresden im Mondschein” by Johan Christian Clausen Dahl, Staatliche Kunsthalle Karlsruhe.

@@ -1,0 +1,10 @@
+{
+  "ignores": [
+    "@types/*",
+    "bun-types"
+  ],
+  "ignore-binaries": [
+    "bun",
+    "bunx"
+  ]
+}

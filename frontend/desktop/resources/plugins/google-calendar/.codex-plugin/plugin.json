@@ -1,0 +1,13 @@
+{
+  "name": "google-calendar",
+  "version": "1.0.0",
+  "description": "Inspect Google Calendar through a local read-only adapter.",
+  "skills": "./skills",
+  "apps": "./.app.json",
+  "interface": {
+    "displayName": "Google Calendar",
+    "shortDescription": "Inspect calendars and events",
+    "category": "Productivity",
+    "capabilities": ["calendar", "scheduling", "read-only"]
+  }
+}

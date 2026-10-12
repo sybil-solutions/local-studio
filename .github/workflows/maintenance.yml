@@ -1,0 +1,70 @@
+name: Maintenance
+
+on:
+  schedule:
+    - cron: "0 13 * * 1"
+  push:
+    branches: [main]
+    paths:
+      - ".github/labels.yml"
+      - ".github/workflows/maintenance.yml"
+  workflow_dispatch:
+    inputs:
+      task:
+        description: Maintenance task to run
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - labels
+          - promotion
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  sync-labels:
+    name: Sync Labels
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.task == 'all' || inputs.task == 'labels'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: EndBug/label-sync@52074158190acb45f3077f9099fea818aa43f97a # v2.3.3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: .github/labels.yml
+          delete-other-labels: false
+
+  promotion-pr:
+    name: Open dev to main PR
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.task == 'all' || inputs.task == 'promotion'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Open or refresh the dev to main PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin dev main
+          ahead=$(git rev-list --count origin/main..origin/dev)
+          if [ "$ahead" -eq 0 ]; then
+            echo "dev has nothing main lacks"
+            exit 0
+          fi
+          existing=$(gh pr list --base main --head dev --state open --json number --jq '.[0].number // empty')
+          title="Weekly release: dev to main ($(date -u +%Y-%m-%d))"
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "$title"
+            echo "refreshed PR #$existing ($ahead commits)"
+          else
+            gh pr create --base main --head dev \
+              --title "$title" \
+              --body "Automated weekly promotion: $ahead commits from dev. Merging runs CI on main and cuts the release."
+            echo "opened new PR ($ahead commits)"
+          fi

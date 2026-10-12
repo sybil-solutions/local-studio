@@ -1,0 +1,8 @@
+{
+  "apps": {
+    "google-calendar": {
+      "adapter": "google-workspace",
+      "mode": "read-only"
+    }
+  }
+}

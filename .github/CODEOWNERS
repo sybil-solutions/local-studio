@@ -1,0 +1,14 @@
+# Repository Owners
+
+# Default owner for all files
+* @0xSero
+
+# Application-specific owners
+/controller/ @0xSero
+/frontend/ @0xSero
+
+# Configuration
+docker-compose.yml @0xSero
+
+# Documentation
+*.md @0xSero

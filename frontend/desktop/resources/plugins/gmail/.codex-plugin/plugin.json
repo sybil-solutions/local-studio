@@ -1,0 +1,13 @@
+{
+  "name": "gmail",
+  "version": "1.0.0",
+  "description": "Search and read Gmail through a local read-only adapter.",
+  "skills": "./skills",
+  "apps": "./.app.json",
+  "interface": {
+    "displayName": "Gmail",
+    "shortDescription": "Search and read Gmail",
+    "category": "Productivity",
+    "capabilities": ["email", "search", "read-only"]
+  }
+}

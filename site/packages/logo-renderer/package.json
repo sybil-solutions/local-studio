@@ -1,0 +1,32 @@
+{
+  "name": "@local-ai/logo-renderer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./react": "./src/renderer/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "generate": "node scripts/generate-logo-mesh.mjs",
+    "check": "node scripts/generate-logo-mesh.mjs --check",
+    "shader:check": "node scripts/check-shaders.mjs",
+    "snapshot": "node --experimental-strip-types --import ./scripts/node-hooks.mjs scripts/render-snapshot.mjs"
+  },
+  "peerDependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "dependencies": {
+    "@stylexjs/stylex": "0.19.0",
+    "phase": "0.0.1",
+    "vgpu": "0.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "clipper-lib": "6.4.2",
+    "earcut": "3.2.3",
+    "typescript": "6.0.3"
+  }
+}

@@ -1,0 +1,17 @@
+**/node_modules
+**/.next
+**/dist-desktop
+**/desktop/dist
+**/coverage
+**/.cache
+**/.turbo
+**/out
+**/*.log
+**/*.dmg
+**/*.zip
+**/*.blockmap
+.git
+data
+/docs
+/scripts
+.githooks

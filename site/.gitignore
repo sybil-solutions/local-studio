@@ -1,0 +1,11 @@
+node_modules
+.pnpm-store
+dist
+test-results
+playwright-report
+.DS_Store
+*.local
+*.log
+
+.context
+.wrangler
