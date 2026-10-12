@@ -1,0 +1,62 @@
+name: site
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'site/**'
+      - .github/workflows/site.yml
+  pull_request:
+    paths:
+      - 'site/**'
+      - .github/workflows/site.yml
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: deploy to production (localstudio.ai) after the checks
+        type: boolean
+        default: false
+
+concurrency:
+  group: site-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: site
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: "site/.nvmrc"
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm context:bundle
+      - run: pnpm build
+      - run: pnpm bundle:check
+      - run: pnpm reproducible:check
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test
+      - run: pnpm test:visual
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: "site/.nvmrc"
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Deploy the worker (localstudio.ai and www.localstudio.ai)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm deploy:production

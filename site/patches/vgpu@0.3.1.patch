@@ -1,0 +1,13 @@
+diff --git a/dist/target.d.ts b/dist/target.d.ts
+index f642ba8b4a9ba90b3d3aff09484779766564f86a..025fae3d889ec641834c0bed89f798c5a95d3acc 100644
+--- a/dist/target.d.ts
++++ b/dist/target.d.ts
+@@ -42,7 +42,7 @@ export interface Target {
+     readonly texelSize: readonly [number, number];
+     readonly color: Texture;
+     readonly colors: readonly [Texture, ...Texture[]];
+-    readonly depth?: Texture;
++    readonly depth: Texture | undefined;
+     readonly format: GPUTextureFormat;
+     readonly sampleCount: 1 | 4;
+     /**

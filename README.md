@@ -61,6 +61,8 @@ T3CODE_HOME="$PWD/.t3" pnpm start:desktop   # installed builds keep data in ~/.l
 
 `node scripts/local-check.mjs` runs the type checks, the web build, the controller end-to-end checks and the source budget. Upstream development notes are in [docs/operations/development.md](./docs/operations/development.md).
 
+[`site/`](./site/README.md) is the localstudio.ai site: a Vite SPA and the Cloudflare Worker that serves it, folded in from the archived `local-studio-site` repository at the same paths, with the worker name and the `localstudio.ai` and `www.localstudio.ai` routes unchanged. `.github/workflows/site.yml` runs its checks on every change under `site/` and the production deploy on a manual dispatch; both commands in [site/README.md](./site/README.md) run from `site/`.
+
 ## Releases
 
 `.github/workflows/release.yml` builds and publishes a release from a `vX.Y.Z` tag or a manual run. It produces:
