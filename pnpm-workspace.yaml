@@ -152,6 +152,21 @@ minimumReleaseAgeExclude:
   - expo-image-loader@58.0.3
 
 overrides:
+  "xml2js": "0.5.0"
+  "path-to-regexp": "6.3.0"
+  "uuid": "11.1.1"
+  "valibot": "1.4.2"
+  "decode-uri-component": "0.5.0"
+  "devalue": "5.9.3"
+  "http-cache-semantics": "4.3.0"
+  "source-map-js": "1.2.2"
+  "seroval": "1.6.3"
+  "proxy-addr": "2.0.8"
+  "compression": "1.8.2"
+  "sharp": "0.35.5"
+  "shell-quote": "1.11.0"
+  "smol-toml": "1.9.1"
+  "@modelcontextprotocol/sdk": "1.31.0"
   # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
   "@exodus/bytes>@noble/hashes": "1.8.0"
   # Earlier React Navigation declarations create a circular type alias in TypeScript 7.
