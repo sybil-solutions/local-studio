@@ -1,0 +1,512 @@
+{
+	"files": [
+		{
+			"path": "public/fonts/geist-mono.woff2",
+			"role": "font",
+			"type": "font/woff2",
+			"dimensions": null,
+			"bytes": 23108,
+			"sha256": "5f3d6ad60f29d6cb708414ec6887163d63bf197377ef5417d2483ff31ace6c3b"
+		},
+		{
+			"path": "public/fonts/geist-sans.woff2",
+			"role": "font",
+			"type": "font/woff2",
+			"dimensions": null,
+			"bytes": 29288,
+			"sha256": "9b6f5ff45b278c744b5f379a2c4ecbaf858a842b8eaf82ac8d21b699ca16c608"
+		},
+		{
+			"path": "public/images/favicon-dark.svg",
+			"role": "icon",
+			"type": "image/svg+xml",
+			"dimensions": {
+				"width": 428,
+				"height": 428
+			},
+			"bytes": 989,
+			"sha256": "3493f5f4527c0b8efad79e71856ee9daf78b8f169d9b51ddab2b4fff16b8b2f1"
+		},
+		{
+			"path": "public/images/favicon.svg",
+			"role": "icon",
+			"type": "image/svg+xml",
+			"dimensions": {
+				"width": 428,
+				"height": 428
+			},
+			"bytes": 989,
+			"sha256": "8de45cde7dccd23487c1159336bd4a10477f75b3c81da5064e790f2ff5185edf"
+		},
+		{
+			"path": "public/images/localai_dark.svg",
+			"role": "image",
+			"type": "image/svg+xml",
+			"dimensions": {
+				"width": 525,
+				"height": 525
+			},
+			"bytes": 1587,
+			"sha256": "0f0689d8065a4048ae74745253c9e1ab840972c53a45c217fbc1773416416df5"
+		},
+		{
+			"path": "public/images/localai_light.svg",
+			"role": "image",
+			"type": "image/svg+xml",
+			"dimensions": {
+				"width": 525,
+				"height": 525
+			},
+			"bytes": 1606,
+			"sha256": "86688041e99d50818134604b74ef14402a1ff50ebaa479127d8dd7fd653ac334"
+		},
+		{
+			"path": "public/images/optimized.svg",
+			"role": "image",
+			"type": "image/svg+xml",
+			"dimensions": {
+				"width": 525,
+				"height": 525
+			},
+			"bytes": 1607,
+			"sha256": "122a9b026ebdc63d31a73120a0933eadea740af9bf521f99410cac694d0de5c0"
+		},
+		{
+			"path": "public/images/sponsors/factory.svg",
+			"role": "sponsor",
+			"type": "image/svg+xml",
+			"dimensions": {
+				"width": 127,
+				"height": 19
+			},
+			"bytes": 10337,
+			"sha256": "2c46aff5e7f423b753bb9bff7869d806e3442c643dd4d45094fabac37e3ad8a0"
+		},
+		{
+			"path": "public/images/sponsors/lambda.svg",
+			"role": "sponsor",
+			"type": "image/svg+xml",
+			"dimensions": {
+				"width": 196,
+				"height": 42
+			},
+			"bytes": 4113,
+			"sha256": "9b459dd2e5adde58a34abb4a35ade5730d71d5e1b1b3cfec625c29a11dd65930"
+		},
+		{
+			"path": "public/images/sponsors/nvidia.svg",
+			"role": "sponsor",
+			"type": "image/svg+xml",
+			"dimensions": {
+				"width": 630.2,
+				"height": 118.2
+			},
+			"bytes": 702,
+			"sha256": "aea3498efe6df90801d026818016ef283c1a38cd862bd56478bb66e1d6ec1711"
+		},
+		{
+			"path": "public/images/sponsors/prime-intellect.svg",
+			"role": "sponsor",
+			"type": "image/svg+xml",
+			"dimensions": {
+				"width": 240,
+				"height": 40
+			},
+			"bytes": 18673,
+			"sha256": "108fb8057cf432b47c07329812c980d928b5d9b400fea3cfe9df9c37e85b7e24"
+		},
+		{
+			"path": "public/images/sponsors/tng.svg",
+			"role": "sponsor",
+			"type": "image/svg+xml",
+			"dimensions": {
+				"width": 4071,
+				"height": 596
+			},
+			"bytes": 9491,
+			"sha256": "8b2b9c52c73f89d9ab019c7040655686f86cdacc9a5b48c53ab21044a1857fff"
+		},
+		{
+			"path": "public/images/v3-agents-1300.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1300,
+				"height": 993
+			},
+			"bytes": 209141,
+			"sha256": "5b353575ccc7240ef8378a5f51fbde061e1414b36ea30bf19053b376b852344a"
+		},
+		{
+			"path": "public/images/v3-agents-2600.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 2600,
+				"height": 1986
+			},
+			"bytes": 853019,
+			"sha256": "a76752628418538391257451d92bb66860f4cc88dbbedea2491ad05bd2f05a3c"
+		},
+		{
+			"path": "public/images/v3-agents-800.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 800,
+				"height": 611
+			},
+			"bytes": 72859,
+			"sha256": "78aa12a877d1d890c9166226c5b99a7648224068dd65eaeab69a1e8ab29ab799"
+		},
+		{
+			"path": "public/images/v3-agents.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1600,
+				"height": 1222
+			},
+			"bytes": 329264,
+			"sha256": "120204ede458f53438c413f3f42587fd119985b4c5da98e4d5a1ea31b290d175"
+		},
+		{
+			"path": "public/images/v3-fleet-1300.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1300,
+				"height": 993
+			},
+			"bytes": 209795,
+			"sha256": "a0672cff8f90d2e19028092fec511945ae1dd8ff5a8c497aff71cbc5e1b24b89"
+		},
+		{
+			"path": "public/images/v3-fleet-2600.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 2600,
+				"height": 1986
+			},
+			"bytes": 861415,
+			"sha256": "fb3e458036108478944898f05c68e0383dc03ad62dcac08703d0abc23a43d8f9"
+		},
+		{
+			"path": "public/images/v3-fleet-800.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 800,
+				"height": 611
+			},
+			"bytes": 74283,
+			"sha256": "8ec04e2cf38f90453b2acc6c6e76e9f440b84a9b9d6c8c14f76ab6764c93ccf3"
+		},
+		{
+			"path": "public/images/v3-fleet.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1600,
+				"height": 1222
+			},
+			"bytes": 332103,
+			"sha256": "e8657af300dfae8c594f4722bc89e29ac64156ff6aca6349de0f82eb46099f1e"
+		},
+		{
+			"path": "public/images/v3-launch-poster.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1600,
+				"height": 900
+			},
+			"bytes": 59569,
+			"sha256": "d507b1d26f4bd7e0b0716bbf1fd4080f5c3868d75831c7af014183e63a5cebb8"
+		},
+		{
+			"path": "public/images/v3-phone-01-660.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 660,
+				"height": 660
+			},
+			"bytes": 110611,
+			"sha256": "19199e9e3ea9ec2f6d2021f92fc5588f0c708dd26461e03e3874e24860801df0"
+		},
+		{
+			"path": "public/images/v3-phone-01.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1320,
+				"height": 1320
+			},
+			"bytes": 487526,
+			"sha256": "463573e914316241f9e0cbb94fa332ca9000dee97093b41559169a983a4d2c61"
+		},
+		{
+			"path": "public/images/v3-phone-02-660.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 660,
+				"height": 660
+			},
+			"bytes": 26977,
+			"sha256": "076aef719463a83b1c44e17b4069d6789a1ccbe34c1e3237ecbe8c1e7a5e87eb"
+		},
+		{
+			"path": "public/images/v3-phone-02.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1320,
+				"height": 1320
+			},
+			"bytes": 64705,
+			"sha256": "2c7425925c24d63a0779fffad449d312eff8ee19af616ab3b53a3dcd265a2d61"
+		},
+		{
+			"path": "public/images/v3-phone-03-660.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 660,
+				"height": 660
+			},
+			"bytes": 31524,
+			"sha256": "9df6055f17b8ebdf1231aead97eff7e0cb34c9a9d1d6d6118c3d244f58e91d81"
+		},
+		{
+			"path": "public/images/v3-phone-03.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1320,
+				"height": 1320
+			},
+			"bytes": 74382,
+			"sha256": "2e84e10add116473cecaa4fea1708fbe259ebcc5e479b6023c978d3ea858ae53"
+		},
+		{
+			"path": "public/images/v3-phone-04-660.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 660,
+				"height": 660
+			},
+			"bytes": 23566,
+			"sha256": "950dd691c0656c3d43d9b38ba3f9cec27d384c685371644213859304302f699c"
+		},
+		{
+			"path": "public/images/v3-phone-04.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1320,
+				"height": 1320
+			},
+			"bytes": 52768,
+			"sha256": "0641ac8f02613092af3c377c80cae2eb0a59c9076bc1658edfc94d1092226cb6"
+		},
+		{
+			"path": "public/images/v3-registry-1300.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1300,
+				"height": 993
+			},
+			"bytes": 261785,
+			"sha256": "480bcc31cd0252b12520b5de4d81653f7c8f4985e8f8b7acad6f05bfe9d002cc"
+		},
+		{
+			"path": "public/images/v3-registry-2600.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 2600,
+				"height": 1986
+			},
+			"bytes": 1005253,
+			"sha256": "34f61dfbdd3bed10bc04ff4ec2c0b49b498730b6eece73f97f242a8d896dfabb"
+		},
+		{
+			"path": "public/images/v3-registry-800.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 800,
+				"height": 611
+			},
+			"bytes": 97856,
+			"sha256": "a83f8b6de9b5d36b9017d144cfb03e62622ea86197537861e34efe2832c72d37"
+		},
+		{
+			"path": "public/images/v3-registry.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1600,
+				"height": 1222
+			},
+			"bytes": 403724,
+			"sha256": "7ea910f5ae9ade6f1fbb0b5abddb752ece52ae955ddec9470ac744af2fda96a7"
+		},
+		{
+			"path": "public/images/v3-serve-1300.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1300,
+				"height": 993
+			},
+			"bytes": 240888,
+			"sha256": "8767fd870f22aa17c1ccdbc07d07e428a2550152b58c36d8da81967f0116807c"
+		},
+		{
+			"path": "public/images/v3-serve-2600.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 2600,
+				"height": 1986
+			},
+			"bytes": 916391,
+			"sha256": "2893fc4a19c8d9bf80d7f5efe68414b4a4edb2d5e602463647bd02906f2b2c40"
+		},
+		{
+			"path": "public/images/v3-serve-800.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 800,
+				"height": 611
+			},
+			"bytes": 94705,
+			"sha256": "bd267b8600eacc7b250e24784b65aefc79bfb765bd34c9f8d0c4b5b4dcc7ed6f"
+		},
+		{
+			"path": "public/images/v3-serve.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1600,
+				"height": 1222
+			},
+			"bytes": 369158,
+			"sha256": "6d37a77d4b5ac747bf9af1a6dda203c5675f6059202a71b260714a28de4112af"
+		},
+		{
+			"path": "public/images/v3-thread-1300.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1300,
+				"height": 993
+			},
+			"bytes": 199158,
+			"sha256": "f342ac480345d9fe3817f0a62a7842bbce2e755b4b099407ef2fdcae03812619"
+		},
+		{
+			"path": "public/images/v3-thread-2600.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 2600,
+				"height": 1986
+			},
+			"bytes": 821256,
+			"sha256": "70ca002c9478c098941935f47ef6c43cdb55721a192843756a4e912a957a03dd"
+		},
+		{
+			"path": "public/images/v3-thread-800.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 800,
+				"height": 611
+			},
+			"bytes": 69767,
+			"sha256": "f2a189b6763d41de77412bc8702c0131fa81e82decd2e2ef4921e6625a161032"
+		},
+		{
+			"path": "public/images/v3-thread.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1600,
+				"height": 1222
+			},
+			"bytes": 316397,
+			"sha256": "a1a270d1e500c145c2f96e93bf71264d44e1aa956078e8002c5c892d10e9fe59"
+		},
+		{
+			"path": "public/localai/day-sky-cubemap.jpg",
+			"role": "logo-mesh",
+			"type": "image/jpeg",
+			"dimensions": null,
+			"bytes": 76437,
+			"sha256": "9f5f04a8f3d46b8b5e96a257fd69f252fb4b7272a19aa3778f7ba38ad48a3036"
+		},
+		{
+			"path": "public/localai/hero-render-day.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1880,
+				"height": 1237
+			},
+			"bytes": 169399,
+			"sha256": "baa780c7c041e2336b794a85b13f3ff6504856114c35c8ec5df0a92b1109b6ff"
+		},
+		{
+			"path": "public/localai/hero-render-night.png",
+			"role": "image",
+			"type": "image/png",
+			"dimensions": {
+				"width": 1880,
+				"height": 1237
+			},
+			"bytes": 367869,
+			"sha256": "a9ad6ad3178316acea8db6a1f474c9f575e5f8815040053a2d8770123ac97a0a"
+		},
+		{
+			"path": "public/localai/localai-logo.bin",
+			"role": "logo-mesh",
+			"type": "application/octet-stream",
+			"dimensions": null,
+			"bytes": 924096,
+			"sha256": "8a71904bafbaf1083f1bb65e6509390d8273fdb5834055d714437fd5a8fe11ce"
+		},
+		{
+			"path": "public/localai/localai-logo.gltf",
+			"role": "logo-mesh",
+			"type": "model/gltf+json",
+			"dimensions": null,
+			"bytes": 1270,
+			"sha256": "433a645f51aa81872743d83e409ef961fc2ae3c4f3a2d9c7bcb6e7de0ec37cfa"
+		},
+		{
+			"path": "public/localai/night-sky-cubemap.jpg",
+			"role": "logo-mesh",
+			"type": "image/jpeg",
+			"dimensions": null,
+			"bytes": 97940,
+			"sha256": "823e89baa4271a260a2496db6290e85d2aaca550669ad796abe4fd776eec184c"
+		},
+		{
+			"path": "public/media/local-studio-3.0-launch.mp4",
+			"role": "video",
+			"type": "video/mp4",
+			"dimensions": null,
+			"bytes": 2317148,
+			"sha256": "9de27a46aca73f841ece96716891447c74e309d58377e58f2e9480965c42a246"
+		}
+	],
+	"duplicateGroups": []
+}

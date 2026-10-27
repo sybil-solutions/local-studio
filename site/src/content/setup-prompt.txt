@@ -1,0 +1,60 @@
+Set up Local Studio 3 completely on the machine you are operating now.
+
+Download page: {{LOCAL_STUDIO_DOWNLOAD}}
+Repository: {{LOCAL_STUDIO_REPOSITORY}}
+
+Work autonomously. Do not give me a tutorial or stop after listing commands. Inspect the machine, make the safest sensible choices, install the app, and prove that a model answers through the Local Studio controller. Ask only if you reach a genuine credential, destructive-action, or hardware blocker.
+
+Operating rules
+
+1. Never print, commit, or expose secrets. The controller fleet key in ~/.local-studio-t3/config.json is a secret: read it into a variable, never echo it.
+2. Do not bypass security checks, code signing prompts, or ssh host-key verification.
+3. Never cap generation length with max_tokens. With vLLM or SGLang, never disable CUDA graphs and never force eager mode.
+4. Do not replace or stop an inference server or controller that is already running. Local Studio 2.x data and controllers can stay where they are.
+5. Use the official installers from the download page. Do not build from source unless I ask.
+
+Phase 1 - inspect
+
+Report the operating system and version, CPU architecture, RAM, free disk space, GPU model and memory or Apple unified memory, whether Tailscale is installed and connected, and which agent CLIs are installed and logged in: Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity, Pi (pi) and Oh My Pi (omp). List every process already listening on a local port that answers GET /v1/models. Check whether anything answers on 127.0.0.1:18091.
+
+Phase 2 - download and verify
+
+Pick the installer for this machine:
+
+- macOS Apple silicon: {{LOCAL_STUDIO_DOWNLOAD}}/macos-arm64
+- macOS Intel: {{LOCAL_STUDIO_DOWNLOAD}}/macos-x64
+- Windows x64: {{LOCAL_STUDIO_DOWNLOAD}}/windows
+- Linux x64: {{LOCAL_STUDIO_DOWNLOAD}}/linux (AppImage; .deb packages are listed on the download page)
+- Linux arm64: {{LOCAL_STUDIO_DOWNLOAD}}/linux-arm64
+
+Each link redirects to the newest verified GitHub release asset and sends x-local-studio-version and x-local-studio-sha256 headers. Download with redirects followed, then check the file with shasum -a 256 (or Get-FileHash on Windows) against that header and against SHA256SUMS from the same release. Stop if they differ.
+
+Phase 3 - install
+
+- macOS: mount the DMG, copy Local Studio.app into /Applications, and open it. The build is signed and notarized.
+- Windows: run the installer. It is not code-signed yet, so SmartScreen asks for confirmation; tell me to choose More info, then Run anyway.
+- Linux: chmod +x the AppImage and run it, or install the .deb with sudo apt install ./Local-Studio-*.deb.
+
+If no agent CLI is logged in, install and log in to the one I prefer, or Pi (pi) if I have no preference. Pi and Oh My Pi use their own configured models and credentials.
+
+Phase 4 - make sure a model is served
+
+If an OpenAI-compatible server (vLLM, SGLang, llama.cpp, LM Studio, or anything serving /v1/models) is already running, use it. Otherwise start the smallest sensible model for this hardware with the runtime that fits: llama.cpp or LM Studio on Apple silicon and CPU-only machines, vLLM or SGLang on Linux with NVIDIA GPUs. Prefer a model from the local-ai-registry recommendations shown in Settings → Local when they match this hardware.
+
+Phase 5 - prove it works through the controller
+
+The app starts its bundled controller on 127.0.0.1:18091. Read the fleet key from ~/.local-studio-t3/config.json into a variable without printing it, then check:
+
+- GET http://127.0.0.1:18091/api/health returns HTTP 200.
+- GET /v1/models with Authorization: Bearer <fleet key> lists the served model.
+- POST /v1/chat/completions with model set to that id (or auto) returns a real answer.
+- Settings → Local in the app shows this machine and the live model.
+- One agent thread in the app completes a turn on that model.
+
+If a check fails, diagnose and fix it, then rerun the check. Do not hide degraded behavior.
+
+Phase 6 - handoff
+
+Finish with a compact report: installed version and file checksum, app location, controller URL, the served model and runtime, the agent CLI used, HTTP status and answer for each check, and any remaining human-only step (for example Tailscale login, pairing a phone from Settings → Connections, or SmartScreen confirmation).
+
+The final state must be a working Local Studio installation with a model answering through the controller, not a plan.

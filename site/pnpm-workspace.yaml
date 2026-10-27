@@ -1,0 +1,10 @@
+packages:
+  - "."
+  - "packages/*"
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  - "@vgpu/*"
+  - vgpu
+patchedDependencies:
+  vgpu@0.3.1: patches/vgpu@0.3.1.patch
+trustPolicy: no-downgrade
